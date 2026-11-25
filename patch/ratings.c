@@ -16,6 +16,7 @@ static struct {
     int rate_armed;                     /* a press came down on the picker: its release is a tap */
     unsigned rate_at;                   /* when a hold opened the picker (never 0), else 0 */
     unsigned rate_hold, rate_tick, rate_album;
+    unsigned rate_fails[2]; /* the songs' and albums' saves' failed reads (blob_load) */
     widget_t *rt_menu;
     int rt_held; /* the list a Play/Pause hold on the menu shuffles */
 } ra __attribute__((section(".scratch")));
@@ -31,17 +32,25 @@ static struct {
  * Fav toggled for the playing track (manage_myfav), and the heart's image with it. */
 #define FAV_CLICK ((int (*)(void *, event_t *))0x53c968)
 
-/* The songs' table, or with album the albums'. */
-static int rate_io(int album, int write) {
+/* The songs' table, or with album the albums', written. */
+static int rate_io(int album) {
     const char *f = album ? ALBUM_RATINGS_FILE : RATINGS_FILE;
     const char *tmp = album ? ALBUM_RATINGS_FILE ".tmp" : RATINGS_FILE ".tmp";
-    return blob_io(f, tmp, album ? ra.album_rates : ra.rates, RATE_SLOTS * sizeof *ra.rates, write);
+    return blob_io(f, tmp, album ? ra.album_rates : ra.rates, RATE_SLOTS * sizeof *ra.rates, 1);
 }
-static unsigned *rates(int album) {
+/* The table read in (blob_load), NULL while it can't be (or no memory); fails counts a save's
+ * failed reads.
+ * ponytail: while the file can't be read every lookup reads again (calloc, open, free): a sort by
+ * hearts over thousands of albums costs a fraction of a second on the UI thread; a retry at most
+ * once a second would lift it. */
+static unsigned *rates_load(int album, unsigned *fails) {
     unsigned **t = album ? &ra.album_rates : &ra.rates;
-    if (!*t && (*t = calloc(RATE_SLOTS, sizeof **t))) rate_io(album, 0);
+    if (!*t && (*t = calloc(RATE_SLOTS, sizeof **t)) &&
+        !blob_load(album ? ALBUM_RATINGS_FILE : RATINGS_FILE, *t, RATE_SLOTS * sizeof **t, fails))
+        free(*t), *t = 0;
     return *t;
 }
+static unsigned *rates(int album) { return rates_load(album, 0); }
 
 /* key's slot; with free, the first free one when it has none; -1 when neither. */
 static int rate_slot(int album, unsigned key, int free) {
@@ -63,11 +72,13 @@ int rate_kept(int album, unsigned key) {
 /* Keeps n hearts for key: a song's 1 to 4, none for 0 and 5 (My Fav's); an album's 1 to 5. 1 when
  * saved, 0 when the table is full, -1 when the file was not written (the slot then as it was). */
 int rate_keep(int album, unsigned key, int n) {
+    if (!rates_load(album, &ra.rate_fails[album]))
+        return -1; /* never written over a table not read */
     int some = n > 0 && n < 5 + album, i = rate_slot(album, key, some);
     if (i < 0) return !some;
     unsigned *t = rates(album), old = t[i];
     t[i] = some ? (key & ~7u) | (unsigned)n : 0;
-    if (rate_io(album, 1)) {
+    if (rate_io(album)) {
         ratings_copy_due();
         return 1;
     }

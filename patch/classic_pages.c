@@ -50,7 +50,10 @@ void kb_paint_key(widget_t *w, canvas_t *canvas) {
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     const char *name = widget_get_prop_str(w, "name", "");
     char c = name ? *name : 0; /* opt:, page:, key:, action, space, or the character itself */
-    int action = c == 'a', space = c == 's', fn = c == 'p' || c == 'k', white = action || fn;
+    const unsigned *label = widget_get_text(w);
+    /* a key: with a label is a letter: the pinyin page's 2 to 9 (language.c) */
+    int action = c == 'a', space = c == 's', fn = c == 'p' || (c == 'k' && !(label && *label)),
+        white = action || fn;
     int kw = I(w, W_W), kh = I(w, W_H);
     rect_t r = { 0, 0, kw, kh }, ring = { -1, -1, kw + 2, kh + 2 }, down = { 0, 2, kw, kh };
     round_ring(canvas, &ring, 7, 0x1f000000u);
@@ -58,8 +61,8 @@ void kb_paint_key(widget_t *w, canvas_t *canvas) {
     for (int i = 0; i < 2; ++i) round_row(canvas, &down, 6, kh - 2 + i, 0xcc282b30u);
     paint_round_rows(canvas, &r, action ? &enter : fn ? &function : &plain, 6);
     unsigned own[32];
-    if (action || space) wide_text(own, 32, action ? "完成" : "空格");
-    const unsigned *s = action || space ? own : widget_get_text(w);
+        if (action || space) wide_text(own, 32, action ? "完成" : "空格");
+        const unsigned *s = action || space ? own : label;
     if (s && *s) {
         unsigned n = wide_len(s);
         int px = white || space ? 24 : 27, fpx = px;
@@ -374,7 +377,7 @@ void search_paint(widget_t *w, canvas_t *canvas) {
  * under the theme's dialog. */
 extern int stock_search_init_trampoline(widget_t *win, void *ctx);
 int ringnav_search_init(widget_t *win, void *ctx) {
-    static const char *const names[] = { N_("Songs"), N_("表演者"), N_("专辑"), N_("流派") };
+    static const char *const names[] = { "单曲", N_("表演者"), N_("专辑"), N_("流派") };
     int result = stock_search_init_trampoline(win, ctx);
     unsigned name[32];
     if (win == st.search_win)
@@ -514,10 +517,8 @@ void slider_paint(widget_t *w, canvas_t *canvas) {
             paint_art(w, canvas, "classic_light_sun_small", 48, 144);
             paint_art(w, canvas, "classic_light_sun_big", 311, 141);
         }
-        for (int i = 0; maxvol && i < 6; ++i) { /* a triangle at the fill's end, tip up */
-            int half = i ? i : 1;
-            bar_rect(canvas, 0xffffffffu, 81 + slider_part(s, 204) - half, 155 + i, 2 * half, 1);
-        }
+        if (maxvol) /* a triangle at the fill's end, tip up */
+            vol_mark(canvas, 0xffffffffu, 81 + slider_part(s, 204), 155);
     }
     text_shadow(canvas, "classic-light", (const unsigned *)st.slider_hint,
                 &(rect_t){ 0, 229, 375, 32 }, 31, 0x59);

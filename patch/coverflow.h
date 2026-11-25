@@ -57,6 +57,8 @@ extern cf_page_t cf;
 #define ART_DIR PEQ_ROOT "/mnt/mmc/.coverflow"
 #define PL_BUILDING ART_DIR "/pl-building" /* playlist_art.c's art_note */
 #define ART_SIZE 160                       /* a texture's side, texels */
+/* A texture is held by columns, texel x, y at x * ART_SIZE + y: column() walks down one, and reads
+ * adjacent words. */
 #define CF_TEXELS (ART_SIZE * ART_SIZE)
 #define CF_ONE 65536
 #define CF_REACH 3 /* ring slots either side of the centre that can show (fading in) or preload */
@@ -134,7 +136,8 @@ extern cf_depth_t fx;
 HOT unsigned shade(unsigned p, unsigned b) {
     return ((p & 0xff00ffu) * b >> 8 & 0xff00ffu) | ((p & 0xff00u) * b >> 8 & 0xff00u);
 }
-/* A texel (RGBA8888, red low) as the screen's BGRA8888, opaque; both ways, but for the alpha. */
+/* A colour red low (RGBA8888: a half copy on the card) as the screen's BGRA8888, as a texel is,
+ * opaque; both ways, but for the alpha. */
 HOT unsigned bgra(unsigned p) { /* R and B from p turned half way round (one rotr) */
     return 0xff000000u | (p & 0xff00u) | ((p >> 16 | p << 16) & 0xff00ffu);
 }
@@ -188,6 +191,7 @@ extern cf_thumb_t th;
 /* coverflow.c */
 void coverflow_play(int row);
 void *queue_now(unsigned *pos, unsigned *n);
+int queue_loaded(void);
 int flip_alloc(void);
 int flip_capture(void);
 void slant_render(unsigned *d, int pitch, int side, int rows, const unsigned *tex, int t,
@@ -195,13 +199,14 @@ void slant_render(unsigned *d, int pitch, int side, int rows, const unsigned *te
 unsigned album_key(void *r);
 unsigned tags_key(const char *artist, const char *album);
 unsigned album_ident(const char *album, const char *album_artist, const char *path);
-int album_art(const char *track, const char *dst, int shared);
+int album_art(const char *track, const char *dst, int shared, unsigned *left);
 void art_note(const char *note, unsigned key, const char *track);
 void art_strike(const char *note);
-int ff_wait(int pid, const char *tmp, const char *dst, int *exited);
-int ff_thumb(const char *src, const char *dst, int w, int h);
+int ff_wait(int pid, const char *tmp, const char *dst, int *exited, unsigned *left);
+int ff_thumb(const char *src, const char *dst, int w, int h, unsigned *left);
 char *art_path(char *out, unsigned key, const char *suffix);
 int cf_decode(const char *url, unsigned *out, int unload, unsigned bar);
+void cf_transpose(unsigned *t, int n);
 /* the texture pool (fx_window): the shelf's slots, then the placeholder */
 int fx_base(void);
 #define FX_PLACEHOLDER (fx.tex + fx_base() * CF_TEXELS)

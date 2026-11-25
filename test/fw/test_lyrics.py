@@ -262,9 +262,24 @@ def test_lines_starting_past_the_tag_limit_are_not_read(fw):
     assert len(lines) == TAG_MAX // 2
 
 
-def test_a_line_crossing_the_limit_is_kept_whole(fw):
+def test_a_line_crossing_the_limit_is_cut_there(fw):
     lines = lrc(fw, b'a' * (TAG_MAX - 1) + b'bcd\nnext\n')
-    assert len(lines) == 1 and lines[0][1] == b'a' * (TAG_MAX - 1) + b'bcd'
+    assert lines == [(FAR, b'a' * (TAG_MAX - 1) + b'b', [])]
+
+
+def test_the_cut_falls_on_a_line_end_when_there_is_one(fw):
+    lines = lrc(fw, (b'x' * 99 + b'\n') * 1000)
+    assert len(lines) == TAG_MAX // 100 and all(line[1] == b'x' * 99 for line in lines)
+
+
+def test_one_huge_line_is_cut_at_the_limit(fw):
+    lines = lrc(fw, b'a' * (TAG_MAX * 4))
+    assert len(lines) == 1 and len(lines[0][1]) == TAG_MAX
+
+
+def test_the_cut_does_not_split_a_character(fw):
+    lines = lrc(fw, b'a' * (TAG_MAX - 1) + '\u20ac'.encode() * 4)
+    assert lines[0][1] == b'a' * (TAG_MAX - 1)
 
 
 def test_stamps_past_the_limit_cannot_overrun_the_tables(fw):

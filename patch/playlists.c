@@ -379,7 +379,10 @@ static void ple_show(void) {
     /* only the selected row's long title moves, as Songs' */
     for (int i = 0; !geom_val(V_TOOLBAR) && i < (int)widget_count_children(ple.view); ++i)
         hscroll_label_set_only_focus(widget_get_child(widget_get_child(ple.view, i), 0), 1);
-    if (n) ringnav_select(ple.view, mode == 0 ? ple.selected + 2 < n ? ple.selected + 2 : 0 : 0, n);
+    /* the song the list was on; Remove song? on its Cancel, as every confirm opens */
+    if (n)
+        ringnav_select(ple.view,
+                       mode == 0 ? ple.selected + 2 < n ? ple.selected + 2 : 0 : mode == 3, n);
 }
 static int ple_open(void *ctx, event_t *event) {
     if (ple.page) return 0;
@@ -453,10 +456,11 @@ done:
     return result;
 }
 
-/* A row action's confirm: under Classic its tray, the second cell saying verb. The prompt's
- * own text isn't read. */
-static int confirm_over(void *prompt, const char *verb) {
+/* A confirm whose second cell says verb, under a theme that dresses it the tray (a row action's:
+ * the prompt's own text isn't read) or the page. */
+int confirm_over(void *prompt, const char *verb, int tray) {
     st.confirm_verb = verb;
+    st.confirm_tray = tray;
     int answer = navigator_to_with_context("dialog/confirminfo_dialog", prompt);
     st.confirm_verb = (const char *)0;
     st.confirm_win = (void *)0;
@@ -473,7 +477,7 @@ int ringnav_playlist_delete(widget_t *win, event_t *event) {
         char text[0x400];
     } prompt = { 1, 0, "" };
     tk_snprintf(prompt.text, sizeof prompt.text, "%s", "删除播放列表？");
-    if (confirm_over(&prompt, "删除") != 10) return 0;
+    if (confirm_over(&prompt, "删除", 1) != 10) return 0;
     char sql[256];
     if (pl_db(&db)) goto done;
     if (sqlite3_exec(db, "begin immediate", 0, 0, 0)) goto done;

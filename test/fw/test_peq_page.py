@@ -44,7 +44,7 @@ class EqState(C.Structure):
 
 class Ui(C.Structure):
     _fields_ = [*((k, C.c_void_p) for k in 'page view edit graph bar'.split()), ('timer', C.c_uint), ('keyboard_timer', C.c_uint),
-                *((k, C.c_int) for k in 'screen band step count previous rendered dirty pick adjust tries capacity file_page tab tabs from_simple'.split()),
+                *((k, C.c_int) for k in 'screen band step count previous rendered dirty pick adjust tries capacity file_page tab tabs channel from_simple'.split()),
                 ('typed', C.c_double), ('draft', Preset), ('candidate', Preset), ('named', Preset), ('names', C.c_void_p),
                 ('destination', C.c_char * 600), ('status', C.c_char * 256), ('name', C.c_char * 256), ('applied', C.c_char * 256),
                 ('curve', (C.c_float * GRAPH_W) * 2), ('drag', C.c_int)]
@@ -546,6 +546,29 @@ def test_a_long_preset_name_ellipsises_right_aligned_clear_of_its_caption(fw):
     assert x > 118 and x + w == 316  # past Classic's 27 px caption; ends where the other values do
 
 
+def test_a_file_s_name_too_long_for_its_row_ellipsises_in_the_box_a_plain_row_s_text_has(fw):
+    cut, focus, style = [], [], {}
+    fw.mock('hscroll_label_set_ellipses', lambda w, on, *_: cut.append((w, i32(on))))
+    fw.mock('hscroll_label_set_only_focus', lambda w, on, *_: focus.append((w, i32(on))))
+    fw.mock('widget_use_style', lambda w, name, *_: style.__setitem__(w, C.string_at(name).decode()))
+    name = 'LETSHUOER DEFIANT-to-iBASSO Exemplar'
+    p = page(fw, files={f'{SAVED}/{name}.peq': b'x', f'{IMPORT}/{name}.txt': b'Preamp: -3 dB\n'}).advanced()
+    p.click('Presets')
+    p.click('Save editor preset')
+    plain = p.children(p.rows()[0][1])[0]  # Save as Manual 01: a row's plain label
+    x, _, w, _ = struct.unpack_from('<4i', p.blocks[plain], 0)
+    assert style[plain] == 's_label_white20l'
+    p.ret()
+    for file in f'{name}.peq', f'{name}.txt':  # Presets' list, then Import from SD /EQ's
+        if file.endswith('.txt'):
+            p.click('Import from SD /EQ')
+        (label,) = p.children([item for t, item in p.rows() if t == file][0])
+        assert style[label] == 's_scrlabel_white20l'
+        assert (label, 1) in cut and (label, 1) in focus  # only_focus: still until the marquee starts it, selected
+        # stock's hscroll_label keeps 2 px each side: its text has the plain label's box, so a name that fits stays put
+        assert struct.unpack_from('<4i', p.blocks[label], 0)[::2] == (x - 2, w + 4)
+
+
 # The curve.
 
 def grid(canvas):
@@ -650,6 +673,45 @@ def test_a_band_s_screen(fw):
     assert p.captions()[:2] == ['Band Off', 'Type Low shelf']  # an off band has no channels
     p.ret()
     assert p.ui.screen == HOME and '1  Low shelf 1000 Hz Off' in p.captions()
+
+
+def test_a_band_turned_off_and_on_keeps_its_channels(fw):
+    p = page(fw, state(fw, EQ_PEQ, peq=peak(fw, 6))).advanced()
+    p.click('1  ')
+    p.click('Channels')
+    p.click('Channels')
+    assert 'Channels Right' in p.captions()
+    p.click('Band')
+    p.click('Band')
+    assert p.captions()[:2] == ['Band On', 'Channels Right'] and p.ui.draft.bands[0].enabled == 3
+    p.click('Band')
+    p.ret()
+    p.click('2  ')  # an off band, opened next: it takes nothing from the last one's
+    p.click('Band')
+    assert p.captions()[:2] == ['Band On', 'Channels Both']
+
+
+def test_a_gain_picked_for_an_off_band_turns_it_on_with_its_channels(fw):
+    p = page(fw, state(fw, EQ_PEQ, peq=peak(fw, 6))).advanced()
+    p.click('1  ')
+    p.click('Channels')
+    p.click('Channels')
+    p.click('Band')
+    p.click('Gain')
+    p.click('+3.0 dB')
+    assert p.captions()[:2] == ['Band On', 'Channels Right']
+
+
+def test_a_card_app_s_preset_under_an_open_band_takes_none_of_its_channels(fw):
+    p = page(fw, state(fw, EQ_PEQ, peq=peak(fw, 6))).advanced()
+    p.click('1  ')
+    p.click('Channels')
+    p.click('Channels')
+    p.click('Band')
+    assert ask(fw, p.card, b'a1\nFilter 1: OFF PK Fc 2000 Hz Gain 6 dB Q 1\n').startswith(b'a1 ok')
+    p.settle()
+    p.click('Band')
+    assert p.captions()[:2] == ['Band On', 'Channels Both']
 
 
 def test_a_band_past_the_count_joins_the_preset(fw):
@@ -780,9 +842,13 @@ def test_a_kept_screen_keeps_its_selection_and_scroll(fw):
     p = page(fw).advanced()
     view = p.ui.view
     p.props[(view, '_ringnav_index')], p.props[(view, 'yoffset')] = 5, 96
-    p.click('Reset to defaults')
+    p.click('Enabled On')
     assert p.props[(p.ui.view, '_ringnav_index')] == 5 and p.props[(p.ui.view, 'offset')] == 96
-    assert p.title() == 'Reset; choose Apply to activate'
+    p.click('Reset to defaults')
+    p.click('Reset all bands? Confirm')
+    p.props[(p.ui.view, '_ringnav_index')], p.props[(p.ui.view, 'yoffset')] = 5, 96
+    p.click('Apply changes')  # a status message in the title, the rows kept
+    assert p.title() == 'Applied' and p.props[(p.ui.view, '_ringnav_index')] == 5 and p.props[(p.ui.view, 'offset')] == 96
 
 
 # The presets' screens.
@@ -830,6 +896,8 @@ def test_saving_offers_ten_slots_and_asks_before_replacing(fw):
     assert f'{SAVED}/Manual 03.peq' in p.card.files and p.title() == 'Preset saved; active EQ unchanged'
     p.click('Save as Manual 03')
     assert p.captions() == ['Replace existing preset? Confirm', 'Cancel replacement'] and p.ui.screen == CONFIRM
+    assert p.props[(p.ui.view, '_ringnav_index')] == 1  # it opens on Cancel, as every confirm does
+    assert p.props[(p.ui.view, '_ringnav_count')] == 2  # which the list keeps only on a view it knows the rows of
     p.click('Cancel replacement')
     assert p.ui.screen == SAVES
 
@@ -849,6 +917,8 @@ def test_deleting_asks_then_deletes(fw):
     p.click('Delete a preset')
     p.click('a.peq')
     assert p.captions() == ['Delete a.peq? Confirm', 'Cancel']
+    assert p.props[(p.ui.view, '_ringnav_index')] == 1  # it opens on Cancel: a second Centre deletes nothing
+    assert p.props[(p.ui.view, '_ringnav_count')] == 2  # which the list keeps only on a view it knows the rows of
     rh = fw.fn('page_h', C.c_int, C.c_int)(48)
     shrunk = [h for (w, k), h in p.props.items() if k == 'resized' and w in p.alive]
     assert shrunk == [2 * rh, 2 * rh]  # the list and its view end at the last row: no white below
@@ -856,6 +926,27 @@ def test_deleting_asks_then_deletes(fw):
     assert f'{SAVED}/a.peq' not in p.card.files and p.title() == 'Deleted a.peq; active EQ unchanged'
     p.ret()
     assert p.ui.screen == PRESETS
+
+
+def test_resetting_asks_first_and_opens_on_cancel(fw):
+    p = page(fw, state(fw, EQ_PEQ, peq=peak(fw, 6))).advanced()
+    p.click('Reset to defaults')
+    assert p.captions() == ['Reset all bands? Confirm', 'Cancel'] and p.ui.screen == CONFIRM
+    assert p.props[(p.ui.view, '_ringnav_index')] == 1 and p.props[(p.ui.view, '_ringnav_count')] == 2
+    assert p.title() == 'Reset to defaults'
+    assert p.ui.draft.bands[0].gain != 0 and not p.ui.dirty
+    p.click('Cancel')
+    assert p.props[(p.ui.view, '_ringnav_index')] == 1 and p.captions()[1] == 'Reset to defaults'  # where the user was
+    assert p.ui.screen == HOME and p.ui.draft.bands[0].gain != 0 and not p.ui.dirty
+    p.click('Reset to defaults')
+    p.ret()
+    assert p.ui.screen == HOME and p.ui.draft.bands[0].gain != 0 and not p.ui.dirty
+    assert p.props[(p.ui.view, '_ringnav_index')] == 1
+    p.click('Reset to defaults')
+    p.click('Reset all bands? Confirm')
+    assert p.props[(p.ui.view, '_ringnav_index')] == 1
+    assert p.ui.screen == HOME and p.ui.draft.bands[0].gain == 0 and p.ui.dirty
+    assert p.title() == 'Reset; choose Apply to activate'
 
 
 def test_a_failed_delete_says_so(fw):
@@ -881,9 +972,71 @@ def test_an_import_with_a_bad_line_says_which(fw):
     p = page(fw, files={f'{IMPORT}/x.txt': b'Preamp: -3 dB\nnonsense\n'}).advanced()
     p.click('Presets')
     p.click('Import from SD /EQ')
-    assert p.captions() == ['x.txt'] and p.title() == 'Presets'
+    assert p.captions() == ['Import all', 'x.txt'] and p.title() == 'Presets'
     p.click('x.txt')
     assert p.title() == 'Line 2: unsupported command' and f'{SAVED}/x.peq' not in p.card.files
+
+
+def test_an_import_list_leaves_out_macos_sidecar_files(fw):
+    p = page(fw, files={f'{IMPORT}/x.txt': b'Preamp: -3 dB\n', f'{IMPORT}/._x.txt': b'\x00\x05\x16\x07'}).advanced()
+    p.click('Presets')
+    p.click('Import from SD /EQ')
+    assert p.captions() == ['Import all', 'x.txt']
+
+
+def room(fw, free=64 << 20):
+    fw.mock('fw_statfs', lambda path, out, *_: (C.c_uint.from_address(out + 4).__setattr__('value', 1),
+                                                C.c_uint.from_address(out + 28).__setattr__('value', free), 0)[2])
+
+
+def importing(fw, files):
+    room(fw)
+    p = page(fw, files={f'{IMPORT}/{n}': b for n, b in files.items()}).advanced()
+    p.click('Presets')
+    p.click('Import from SD /EQ')
+    return p
+
+
+def test_import_all_saves_the_new_names_and_counts_the_rest(fw):
+    good = b'Preamp: -3 dB\nFilter 1: ON PK Fc 500 Hz Gain -3 dB Q 2\n'
+    p = page(fw, files={f'{IMPORT}/a.txt': good, f'{IMPORT}/b.txt': b'nonsense\n', f'{IMPORT}/c.txt': good,
+                        f'{SAVED}/c.peq': b'mine'})
+    room(fw)
+    p = p.advanced()
+    p.click('Presets')
+    p.click('Import from SD /EQ')
+    assert p.captions()[0] == 'Import all'
+    p.click('Import all')
+    assert f'{SAVED}/a.peq' in p.card.files and f'{SAVED}/b.peq' not in p.card.files
+    assert p.card.files[f'{SAVED}/c.peq'] == b'mine' and p.ui.screen == IMPORTS
+    assert not [n for n in p.card.files if n.endswith('.tmp')]
+    assert p.title() == 'Imported 1; 1 already saved; 1 failed'
+
+
+def test_import_all_writes_at_most_the_page_shown(fw):
+    good = b'Preamp: -3 dB\n'
+    p = importing(fw, {f'{k:03}.txt': good for k in range(130)})
+    assert p.captions()[:2] == ['Import this page', 'Next page']
+    assert p.props[(p.ui.view, '_ringnav_index')] == 1  # the first file: Import all is a tick up
+    syncs = []
+    fw.mock('fw_fsync', lambda *_: syncs.append(1) or 0)
+    p.click('Import this page')
+    assert len(syncs) == 128 and p.title() == 'Imported 128; 0 already saved; 0 failed'
+    assert f'{SAVED}/127.peq' in p.card.files and f'{SAVED}/128.peq' not in p.card.files
+    p.click('Next page')
+    assert p.captions()[:2] == ['Import this page', 'Previous page']
+    assert p.props[(p.ui.view, '_ringnav_index')] == 1
+    p.click('Import this page')
+    assert p.title() == 'Imported 2; 0 already saved; 0 failed' and f'{SAVED}/129.peq' in p.card.files
+
+
+def test_import_all_stops_when_the_card_is_nearly_full(fw):
+    good = b'Preamp: -3 dB\n'
+    p = importing(fw, {'a.txt': good, 'b.txt': good})
+    room(fw, 1 << 19)
+    p.click('Import all')
+    assert not [n for n in p.card.files if n.startswith(SAVED)]
+    assert p.title() == 'Imported 0; 0 already saved; 0 failed; storage full'
 
 
 def test_no_imports_says_why(fw):
@@ -1378,6 +1531,7 @@ def test_unapplied_advanced_edits_follow_to_the_new_output(fw):
     fw.fn('eq_output', None, C.c_char_p)(b'3.5mm')
     p.advanced()
     p.click('Reset to defaults')
+    p.click('Reset all bands? Confirm')
     fw.fn('eq_output', None, C.c_char_p)(b'usb')
     p.settle()
     assert p.ui.draft.bands[0].gain == 0 and p.ui.dirty and p.captions()[0] == 'Apply changes' and p.captions()[2] == 'Enabled Off'
@@ -1504,10 +1658,12 @@ def test_a_card_app_s_preset_replaces_the_open_page_s_unapplied_edits_and_its_sw
     card = Card(fw, {ACTIVE: saved(state(fw, EQ_PEQ, peq=peak(fw, 6)))})
     p = Page(fw, card).advanced()
     p.click('Reset to defaults')
+    p.click('Reset all bands? Confirm')
     ask(fw, card, b'e1\nFilter 1: ON PK Fc 500 Hz Gain -3 dB Q 2\n')
     p.settle()
     assert not p.ui.dirty and p.ui.draft.bands[0].frequency == 500 and p.captions()[0] == 'Nothing to apply'
     p.click('Reset to defaults')
+    p.click('Reset all bands? Confirm')
     ask(fw, card, b'e2\noff')
     p.settle()
     assert p.ui.dirty and p.ui.draft.bands[0].gain == 0 and p.captions()[2] == 'Enabled Off'

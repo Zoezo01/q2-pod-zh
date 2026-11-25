@@ -2,26 +2,29 @@
  * own, and made at rest by the idle passes. */
 #include "coverflow.h"
 
-/* Half copies (docs/internals.md#coverflow-depth): HALF x HALF texels, each the mean of four, raw
- * as a texture holds them beside the album's cache file (<key>.jpg.half), 25.6 KB read with one
- * fread and no decode. Going by letters the covers on the screen are all turned and narrow, never
- * face on, so half the art draws them as well, and a slide through tens of albums can load them as
- * it passes them. */
+/* Half copies (docs/internals.md#coverflow-depth): HALF x HALF texels, each the mean of four, raw,
+ * red low and by rows beside the album's cache file (<key>.jpg.half), 25.6 KB read with one fread
+ * and no decode, then turned to a texture's columns and the screen's BGRA8888. Going by letters the
+ * covers on the screen are all turned and narrow, never face on, so half the art draws them as
+ * well, and a slide through tens of albums can load them as it passes them. */
 #define HALF (ART_SIZE / 2)
 #define HALF_TEXELS (HALF * HALF)
 
-/* Album key's half copy read whole into half, HALF_TEXELS; 0 when it has none whole. Files only:
- * the loader's thread calls it. */
+/* Album key's half copy read whole into half, HALF_TEXELS, by columns and in BGRA8888 as a texture
+ * is (the file is by rows, red low); 0 when it has none whole. Files only: the loader's thread
+ * calls it. */
 static int half_load(unsigned key, unsigned *half) {
     char path[512];
     void *f = fopen(art_path(path, key, ".half"), "rb");
     int ok = f && fread(half, HALF_TEXELS * 4, 1, f) == 1;
     if (f) fclose(f);
+    if (ok) cf_transpose(half, HALF);
+    for (int i = 0; ok && i < HALF_TEXELS; ++i) half[i] = bgra(half[i]);
     return ok;
 }
 
-/* The half copy in the last quarter of tex spread over the whole of it, each texel two by two, top
- * down: a half row is read before any write reaches it. */
+/* The half copy in the last quarter of tex spread over the whole of it, each texel two by two, a
+ * column at a time from the first: a half column is read before any write reaches it. */
 static void half_spread(unsigned *tex) {
     const unsigned *half = tex + CF_TEXELS - HALF_TEXELS;
     for (int y = 0; y < HALF; ++y) {
@@ -39,8 +42,8 @@ int half_read(unsigned key, unsigned *tex) {
 }
 
 /* Album key's half copy made from tex, its decoded cover, in place (each texel is read before its
- * own is written), written whole to .half.tmp and renamed, so a write cut short leaves none to
- * read. */
+ * own is written), turned to the file's rows and red low, written whole to .half.tmp and renamed,
+ * so a write cut short leaves none to read. */
 static void half_make(unsigned key, unsigned *tex) {
     char path[512], tmp[512];
     unsigned *half = tex, m = 0xff00ffu;
@@ -51,8 +54,9 @@ static void half_make(unsigned key, unsigned *tex) {
             unsigned a = p[0], b = p[1], c = p[ART_SIZE], d = p[ART_SIZE + 1];
             unsigned rb = (a & m) + (b & m) + (c & m) + (d & m) + 0x20002u,
                      ga = (a >> 8 & m) + (b >> 8 & m) + (c >> 8 & m) + (d >> 8 & m) + 0x20002u;
-            half[y * HALF + x] = (rb >> 2 & m) | (ga >> 2 & m) << 8;
+            half[y * HALF + x] = bgra((rb >> 2 & m) | (ga >> 2 & m) << 8); /* alpha 255 already */
         }
+    cf_transpose(half, HALF);
     void *f = fopen(art_path(tmp, key, ".half.tmp"), "wb");
     int ok = f && fwrite(half, HALF_TEXELS * 4, 1, f) == 1;
     if (f && fclose(f)) ok = 0;

@@ -859,7 +859,8 @@ def test_status_metrics_centre_the_caps_in_the_classic_light_bar():
     assert m['inset'] == ipod.corner_inset(6) + ipod.BAR_PAD == 59  # BAR_PAD clear of the glass at the caps' top
     assert m['clock_text'] == 64 and classic_light_text_w('12:59 PM') <= 64  # its numbers only: Minimal's and Classic's keep CLOCK_TEXT
     assert ipod.CLOCK_TEXT == 70
-    assert m['title'] == [57, -1, 95, g.bar - 1]  # text on columns 59 to 150; a 12-hour clock's starts at 155
+    assert m['title'] == [57, -1, 109, g.bar - 1]  # text on columns 59 to 164; the widest clock beside a title, 23:59 or 11:59 (37 px), starts at 169
+    assert m['title'][0] + m['title'][2] - 2 < (375 - classic_light_text_w('23:59')) / 2  # the title's text ends left of the clock's ink
     assert 2 * m['clock'][0] + m['clock'][2] == 375 and m['title'][1::2] == m['clock'][1::2] == [m['label_y'], g.bar - 1]
     # what a title fits: Local Songs and Now Playing, whole
     assert classic_light_text_w('Local Songs') <= m['title'][2] - 4 and classic_light_text_w('Now Playing') <= m['title'][2] - 4

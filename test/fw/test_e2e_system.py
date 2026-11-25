@@ -2,17 +2,19 @@
 theme, opens Settings and saves a choice, powers off and on again with the same flash, locks, sleeps, wakes and plays.
 A restart is a fresh load of the library sharing the flash, so every global starts again as the Q2's do."""
 import ctypes as C
+import re
 import struct
 
 import pytest
 
 import host
-from conftest import O, Files, in_fork
+from conftest import NAVIGATION_SOURCE, O, Files, in_fork
 
 W_PARENT, EVT_CLICK, TIMER_CTX = O['W_PARENT'], O['EVT_CLICK'], O['TIMER_CTX']
 EVT_KEY_DOWN, EVT_KEY_UP = O['EVT_KEY_DOWN'], O['EVT_KEY_UP']
 KEY_CENTER, KEY_RETURN, KEY_PLAY = O['KEY_CENTER'], O['KEY_RETURN'], O['KEY_PLAY']
 WAKE_MS, IDLE_MS = O['WAKE_MS'], O['IDLE_MS']
+VOLUME_SAVE_MS = int(host.tools_build.need(re.search(r'#define VOLUME_SAVE_MS (\d+)', NAVIGATION_SOURCE), 'no VOLUME_SAVE_MS')[1])
 STOPPED, PLAYING, PAUSED = 1, 2, 3  # mclGetPlayStatus
 RTC_NOW, RTC_ALARM, STATE = '/sys/class/rtc/rtc0/since_epoch', '/sys/class/rtc/rtc0/wakealarm', '/mnt/data/q2-state'
 NOON, NIGHT = 1699963200, 1699999200  # 2023-11-14, 12:00 and 22:00 UTC
@@ -1139,7 +1141,7 @@ def test_the_state_record_says_what_the_q2_does_and_a_power_off_removes_it(q2):
     q2.loop()
     assert q2.flash.files[STATE] == b'screen:off power:running cable:out battery:64 play:stopped out:jack\n'
     q2.loop()
-    assert [path for path, _ in q2.disk.written].count(STATE) == 1  # rewritten only on a change
+    assert [path for path, _ in q2.disk.written].count(STATE + '.tmp') == 1  # rewritten only on a change
     q2.status, q2.way = PLAYING, 1
     lit(q2)
     assert q2.flash.files[STATE] == b'screen:on power:running cable:out battery:64 play:playing out:bluetooth\n'
@@ -1148,6 +1150,21 @@ def test_the_state_record_says_what_the_q2_does_and_a_power_off_removes_it(q2):
     assert STATE not in q2.flash.files and events == [(9, WDT_STOP, None)]  # a clean end: nothing to report
     q2.loop()
     assert STATE not in q2.flash.files and events == [(9, WDT_STOP, None)]  # nothing fed or recorded after
+
+
+def test_a_state_record_not_written_whole_leaves_the_last_one(q2):
+    watchdog(q2)
+    q2.fw.var('fw_ctx_g_power_capacity', C.c_int).value = 64
+    q2.loop()
+    old = q2.flash.files[STATE]
+    q2.fw.mock('fw_fwrite', lambda *_: 0)  # the flash full, or the power gone, mid-write
+    q2.fw.var('fw_ctx_g_power_capacity', C.c_int).value = 63
+    opened = len(q2.fw.calls('fw_fopen'))
+    for _ in range(4):
+        q2.loop()
+    assert q2.flash.files[STATE] == old
+    tries = [c for c in q2.fw.calls('fw_fopen')[opened:] if C.string_at(c[1][0]) == (STATE + '.tmp').encode()]
+    assert len(tries) == 1  # once a change, not once a pass
 
 
 # The headset (docs/internals.md#headset-controls-and-volume).
@@ -1188,8 +1205,8 @@ def test_bluetooth_and_the_wire_keep_their_own_volumes_across_a_restart(q2):
     output(q2, 1)  # a headset connects
     assert q2.way == 1 and volume() == 30  # no Bluetooth level saved yet: the wired one carries over
     set_volume(q2, 55)
+    output(q2, 0)  # it goes, the level just set still to save: under its own key
     assert q2.flash.get('PLAYSET', 'VOLUME') == '30' and q2.flash.get('PLAYSET', 'BT_VOLUME') == '55'
-    output(q2, 0)  # it goes
     assert volume() == 30 and q2.fw.calls('device_set_volume')[-1][1][0] == 30
     q2.power_on()
     q2.var('g_maxvolume').value = 100
@@ -1200,6 +1217,68 @@ def test_bluetooth_and_the_wire_keep_their_own_volumes_across_a_restart(q2):
     output(q2, 0)
     output(q2, 1)
     assert volume() == 40
+
+
+def saves(q2):
+    """Each volume save that reached config.ini, a rewrite of the whole file: (level, key)."""
+    return [(a[0], C.string_at(a[2])) for _, a in q2.fw.calls('stock_write_config_trampoline')]
+
+
+@pytest.mark.parametrize('way, lit, gap, key', [
+    (0, 1, 40, b'VOLUME'), (0, 0, 40, b'VOLUME'),  # the wheel: a tick every 40 ms, the screen on or off
+    (1, 1, 400, b'BT_VOLUME'), (1, 0, O['BT_VOLUME_SLOW_MS'], b'BT_VOLUME'),  # a headset's key held, at bt_volume_poll's pace
+])
+def test_a_volume_gesture_is_one_save_once_it_settles(q2, way, lit, gap, key):
+    q2.way = way
+    q2.var('g_backlight_status').value, q2.var('g_maxvolume').value = lit, 100
+    for v in range(21, 51):  # thirty steps
+        set_volume(q2, v)
+        q2.loop(ms=gap)
+    assert saves(q2) == []
+    q2.loop(ms=VOLUME_SAVE_MS - gap - 1)
+    assert saves(q2) == []
+    q2.loop(ms=1)
+    q2.loop(ms=VOLUME_SAVE_MS)
+    assert saves(q2) == [(50, key)]
+
+
+def test_a_volume_set_just_before_standby_or_a_power_off_is_saved_first(q2):
+    set_volume(q2, 42)
+    suspend, seen = q2.suspend, []
+    q2.fw.mock('stock_standby_trampoline', lambda *_: seen.append(q2.flash.get('PLAYSET', 'VOLUME')) or suspend())
+    standby(q2, 60)
+    assert seen == ['42']  # on the flash before the suspend
+    set_volume(q2, 43)
+    q2.fw.fn('ringnav_savequeue', C.c_int)()  # the power-off page's into_poweroff saves, hooked
+    assert q2.flash.get('PLAYSET', 'VOLUME') == '43'
+    set_volume(q2, 44)  # under the update's dialog, whose open was a clean end already
+    q2.fw.fn('ringnav_clean_end', None)()  # its reboot's
+    assert q2.flash.get('PLAYSET', 'VOLUME') == '44'
+
+
+def test_a_volume_still_to_save_after_reset_settings_removed_config_ini_is_dropped(q2):
+    set_volume(q2, 42)
+    # Reset Settings Only: stock's init_usersetting removed config.ini, then device_reboot
+    q2.fw.mock('fw_access', lambda path, *_: -(C.string_at(path) == b'/mnt/data/config.ini'))
+    q2.fw.fn('ringnav_clean_end', None)()  # the reboot's, hooked
+    assert saves(q2) == []  # a config.ini of the volume alone would start every other setting at its default
+
+
+def test_another_setting_is_saved_at_once_and_leaves_a_held_volume_to_settle(q2):
+    set_volume(q2, 42)
+    q2.fw.fn('write_int_config', C.c_long, C.c_long, C.c_char_p, C.c_char_p)(1, b'SYSSET', b'KEYTONE')
+    assert q2.flash.get('SYSSET', 'KEYTONE') == '1' and saves(q2) == [(1, b'KEYTONE')]
+    q2.loop(ms=VOLUME_SAVE_MS)
+    assert saves(q2) == [(1, b'KEYTONE'), (42, b'VOLUME')]
+
+
+def test_a_volume_saved_under_another_key_writes_the_held_one_first(q2):
+    set_volume(q2, 42)
+    q2.way = 1  # Bluetooth, the output's hook not passed
+    set_volume(q2, 55)
+    assert saves(q2) == [(42, b'VOLUME')]
+    q2.loop(ms=VOLUME_SAVE_MS)
+    assert saves(q2) == [(42, b'VOLUME'), (55, b'BT_VOLUME')]
 
 
 class Headset:
@@ -1246,6 +1325,7 @@ def test_control_device_volume_hands_the_volume_to_the_headset_and_follows_its_k
     headset.level = 100  # its own keys: 100/127 of its range, 79 of the Q2's 100
     q2.loop(ms=500)
     assert q2.var('g_volume').value == nearest(100 * 100 / 127) == 79
+    q2.loop(ms=VOLUME_SAVE_MS)
     assert q2.flash.get('PLAYSET', 'BT_VOLUME') == '79'
     q2.var('g_maxvolume').value = 60
     headset.level = 127

@@ -194,7 +194,8 @@ class Machine:
                   'closedir@GLIBC_2.0', 'pthread_mutex_lock@GLIBC_2.0',
                   'pthread_mutex_unlock@GLIBC_2.0', 'calloc@GLIBC_2.0', 'realloc@GLIBC_2.0',
                   'strdup@GLIBC_2.0',  # no /proc/mounts: the boot logo's poll sees no card
-                  'fread@GLIBC_2.0','fwrite@GLIBC_2.0','fclose@GLIBC_2.2','rename@GLIBC_2.0')
+                  'fread@GLIBC_2.0','fwrite@GLIBC_2.0','fclose@GLIBC_2.2','rename@GLIBC_2.0',
+                  'ferror@GLIBC_2.0','__errno_location@GLIBC_2.0')  # blob_load's: no error, a missing file ENOENT
         self.word(0xa3a270,0x1000010); self.handlers[0x1000010]='scope_free'
         self.resized=[]  # the bytes each realloc kept
         self.sized={}  # a block's size, for realloc to spoil only that
@@ -223,6 +224,7 @@ class Machine:
         for name,size in CONTEXT_DATA.items(): self.u.mem_write(syms[name],bytes(size))
         self.word(syms['g_class_type'],0xf001)
         self.byte(syms['g_backlight_status'],1)
+        self.byte(syms['g_maxvolume'],100)  # as stock boots: no Max Volume limit, so no mark under a volume bar
     def probe_canvas(self, lcd_type=1, vg=0, rect=(10,10,100,40), color=None):
         """Real stock canvas code runs; mock only the services it reaches."""
         for n in ('canvas_fill_rounded_rect','canvas_stroke_rounded_rect','canvas_set_fill_color'):
@@ -412,6 +414,9 @@ class Machine:
                 n,t=self.scope_handles[a].pop(0); ret=self.alloc(268)
                 self.byte(ret+10,t); self.u.mem_write(ret+11,n.encode()+b'\0')
         elif name=='closedir@GLIBC_2.0': self.scope_handles.pop(a,None); ret=0
+        elif name=='__errno_location@GLIBC_2.0':  # ENOENT: every failed open here is a missing file
+            if not getattr(self,'enoent',0): self.enoent=self.alloc(4); self.word(self.enoent,2)
+            ret=self.enoent
         elif name=='fopen@GLIBC_2.2':  # the marker rules file alone; any other file is missing
             path,mode=self.text(a),self.text(b); ret=0
             if path.startswith(SCOPE_RULES) and (mode=='wb' or path in self.scope_files):
@@ -829,7 +834,7 @@ class Machine:
     def list_surface(self,virtual,n=20,rebind=True):
         """A plain list of n 48px rows or a four-row virtual table; optionally rebound."""
         if not virtual:
-            w,es=self.page_list(n,extent=n*48)
+            w,es=self.page_list(n,extent=n*48,name='allmusic_page')  # a content list: it remembers its row
             return w,None
         w,rs,es=self.table_page(rebind=rebind)
         return w,rs
@@ -872,7 +877,7 @@ assert [render(t,c,v) for c,v in (('n',w),('n',0x1234),('s',t.string('Songs')),(
         '1.5','ringnav_paint','ringnav_paint','P','S','%08x'%(BASE-4),'%08x'%(SCRATCH+SCRATCH_MAX)]
 for r,v in zip((*REGS,UC_MIPS_REG_SP,UC_MIPS_REG_T9),(t.canvas,text,2,10,0x7000f000,syms['canvas_draw_text'])): t.u.reg_write(r,v)
 t.word(0x7000f010,-20); t.hook(t.u,syms['canvas_draw_text'],4,None)
-t.rockbox_mode=0; t.call(address=payload_syms['ipod_home_shortcut'],args=(0,0,0,0),gap=0)  # "Favorites", a literal: P
+t.rockbox_mode=0; t.call(address=payload_syms['ipod_home_shortcut'],args=(0,0,0,0),gap=0)  # "Favourites", a literal: P
 assert TRACE.getvalue().splitlines()==['canvas_draw_text\t"OK"\t10\t-20','ret\tipod_home_shortcut\tP']
 COVER=r'(vg:vgcanvas_|canvas_|widget_set_prop|widget_move_resize$|widget_resize$|widget_set_opacity$|widget_use_style$|image_)'
 assert {n for n in t.handlers.values() if re.match(COVER,n) and n.removeprefix('vg:') in FUNCTIONS}|{'canvas_set_global_alpha'}<=TRACE_ARGS.keys()
@@ -998,12 +1003,18 @@ def album_row(boot):
     assert m.call(address=0x4a6910,args=(w,w,1,0))==0
     return m,m.nodes[m.nodes[w]['children'][0]]['children'][0]
 
-# Long Return executes the stock gates and release filter.
-def long_machine():
+def load_song(m):
+    """A song at the queue's place (queue_loaded), as the base machine's deque mocks answer: one record."""
+    m.mock('deque_size', 'deque_at')
+    m.row_record = m.alloc(0x80); m.word(syms['mcl_pdeqplaylist'], m.alloc(0x20)); m.word(O['MCL_POS'], 0)
+    return m
+
+# Long Return executes the stock gates and release filter. Loaded, Now Playing has a song to show.
+def long_machine(loaded=True):
     m = Machine()
     m.mock('netdisk_folder_clear', 'navigator_back_to_home', 'awake_screen',
            'getFormatString', 'navigator_to_with_context', 'navigator_window_is_exist')
-    return m
+    return load_song(m) if loaded else m
 
 def long_return(m):
     return m.call(170, address=syms['on_wm_keylong_fun'], event_type=0x111, gap=0)
@@ -1138,6 +1149,7 @@ class NavigationMachine(Machine):
     def __init__(self):
         super().__init__()
         self.order=[]; self.block_open=False
+        load_song(self)  # Now Playing opens on a song (queue_loaded)
         self.word(self.wm+0x94,0x9b42b0)
         for name in ('navigator_switch_to_with_context','navigator_back_to_home','navigator_to_with_context',
                      'navigator_to','window_close'):
@@ -1378,7 +1390,7 @@ class QueueMachine(Machine):
         """Wheel down steps rows, hold, pick a menu row and let the deferred action run."""
         for _ in range(steps): self.call()
         n=len(self.toasts); self.t=getattr(self,"t",7000)+1; self.press(self.t); assert self.hold()==11 and self.release()==0
-        self.pick(row); self.advance(0)
+        self.pick(row); self.advance(0); blink_out(self)
         return self.toasts[-1][3] if len(self.toasts)>n else None
     def labels(self): return [self.nodes[self.nodes[i]['children'][0]]['text'] for i in self.nodes[self.view]['children']]
     def playback(self): return [c for c in self.calls if c[0] in ('mclStartPlayer','mclStop','mclSetPause','mclSetResume','mclSetSeek','playpause_quick_click')]
@@ -1703,7 +1715,7 @@ a_mac,b_mac='AA:AA:AA:AA:AA:AA','BB:BB:BB:BB:BB:BB'
 # and stock gain; device_set_volume itself executes its native output routing.
 class OutputVolumeMachine(Machine):
     def __init__(self,config=()):
-        super().__init__(); self.way=0; self.config.update(config)
+        super().__init__(); self.way=0; self.config.update(config); self.present.add('/mnt/data/config.ini')
         self.byte(syms['g_volume'],20); self.byte(syms['g_maxvolume'],100)
         self.handlers.pop(syms['write_int_config'])
         for name,label in (('mclSetOutputWay','output'),('write_int_config','write_config')):
@@ -2204,7 +2216,9 @@ class CoverflowMachine(QueueMachine):
         view,self.imgs=home_list(self); self.img=self.imgs[2]; self.home=self.top; self.stack=[self.top]
         self.art=named(self,self.top,'img_homeart'); self.list=named(self,self.top,'list_view_home')
         assert self.call(address=home_hook[0],args=(self.top,0,0,0),gap=0)==0
-        self.paint(view); self.nodes[view]['_ringnav_index']=2
+        # Cover Flow's row among those shown: Now Playing's is first only while a song is loaded (queue_loaded)
+        shown=[r for r in self.nodes[view]['children'] if self.nodes[r].get('visible',1)]
+        self.paint(view); self.nodes[view]['_ringnav_index']=next(i for i,r in enumerate(shown) if named(self,r,'img_cover_flow'))
         self.clicks=[]; assert self.confirm()==11 and self.clicks==[self.img]
         f,ctx=self.handler(self.img,O['EVT_CLICK']); assert self.call(address=f,args=(ctx,self.event,0,0),gap=0)==0
         self.page=self.top; self.slide=self.find('slide_menu')
@@ -2859,9 +2873,15 @@ def rate_poll(m,left=5):
     m.byte(O['BC_IDLE'],left); m.handlers[HOOKS['main_loop_sleep_default'][0]+12]='stock_sleep'
     m.call(address=HOOKS['main_loop_sleep_default'][0],args=(0x1234,0,0,0),gap=0); return m.u.mem_read(O['BC_IDLE'],1)[0]
 
+def blink_out(m):
+    """A Play Next or Add to Queue that worked blinks its row (queue_menu.c QM_BLINK_MS), then the menu closes: run
+    both halves out."""
+    for name in ('qm_lit','qm_blinked'):
+        due=next((t[0] for t in m.timers.values() if t[1]==payload_syms[name]),None)
+        if due is not None: m.advance(due-m.now,clear=False)
 def hold_pick(m,row):
     n=len(m.toasts); m.t=getattr(m,'t',7000)+1; m.press(m.t); assert m.hold()==11 and m.release()==0
-    m.pick(row); m.advance(0)
+    m.pick(row); m.advance(0); blink_out(m)
     return m.toasts[-1][3] if len(m.toasts)>n else None
 def classic_half(machine,light,**kw):
     SETUP[:]=[lambda k:(k.config.update(THEME='1',LIGHT=light),k)]
@@ -3234,14 +3254,18 @@ ps=payload_syms
 
 from theme import builtins as theme_builtins
 
-def fitted(px,w,h):
+def columns(px,n=160):
+    """An n x n image by rows, red low, as a texture holds it: by columns (texel x, y at x * n + y), the screen's BGRA8888."""
+    return bytes(px[4*(y*n+x)+k] for x in range(n) for y in range(n) for k in (2,1,0,3))
+
+def fitted(px,w,h):  # cf_decode's texture of a w x h image
     side=max(w,h); out=[]
     for y in range(160):
         sy=y*side//160-(side-h)//2
         for x in range(160):
             sx=x*side//160-(side-w)//2
             out.append(px[(sy*w+sx)*4:(sy*w+sx)*4+4] if 0<=sx<w and 0<=sy<h else struct.pack('<I',0xff000000))
-    return b''.join(out)
+    return columns(b''.join(out))
 
 class Starved(DepthMachine):
     def hook(self,u,address,size,unused):
@@ -3369,9 +3393,9 @@ class HalfMachine(FileMocks,DepthMachine):
             path=self.text(a); self.opened.append(path)
             self.files.setdefault(path,cover_pixels(300+len(self.files),80*80)[:100 if self.cut else None])
         self.returns(self.file_op(u,name,a,b,c,d),clobber=True)
-def spread(h):  # a half copy's texels, each two by two
+def spread(h):  # a half copy's texels (the file's, by rows), each two by two, as a texture
     rows=[b''.join(h[4*(y*80+x):4*(y*80+x)+4]*2 for x in range(80)) for y in range(80)]
-    return b''.join(r+r for r in rows)
+    return columns(b''.join(r+r for r in rows))
 
 class PlArtMachine(Machine):
     def __init__(self):
@@ -3567,7 +3591,7 @@ class RockboxMachine(Machine):
         name=self.handlers.get(address,'')
         if not name.startswith('r:'): return super().hook(u,address,size,unused)
         name=name[2:].split('@')[0]; a=u.reg_read(UC_MIPS_REG_A0); self.calls.append((name,a))
-        self.returns(0x2000000 if name=='fopen' else 0)
+        self.returns(0x2000000 if name=='fopen' and self.text(a)=='/tmp/q2pod-rockbox' else 0)  # any other file is missing
 def rockbox(card):
     m=RockboxMachine(); m.rockbox_mode=0o100755 if card else 0
     for n in ('fopen@GLIBC_2.2','fclose@GLIBC_2.2','system@GLIBC_2.0'): m.handlers[syms[n]]='r:'+n
@@ -4711,7 +4735,7 @@ class ResumeMachine(QueueMachine):
         if name=='fopen':
             path,mode=self.text(a),self.text(b)
             # the boot logo's lit-only mount poll; dark, any open counts
-            self.opens+=path!=RECORD and (path!='/proc/mounts' or not self.u.mem_read(syms['g_backlight_status'],1)[0])
+            self.opens+=path not in (RECORD,RECORD+'.tmp') and (path!='/proc/mounts' or not self.u.mem_read(syms['g_backlight_status'],1)[0])
             if mode=='rb' and path not in self.files: ret=0
             else: ret=0x2000000+len(self.calls); self.open[ret]=[path,mode,0,b'' if mode=='wb' else self.files.get(path,b'')]
         elif name=='fread':
@@ -4724,7 +4748,7 @@ class ResumeMachine(QueueMachine):
             if mode in ('wb','ab'): self.files[path]=data
         elif name=='access': ret=0 if self.text(a) in self.files else -1
         elif name=='time': ret=self.epoch
-        elif name=='rename': self.renames+=1; self.files[self.text(b)]=self.files.pop(self.text(a))
+        elif name=='rename': self.renames+=self.text(b)!=RECORD; self.files[self.text(b)]=self.files.pop(self.text(a))
         elif name=='player_playtime_and_length':
             if self.play[1]: self.word(a,self.play[0]); self.word(b,self.play[1]); ret=1
             else: ret=-1
@@ -4753,6 +4777,7 @@ def logged(m): return len(m.files.get('/mnt/mmc/.scrobbler.log',b'').split(b'\n'
 
 def settings_page(hook,view_name,config={},stock_rows=2,bt=1,boot=False,cls=QueueMachine,sub=0):
     m=cls(); m.config.update(config); m.restack=True
+    m.present.add('/mnt/data/config.ini')  # a slider page's close writes only into a settings file that is there
     if hook=='display': m.word(payload_syms['display_sub'],sub)  # 3: Controls
     if hook=='audioset': m.word(payload_syms['playset_sub'],sub)  # 1: Library & Folders
     if boot:
@@ -5063,9 +5088,11 @@ class PowerMachine(ResumeMachine):
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,''); a=u.reg_read(REGS[0])
         if name.startswith('r:fclose') and self.open.get(a,[0,0])[1]=='w':
-            path,_,_,data=self.open.pop(a); self.files[path]=data; (self.records if path==RECORD else self.writes).append((path,data)); self.calls.append(('fclose',a,0,0))
+            path,_,_,data=self.open.pop(a); self.files[path]=data; self.writes.append((path,data)); self.calls.append(('fclose',a,0,0))
             self.returns(0); return
-        if name.startswith(('p:fflush','p:fileno','p:fsync')) and (a==RECORD_FD or self.open.get(a,[''])[0]==RECORD):
+        if name.startswith('r:rename') and self.text(u.reg_read(REGS[1]))==RECORD:  # the record, written whole (blob_io)
+            super().hook(u,address,size,unused); self.records.append((RECORD,self.files[RECORD])); return
+        if name.startswith(('p:fflush','p:fileno','p:fsync')) and (a==RECORD_FD or self.open.get(a,[''])[0]==RECORD+'.tmp'):
             self.returns(RECORD_FD if name.startswith('p:fileno') else 0); return  # the record's sync, apart from the marker's
         if name.startswith('r:fopen') and self.text(u.reg_read(REGS[1]))=='w':
             ret=0x2000000+len(self.calls); self.open[ret]=[self.text(a),'w',0,b'']; self.calls.append(('fopen',a,0,0))

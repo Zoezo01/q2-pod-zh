@@ -136,6 +136,7 @@ class Ui:
         m('widget_get_text', self.get_text)
         m('widget_set_text', self.set_wide)
         m('widget_set_text_utf8', lambda w, s, *_: self.set_text(self.nodes[w], C.string_at(s).decode()))
+        m('widget_get_text_utf8', self.get_utf8)
         m('image_base_set_image', lambda w, s, *_: self.nodes[w].props.__setitem__('image', C.string_at(s).decode()))
         m('widget_set_name', lambda w, s, *_: setattr(self.nodes[w], 'name', C.string_at(s).decode()))
         m('widget_use_style', lambda w, s, *_: self.nodes[w].props.__setitem__('style', C.string_at(s).decode()))
@@ -195,6 +196,11 @@ class Ui:
     def get_text(self, w, *_):
         node = self.nodes.get(w)
         return C.addressof(node.wide) if node is not None and node.wide is not None else 0
+
+    def get_utf8(self, w, out, size, *_):
+        text = self.text(self.nodes[w]).encode()[:i32(size) - 1] if w in self.nodes else b''
+        C.memmove(out, text + b'\0', len(text) + 1)
+        return 0
 
     def set_wide(self, w, s, *_):
         chars = []
@@ -758,6 +764,28 @@ def solid(row):
     return len(set(row[2])) == 1 and row[2][0]
 
 
+@pytest.mark.parametrize('rgb, h', [((0x1c1c1c, 0x1c1c1c), 320), ((0x1c1c1c,) * 3, 7), ((0x1c1c1c, 0x2c2c2c), 320),
+                                    ((0x1c1c1c, 0x1c1c1c, 0x2c2c2c), 7), ((0x1c1c1c, 0x2c2c2c, 0x1c1c1c), 7),
+                                    ((0x1c1c1c, 0x1c1c1c), 0), ((0x1c1c1c,), 5)])
+def test_stops_of_one_colour_are_one_fill_of_the_box(fw, layout, rgb, h):
+    """paint_stops: a rect a row down a ramp; stops all one colour (Quick Settings' and Home's pane's ground, Classic's
+    bar) one opaque rect of the whole box, the same pixels; no rows, or under two stops, nothing."""
+    _, at = layout
+    stops = C.create_string_buffer(at['rgb'] + 4 * 13)
+    struct.pack_into('B', stops, at['n'], len(rgb))
+    for i, c in enumerate(rgb):
+        struct.pack_into('B', stops, at['pos'] + i, 100 * i // max(len(rgb) - 1, 1))
+        struct.pack_into('<I', stops, at['rgb'] + 4 * i, c)
+    canvas = Canvas(fw)
+    fw.fn('paint_stops', None, C.c_void_p, C.c_int, C.c_int, C.c_int, C.c_int, C.c_void_p)(canvas.addr, 3, 4, 50, h, stops)
+    if len(rgb) < 2 or not h:
+        assert canvas.rects == []
+    elif len(set(rgb)) == 1:
+        assert canvas.rects == [((3, 4, 50, h), rgba(rgb[0]))]
+    else:
+        assert [r[0] for r in canvas.rects] == [(3, 4 + j, 50, 1) for j in range(h)]
+
+
 def mix(a, b, j, n):
     """0xRRGGBB j/n of the way from a to b, per channel."""
     return sum((((a >> s & 255) * (n - j) + (b >> s & 255) * j) // n) << s for s in (0, 8, 16))
@@ -1012,7 +1040,7 @@ class Confirm:
             self.check = ui.add('check_button', self.win, (40, 124, 295, 40), 'msg_delcheckbutton', value=check)
             ui.set_text(self.check, 'Also delete source file')
         self.cancel = ui.add('button', self.win, (40, 250, 140, 50), 'img_cancel').clickable()
-        self.enter = ui.add('button', self.win, (195, 250, 140, 50), 'img_enter').clickable()
+        self.enter = ui.add('button', self.win, (195, 250, 140, 50), 'img_enter', tr_text=cells[1]).clickable()
         ui.set_text(self.cancel, cells[0])
         ui.set_text(self.enter, cells[1])
         self.canvas = Canvas(fw)
@@ -1153,14 +1181,16 @@ def test_a_row_actions_question_is_the_tray_its_cell_the_verb(fw, st):
         canvas = confirm.paint()
         seen['tray'] = (ui.text(confirm.enter), confirm.lines[0].visible, list(canvas.images),
                         [confirm.cancel.box, confirm.enter.box], {t: c for t, r, c in canvas.texts[1::2]})
-        over = Confirm(fw, ui, ['Shut down?'])  # a prompt stock opens over it stays a question
+        g(fw, 'g_poweroff_state', 1)  # a held power key: stock opens Shut Down? over it, a question
+        over = Confirm(fw, ui, ['Shut down?'])
         over.paint()
+        g(fw, 'g_poweroff_state', 0)
         seen['over'] = (ui.text(over.enter), over.lines[0].visible, over.lines[0].box, over.enter.box)
         return 1
 
     fw.mock('navigator_to_with_context', open_dialog)
     verb = C.create_string_buffer(b'Delete')
-    assert fw.fn('playlists__confirm_over', C.c_int, C.c_void_p, C.c_char_p)(None, verb) == 1
+    assert fw.fn('confirm_over', C.c_int, C.c_void_p, C.c_char_p, C.c_int)(None, verb, 1) == 1
     text, shown, images, cells, inks = seen['tray']
     assert text == 'Delete' and not shown  # the cell says what it's for; no question
     (ix, iy, iw, ih), = images  # the tray's shadow at its art's size, centred, the cells on it
@@ -1168,7 +1198,7 @@ def test_a_row_actions_question_is_the_tray_its_cell_the_verb(fw, st):
     assert all(ix <= x and x + w <= ix + iw and iy <= y and y + h <= iy + ih for x, y, w, h in cells)
     assert inks['Cancel'] == inks['Delete']  # lit or not, both cells' text alike
     text, shown, (lx, ly, lw, lh), (_, y, _, _) = seen['over']
-    assert text == 'OK' and shown and ly + lh <= y  # its prompt asked, the cells under it
+    assert text == 'Shut Down' and shown and ly + lh <= y  # its own verb, its prompt asked, the cells under it
     after = Confirm(fw, ui, ['Shut down?'])  # the row action answered: the next confirm is a question
     after.paint()
     assert ui.text(after.enter) == 'OK' and after.lines[0].visible
@@ -1180,6 +1210,61 @@ def test_minimal_leaves_stocks_confirm(fw, st):
     box = confirm.cancel.box
     confirm.paint()
     assert confirm.cancel.box == box and 'style:normal:bg_color' not in confirm.win.props
+    g(fw, 'g_poweroff_state', 1)  # a held power key's Shut Down? names its verb, undressed
+    down = Confirm(fw, confirm.ui, ['Shut Down?'])
+    down.paint()
+    g(fw, 'g_poweroff_state', 0)
+    assert confirm.ui.text(down.enter) == 'Shut Down' and down.enter.box == (195, 250, 140, 50)
+
+
+@pytest.mark.parametrize('minimal', [0, 1])
+def test_a_confirms_second_cell_is_its_verb(fw, st, minimal):
+    """Restart to apply? says Restart, Shut Down? Shut Down and Delete File Delete, Minimal's full-width rows too;
+    the cell is measured with its verb."""
+    ui = Ui(fw) if minimal else classic(fw, st)
+    if minimal:
+        theme(fw, MINIMAL)
+    seen = {}
+
+    def open_dialog(name, prompt, *_):
+        confirm = Confirm(fw, ui, ['Restart to apply?'])
+        confirm.paint()
+        seen['restart'] = (ui.text(confirm.enter), confirm.lines[0].visible, confirm.enter.box[2])
+        return 10
+
+    fw.mock('navigator_to_with_context', open_dialog)
+    assert fw.fn('restart_asked', C.c_int)() == 1
+    text, shown, width = seen['restart']
+    assert text == 'Restart' and shown  # the page, not the tray: its question asked
+    g(fw, 'g_poweroff_state', 1)
+    down = Confirm(fw, ui, ['Shut Down?'])
+    down.paint()
+    g(fw, 'g_poweroff_state', 0)
+    delete = Confirm(fw, ui, ['Delete this song?'], check=0)
+    delete.paint()
+    assert (ui.text(down.enter), ui.text(delete.enter)) == ('Shut Down', 'Delete')
+    if minimal:  # no cell moved: only its text (the build's asset makes them 375 x 48 rows, tools/ipod.py)
+        assert down.enter.box == delete.enter.box == (195, 250, 140, 50)
+    else:  # a longer verb, a wider cell
+        assert down.enter.box[2] > width > delete.enter.box[2]
+
+
+def test_shut_down_names_only_its_own_prompt(fw, st):
+    """g_poweroff_state 1 names the top window's cell alone: a prompt under Shut Down? keeps OK, and one that was top
+    when the power key set the state reads OK again, as its tr_text has it, once the state clears."""
+    ui = classic(fw, st)
+    fw.mock('widget_set_tr_text', lambda w, s, *_: ui.set_text(ui.nodes[w], C.string_at(s).decode()) or 0)
+    under = Confirm(fw, ui, ['Remove from playlist?'])
+    g(fw, 'g_poweroff_state', 1)
+    Confirm(fw, ui, ['Shut Down?']).paint()  # over it, top
+    under.paint()
+    assert ui.text(under.enter) == 'OK'
+    ui.top = under.win  # top when the state was set, before Shut Down? opened
+    under.paint()
+    assert ui.text(under.enter) == 'Shut Down'
+    g(fw, 'g_poweroff_state', 0)
+    under.paint()
+    assert ui.text(under.enter) == 'OK'
 
 
 # The toast and the update's dialog: a box sized to its lines.
@@ -1660,6 +1745,67 @@ def test_power_adds_standby_charge_and_in_vehicle_rows_after_stocks(fw):
         assert icon.box[3] == label.box[3] == button.box[3]
     tr = [C.string_at(c[1][1]) for c in fw.calls('widget_set_tr_text')]
     assert tr == [b'system_carmode']  # stock's row, stock's translation
+
+
+def sleep_power(fw, which, running, seconds, name='0'):
+    """Power with stock's Sleep Timer row as systemset_powermanager_page_init builds it (its list_item and button both
+    named "0", its title the button's hscroll_label, tr_text powerm_sleep), the timer switched on or off with seconds
+    left on stock's count: (ui, win, the title)."""
+    ui, win, view, settings, build = settings_page(fw, which, 'powermanager_page', 'scroll_view_powermanager')
+    title = []
+
+    def stock(*_):
+        item = ui.add('list_item', view, (0, 0, 375, 70), name)
+        button = ui.add('button', item, (20, 0, 335, 70), name)
+        title.append(ui.add('hscroll_label', button, (10, 0, 246, 70)))
+        ui.set_text(title[0], 'Sleep Timer')
+        return 3
+    fw.mock('stock_power_trampoline', stock)
+    fw.var('g_sleepflag', C.c_ubyte).value = running
+    fw.var('fw_ctx_g_sleep_time', C.c_int).value = seconds
+    fw.fn('ringnav_powermanager', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
+    return ui, win, title[0]
+
+
+def tr_texts(fw, label):
+    return [C.string_at(c[1][1]) for c in fw.calls('widget_set_tr_text') if c[1][0] == label.addr]
+
+
+@pytest.mark.parametrize('which', [MINIMAL, CLASSIC])
+@pytest.mark.parametrize('seconds, shown', [(1, 'Sleep Timer: 1 min'), (60, 'Sleep Timer: 1 min'),
+                                            (61, 'Sleep Timer: 2 min'), (2700, 'Sleep Timer: 45 min'),
+                                            (3541, 'Sleep Timer: 1:00'), (3600, 'Sleep Timer: 1:00'),
+                                            (5400, 'Sleep Timer: 1:30'),
+                                            (23 * 3600 + 59 * 60, 'Sleep Timer: 23:59')])
+def test_power_s_sleep_timer_row_shows_the_time_left_while_it_runs(fw, which, seconds, shown):
+    """Stock's own count, g_sleep_time's seconds left, in whole minutes rounded up, in the row's title."""
+    ui, win, title = sleep_power(fw, which, 1, seconds)
+    assert ui.text(title) == shown
+
+
+@pytest.mark.parametrize('running, seconds', [(0, 0), (0, 1800), (1, 0)])
+def test_power_s_sleep_timer_row_is_stock_s_while_it_does_not_run(fw, running, seconds):
+    """Off, or on with no time set (stock counts nothing at 0): stock's title, from its own tr_text."""
+    ui, win, title = sleep_power(fw, MINIMAL, running, seconds)
+    assert ui.text(title) == 'Sleep Timer' and tr_texts(fw, title)[-1:] == [b'powerm_sleep']
+
+
+def test_power_s_sleep_timer_row_follows_the_timer_when_power_is_back(fw):
+    ui, win, title = sleep_power(fw, MINIMAL, 0, 0)
+    fw.var('g_sleepflag', C.c_ubyte).value = 1
+    fw.var('fw_ctx_g_sleep_time', C.c_int).value = 1800  # set on the Sleep Timer page, then Return
+    ui.fire(win, O['EVT_WINDOW_FOREGROUND'])
+    assert ui.text(title) == 'Sleep Timer: 30 min'
+    fw.var('g_sleepflag', C.c_ubyte).value = 0  # switched off there
+    ui.fire(win, O['EVT_WINDOW_FOREGROUND'])
+    assert tr_texts(fw, title) == [b'powerm_sleep'] * 2  # the open's, then the return's
+
+
+def test_a_power_page_without_stock_s_named_row_is_left_alone(fw):
+    """No row named "0" (another stock's Power): the timer running, nothing is set, as Power opens or comes back."""
+    ui, win, title = sleep_power(fw, MINIMAL, 1, 1800, name=None)
+    ui.fire(win, O['EVT_WINDOW_FOREGROUND'])
+    assert ui.text(title) == 'Sleep Timer' and tr_texts(fw, title) == []
 
 
 def test_system_update_adds_remind_daily_under_network_update_on_by_default(fw):
@@ -2787,6 +2933,45 @@ def test_off_the_lyrics_page_the_follow_scrolls(fw, st):
     st('lyric_glide').value = 1
     follow(fw, lrc, 60)
     assert st('lyric_glide').value == 0 and fw.calls('scroll_view_scroll_to')
+
+
+def test_the_follow_owed_from_the_dark_scrolls_at_once(fw, st):
+    """The first lit update after skipped dark ticks (ringnav_np_tick) puts the line where it is, as a dark follow
+    did, rather than gliding from where the screen went off."""
+    lrc = lyrics(fw, st, Ui(fw), np=True)
+    st('np_stale', C.c_ubyte).value = 1
+    follow(fw, lrc, 60)
+    assert fw.calls('scroll_view_scroll_to') and st('lyric_glide').value == 0
+
+
+NP_UPDATE = 0x53cf08  # Now Playing's update, whose lyric follow is ringnav_lyric_follow (LYRIC_FOLLOW)
+
+
+@pytest.mark.parametrize('wake', ['tick', 'frame'])
+def test_the_update_owed_from_the_dark_follows_at_once_whichever_runs_it_first(fw, st, wake):
+    """At wake the page's timer can run before the first lit paint's update (np_update_poll): either way the owed
+    update's follow scrolls, and only the next one glides."""
+    lrc = lyrics(fw, st, Ui(fw), np=True)
+    update = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_int)(lambda win, force: follow(fw, lrc, 60) and 0)
+    saved = C.string_at(NP_UPDATE, 12)
+    claim(NP_UPDATE)
+    C.memmove(NP_UPDATE, b'\x48\xb8' + struct.pack('<Q', C.cast(update, C.c_void_p).value) + b'\xff\xe0', 12)
+    try:
+        tick = fw.fn('ringnav_np_tick', C.c_int, C.c_void_p, C.c_int)
+        g(fw, 'g_backlight_status', 0)
+        tick(st('np_win', C.c_void_p).value, 0)
+        g(fw, 'g_backlight_status', 1)
+        if wake == 'tick':
+            tick(st('np_win', C.c_void_p).value, 0)
+        else:
+            fw.mock('widget_set_text_utf8', lambda *_: 0)  # np_sync's album and place, none on this page
+            fw.fn('navigation__np_update_poll', None)()
+        assert fw.calls('scroll_view_scroll_to') and st('lyric_glide').value == 0
+        tick(st('np_win', C.c_void_p).value, 0)
+        assert st('lyric_glide').value == 1
+    finally:
+        C.memmove(NP_UPDATE, saved, 12)
+        assert not libc.mprotect(NP_UPDATE & ~0xfff, 0x2000, 3)
 
 
 LYRIC_ROWS = 0x53b67c  # stock's rebuild of scroll_lrc's rows, which ringnav_lyric_rows calls

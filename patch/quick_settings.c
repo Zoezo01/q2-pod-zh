@@ -384,7 +384,7 @@ static void quick_scrub_flat(widget_t *w, canvas_t *canvas) {
 }
 /* The volume over the flat page (vol_paint, the wheel on stock's volume), dy down the screen from
  * w: the bar's card, and the volume in the bar's place between the speakers, so nothing of the page
- * is half covered. */
+ * is half covered; Max Volume's mark under it in the half's ink. */
 void quick_vol_flat(widget_t *w, canvas_t *canvas, int dy, int level, int max) {
     rect_t card = qs_bar_card, r = { QS_BAR_X, QS_BAR_Y + dy, QS_BAR_W, QS_BAR_H };
     card.y += dy;
@@ -392,6 +392,7 @@ void quick_vol_flat(widget_t *w, canvas_t *canvas, int dy, int level, int max) {
     flat_bar(w, canvas, &r,
              QS_BAR_H + (max > 0 ? (QS_BAR_W - QS_BAR_H) * clamp_step(0, max, level) / max : 0),
              qs_rest[ipod_light()], BAR_SPEAKERS);
+    limit_mark(canvas, RGBA(flat_ink[ipod_light()]), r.x + r.h, r.w - r.h, r.y + r.h, max);
 }
 
 /* Quick Settings' swipe up under the own pages: a touch from QS_SWIPE_Y (the flat look's bar's

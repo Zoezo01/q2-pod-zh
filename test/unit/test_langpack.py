@@ -113,7 +113,9 @@ def test_check_problems():
 
 @pytest.mark.parametrize('en, text, same', [
     ('%d of %d', '%d von %d', True), ('%5.1f dB', '%.1f dB', False), ('100%%', '100 %%', True), ('%lu', '%lu', True),
-    ('%s %d', '%d %s', False), ('%02x', '%02x', True), ('%d%%', '%d %%', True)])
+    ('%s %d', '%d %s', False), ('%02x', '%02x', True), ('%d%%', '%d %%', True), ('%d%%', '%d% Stufe', False),
+    ('%d', '%d %1$s', False), ('', "%'d", False), ('', '%C', False), ('%d', '%٣d %d', True), ('%*音', '%*香', True), ('50%', '%50', True), ('50', '50%', False),
+    ('音量 50%（最大）', '50%', False), ('%5%%d', '%d', True)])
 def test_conversions(en, text, same):
     assert (langpack.check([('k', en, '')], [('k', en, text)])[0] == []) == same
 

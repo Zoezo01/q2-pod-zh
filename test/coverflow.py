@@ -50,6 +50,7 @@ int shim_join(pthread_t, void **);
 #define statfs shim_statfs
 #define __xstat shim_xstat /* o32's stat: st_size word 12, st_mtime word 16 */
 #define tk_snprintf snprintf
+void toolsTimeItoa(char *, int);
 extern void *shim_queue;
 extern unsigned char shim_covertype;
 extern char shim_lastcover[1024], shim_id3[2716];
@@ -80,7 +81,7 @@ widget_count_children widget_get_child widget_lookup widget_lookup_by_type widge
 canvas_get_clip_rect canvas_set_clip_rect widget_set_sensitive widget_get_type tk_strcmp widget_animator_destroy
 timer_add timer_remove navigator_back_to_home navigator_back navigator_window_is_exist window_manager_close_window_force navigator_to_with_context bitmap_create_ex bitmap_destroy bitmap_unlock_buffer
 bitmap_lock_buffer_for_read bitmap_lock_buffer_for_write bitmap_get_line_length
-canvas_draw_image slide_menu_set_spacer window_manager window_manager_get_top_window window_manager_is_animating time_now_ms
+canvas_draw_image slide_menu_set_spacer window_manager window_manager_get_top_window window_manager_is_animating time_now_ms sleep_ms
 widget_to_local widget_animator_pause window_manager_get_pointer_pressed image_manager image_manager_unload_bitmap_by_name image_manager_unload_all
 on_home_music_onclick on_home_stream_onclick widget_layout widget_destroy widget_paint canvas_translate widget_set_prop_str
 canvas_offline_create canvas_offline_begin_draw canvas_offline_end_draw canvas_offline_destroy
@@ -138,10 +139,14 @@ int coverflow_artist(void *albums);
 const char *track_name(char *, unsigned, void *);
 
 /* Cache boundary: the duration service has its own tests, test/fw/test_durations.py. */
-int duration_seconds(void *song) { return -1; }
+static int dur_sec = -1, dur_scan; /* every song's measured length, and Scan Song Durations */
+static void *dur_skip; /* the one song with none */
+int duration_seconds(void *song) { return song == dur_skip ? -1 : dur_sec; }
+void toolsTimeItoa(char *out, int sec) { sprintf(out, "%d:%02d", sec / 60, sec % 60); }
 void durations_scanned(void) {}
 const char *duration_text(char *text, unsigned size, void *song) {
     if (size) text[0] = 0;
+    if (dur_scan && duration_seconds(song) > 0) toolsTimeItoa(text, duration_seconds(song));
     return text;
 }
 
@@ -289,6 +294,7 @@ void *window_manager_get_top_window(void *wm) { return top_window; }
 int window_manager_is_animating(void *wm) { return animating; }
 static unsigned clock_ms, pressed = 1, paused;
 unsigned time_now_ms(void) { return clock_ms; }
+int sleep_ms(unsigned ms) { return usleep(ms * 1000); } /* ff_reap's, on the real clock */
 int window_manager_get_pointer_pressed(void *wm) { return pressed; }
 int widget_animator_pause(void *a) { ++paused; return 0; }
 static int animators_gone;
@@ -364,6 +370,7 @@ int library_count(const char *sql) {
 int on_home_music_onclick(void *ctx, void *e) { return 0; }
 int on_home_stream_onclick(void *ctx, void *e) { return 0; }
 int widget_layout(void *w) { return 0; }
+void list_row_show(void *row, int on) {}
 int widget_paint(void *w, void *c) { return 0; }
 int widget_set_prop_str(void *x, const char *k, const char *v) {
     if (!strcmp(k, "style:normal:text_align_h")) W(x)->right = !strcmp(v, "right");
@@ -953,12 +960,22 @@ static int tmp_files(void) {
 /* ---- Depth: the renderer on its own, then on the page. ---- */
 void coverflow_render(unsigned *, int, int, const unsigned *const[7]);
 void coverflow_paint(void *, void *);
-/* The renderers draw the screen's BGRA8888 (opaque_frame); the tests hand them and read their frames
-   in the textures' order, RGBA8888 with red low: R and B swapped back in each row the render filled
-   (all opaque; the guards and any row below left). bgra_frames checks the frames as drawn. */
+/* The renderers take textures and draw frames in the screen's BGRA8888 (opaque_frame); the tests
+   build their textures and read their frames as RGBA8888 with red low: each texture the ring
+   draws (fx_reach's either side) swapped going in, and R and B swapped back in each row the render
+   filled (all opaque; the guards and any row below left). bgra_frames and screen_bytes check the
+   frames as drawn. */
+extern cf_style_t cfs;
+void cf_restyle(void);
+int fx_base(void);
 static void (*const bgra_render)(unsigned *, int, int, const unsigned *const[7]) = coverflow_render;
 static void texel_render(unsigned *d, int pitch, int frac, const unsigned *const ring[7]) {
-    bgra_render(d, pitch, frac, ring);
+    static unsigned screen[15][160 * 160];
+    const unsigned *wide[15] = { 0 };
+    if (!cfs.eye) cf_restyle(); /* as coverflow_render, for fx_base's reach */
+    for (int j = 3 - (fx_base() - 1) / 2; j <= 3 + (fx_base() - 1) / 2; ++j)
+        for (int i = 0; ring[j] && i < 160 * 160; ++i) screen[j + 4][i] = texel(ring[j][i]), wide[j + 4] = screen[j + 4];
+    bgra_render(d, pitch, frac, wide + 4);
     for (unsigned *row = d;; row += pitch) {
         int x = 0;
         while (x < CF_VIEW_W && row[x] >> 24 == 255) ++x;
@@ -969,7 +986,7 @@ static void texel_render(unsigned *d, int pitch, int frac, const unsigned *const
 #define coverflow_render texel_render
 #define ONE 65536
 #define PITCH (CF_VIEW_W + 5) /* guard columns, and guard rows below, to catch clipping errors */
-static unsigned frame[(CF_VIEW_H + 3) * PITCH], flat[7][160 * 160], art[160 * 160];
+static unsigned frame[(CF_VIEW_H + 3) * PITCH], flat[7][160 * 160], art[160 * 160], art_tex[160 * 160]; /* art by rows; art_tex the texture of it, by columns */
 static const unsigned colours[7] = { 0xff0000ffu, 0xff00ff00u, 0xffff0000u, 0xff00ffffu, 0xffffff00u, 0xffff00ffu, 0xff0080ffu };
 /* A thumb theme's ring, wide's fifteen (cover j - 7 at wide[j]): the seven flat colours round and
    round, as a small library repeats; the seven's ring. */
@@ -1021,9 +1038,10 @@ static void renderer(void) {
         ring[j] = flat[j];
     }
     for (int i = 0; i < 160 * 160; ++i) art[i] = 0xff000000u | (unsigned)(i * 2654435761u >> 8 & 0xffffff);
+    for (int i = 0; i < 160 * 160; ++i) art_tex[i % 160 * 160 + i / 160] = art[i];
     /* At rest the selected cover is the texture itself, 160 px square at CF_TOP, centred, full
        brightness; the neighbours at CF_BRIGHT1, then CF_BRIGHT2, the third out too (CF_THIRD). */
-    const unsigned *rest[7] = { flat[0], flat[1], flat[2], art, flat[4], flat[5], flat[6] };
+    const unsigned *rest[7] = { flat[0], flat[1], flat[2], art_tex, flat[4], flat[5], flat[6] };
     /* Classic under Square: the corners are the cover too, and a change back rounds them again. */
     square_art = 1;
     render(0, rest);
@@ -1051,7 +1069,7 @@ static void renderer(void) {
     }
     static unsigned without[(CF_VIEW_H + 3) * PITCH];
     memcpy(without, frame, sizeof(frame));
-    const unsigned *inner[7] = { 0, flat[1], flat[2], art, flat[4], flat[5], 0 };
+    const unsigned *inner[7] = { 0, flat[1], flat[2], art_tex, flat[4], flat[5], 0 };
     render(0, inner);
     assert(memcmp(without, frame, sizeof(frame))); /* the third out stays at rest, as in the row */
     /* Everything, reflections included, fits the frame with room to spare. */
@@ -1322,7 +1340,7 @@ static void touches(widget *s, widget *covers_view) {
 
 /* A theme's corner radius takes effect at the next page open (cf_restyle refills cf_inset). */
 static void restyle(void) {
-    const unsigned *rest[7] = { flat[0], flat[1], flat[2], art, flat[4], flat[5], flat[6] };
+    const unsigned *rest[7] = { flat[0], flat[1], flat[2], art_tex, flat[4], flat[5], flat[6] };
     theme_t *t = (theme_t *)theme();
     close_page(); t->cf.radius = 0; open_page();
     render(0, rest);
@@ -1337,7 +1355,7 @@ static void restyle(void) {
 /* Minimal's frames, dark and light, at rest and mid-turn: the same bytes whatever other themes add. */
 static void pinned(void) {
     const unsigned *ring[7];
-    for (int j = 0; j < 7; ++j) ring[j] = j == 3 ? art : flat[j];
+    for (int j = 0; j < 7; ++j) ring[j] = j == 3 ? art_tex : flat[j];
     unsigned hash = 2166136261u;
     for (light = 0; light < 2; ++light)
         for (int frac = -ONE / 2; frac < ONE / 2; frac += ONE / 5) {
@@ -1353,14 +1371,15 @@ static void pinned(void) {
    covers parting over the same ease. */
 void coverflow_flip_render(unsigned *, int, int, const unsigned *const[3]);
 int coverflow_flip_eased(int);
-/* As texel_render: the side covers (the shelf's frame) and the back go in as the screen's, the frame
-   comes out in the textures' order. */
+/* As texel_render: the side covers (the shelf's frame), the cover and the back go in as the
+   screen's, the frame comes out red low. */
 static void (*const bgra_flip)(unsigned *, int, int, const unsigned *const[3]) = coverflow_flip_render;
 static void texel_flip(unsigned *d, int pitch, int e, const unsigned *const tex[3]) {
-    static unsigned sides[294 * 375], back[285 * 294];
+    static unsigned sides[294 * 375], front[160 * 160], back[285 * 294];
     for (int i = 0; i < 294 * 375; ++i) sides[i] = texel(tex[0][i]);
+    for (int i = 0; tex[1] && i < 160 * 160; ++i) front[i] = texel(tex[1][i]);
     for (int i = 0; tex[2] && i < 285 * 294; ++i) back[i] = texel(tex[2][i]);
-    bgra_flip(d, pitch, e, (const unsigned *[3]){ sides, tex[1], tex[2] ? back : 0 });
+    bgra_flip(d, pitch, e, (const unsigned *[3]){ sides, tex[1] ? front : 0, tex[2] ? back : 0 });
     for (int y = 0; y < 294; ++y)
         for (int x = 0; x < 375; ++x) d[y * pitch + x] = texel(d[y * pitch + x]);
 }
@@ -1372,7 +1391,7 @@ static void flip_frames(void) {
     open_page();
     int H = cs->view_h, top = cs->top;
     for (int y = 0; y < H; ++y) for (int x = 0; x < 375; ++x) sides[y * 375 + x] = 0xff000000u | (unsigned)x;
-    for (int i = 0; i < 160 * 160; ++i) front[i] = 0xff000000u | (unsigned)(i % 160) << 8 | (unsigned)(i / 160) << 16, flatf[i] = 0xff0000ffu;
+    for (int i = 0; i < 160 * 160; ++i) front[i] = 0xff000000u | (unsigned)(i / 160) << 8 | (unsigned)(i % 160) << 16, flatf[i] = 0xff0000ffu; /* by columns */
     for (int i = 0; i < 285 * 294; ++i) back[i] = 0xff000000u | (unsigned)(i % 294) << 8 | (unsigned)(i / 294) << 16, flatb[i] = 0xff00ff00u;
     static unsigned plain[294 * 375];
     for (int i = 0; i < 294 * 375; ++i) plain[i] = 0xffff0000u;
@@ -1402,7 +1421,7 @@ static void flip_frames(void) {
     }
     /* The cover where the shelf has it, 1:1; the back reading right, 1:1 at the panel's place. */
     coverflow_flip_render(f, 375, 0, tex);
-    for (int y = 0; y < 160; ++y) for (int x = 0; x < 160; ++x) assert(f[(top + y) * 375 + 107 + x] == front[y * 160 + x]);
+    for (int y = 0; y < 160; ++y) for (int x = 0; x < 160; ++x) assert(f[(top + y) * 375 + 107 + x] == front[x * 160 + y]);
     assert((f[(top + 5) * 375 + 106] & 0xffffffu) == 106);
     coverflow_flip_render(f, 375, 65536, tex);
     for (int y = 0; y < 285; ++y) for (int x = 0; x < 294; ++x) assert(f[(9 + y) * 375 + 40 + x] == back[y * 294 + x]);
@@ -1877,19 +1896,22 @@ static void classic_light_follow(void) {
 }
 
 /* The frames as drawn: the screen's BGRA8888, opaque, red at bit 16 (texel_render's, R and B
-   swapped); at rest the centre cover's middle texel, swapped. */
+   swapped) from the screen's textures; at rest the centre cover's middle texel, swapped. */
 static void bgra_frames(void) {
-    static unsigned raw[(CF_VIEW_H + 3) * PITCH];
-    const unsigned *ring[7];
-    for (int j = 0; j < 7; ++j) ring[j] = j == 3 ? art : flat[j];
+    static unsigned raw[(CF_VIEW_H + 3) * PITCH], screen[7][160 * 160];
+    const unsigned *ring[7], *drawn[7];
+    for (int j = 0; j < 7; ++j) {
+        ring[j] = j == 3 ? art_tex : flat[j], drawn[j] = screen[j];
+        for (int i = 0; i < 160 * 160; ++i) screen[j][i] = texel(ring[j][i]);
+    }
     for (light = 0; light < 2; ++light) {
-        bgra_render(raw, PITCH, ONE / 5, ring);
+        bgra_render(raw, PITCH, ONE / 5, drawn);
         render(ONE / 5, ring);
         for (int y = 0; y < CF_VIEW_H; ++y)
             for (int x = 0; x < CF_VIEW_W; ++x) assert(raw[y * PITCH + x] == texel(px(x, y)) && raw[y * PITCH + x] >> 24 == 255);
     }
     light = 0;
-    bgra_render(raw, PITCH, 0, ring);
+    bgra_render(raw, PITCH, 0, drawn);
     unsigned a = art[80 * 160 + 80];
     assert(raw[(CF_TOP + 80) * PITCH + CF_CX] == (0xff000000u | (a & 0xff00u) | (a & 255u) << 16 | (a >> 16 & 255u)));
 }
@@ -1935,7 +1957,7 @@ static void ref_column(const cf_style_t *c, unsigned paper, unsigned *d0, int pi
                 int from = y << 8 > clipped_top ? y << 8 : clipped_top, to = (y + 1) << 8 < clipped_bottom ? (y + 1) << 8 : clipped_bottom;
                 cov = (unsigned)(to - from);
             }
-            ref_put(px, ref_shade(tex[row * ART_SIZE], (unsigned)bright) + wash, cov);
+            ref_put(px, ref_shade(tex[row], (unsigned)bright) + wash, cov);
         }
     }
     int reflect = h * c->reflect / ART_SIZE, stop = (bottom + reflect + 255) >> 8;
@@ -1950,7 +1972,7 @@ static void ref_column(const cf_style_t *c, unsigned paper, unsigned *d0, int pi
         int mirrored = dist * step >> 8 >> 16;
         int row = ART_SIZE - 1 - (mirrored >= ART_SIZE ? ART_SIZE - 1 : mirrored);
         unsigned cov = (unsigned)(((y + 1) << 8) - from) * (256u - (unsigned)(dist * fade >> 16)) >> 8;
-        ref_put(px, ref_shade(tex[row * ART_SIZE], dim) + wash, cov);
+        ref_put(px, ref_shade(tex[row], dim) + wash, cov);
     }
     int s0 = (clipped_top + 255) >> 8, s1 = clipped_bottom >> 8;
     s0 = s0 < 0 ? 0 : s0, s1 = s1 > c->view_h ? c->view_h : s1;
@@ -1979,7 +2001,7 @@ static void column_fuzz(void) {
             for (int n = 0; n < N; ++n) {
                 int col = (int)(RND() % CF_VIEW_W), h = (int)(RND() % (3 * 40960)), bright = RND() & 1 ? 256 : (int)(RND() % 256) + 1;
                 int inset = RND() % 3 ? 0 : (int)(RND() % 4000);
-                const unsigned *t = tex + RND() % 160;
+                const unsigned *t = tex + RND() % 160 * 160;
                 short sa[2] = { 0, 0 }, sb[2];
                 if (RND() % 3) {
                     int s0 = (int)(RND() % (c->view_h + 1)), s1 = (int)(RND() % (c->view_h + 1));
@@ -2002,10 +2024,48 @@ static void column_fuzz(void) {
 }
 #undef ART_SIZE
 
+/* Covers through cf_decode, square, letterboxed and on a grey bar, drawn as the screen gets them
+   (the renderers' own bytes, nothing swapped here): the shelf dark, on the grey paper and on a
+   coloured one, and the flip's front; hashed, the same bytes whatever order a texture holds. */
+int cf_decode(const char *, unsigned *, int, unsigned);
+static void screen_bytes(void) {
+    static unsigned tex[3][160 * 160], shelf[294 * CF_VIEW_W], f[294 * 375], back[285 * 294];
+    char url[600];
+    int was[4] = { loads, unloads, reads, next_pixels }; /* the page tests after count their own */
+    mkdir(PEQ_ROOT "/screen", 0755);
+    for (int i = 0; i < 3; ++i) {
+        snprintf(url, sizeof url, "file://" PEQ_ROOT "/screen/%c.jpg", 'a' + i);
+        FILE *fp = fopen(url + 7, "w");
+        fputs("jpg", fp);
+        fclose(fp);
+        art_h = i == 1 ? 100 : 160;
+        assert(cf_decode(url, tex[i], 1, i == 2 ? 0x30 : 0));
+    }
+    art_h = 160;
+    for (int i = 0; i < 285 * 294; ++i) back[i] = 0xff000000u | (unsigned)(i * 2654435761u >> 8 & 0xffffff);
+    const unsigned *ring[7] = { tex[0], tex[1], tex[2], tex[0], tex[1], tex[2], tex[0] };
+    unsigned hash = 2166136261u;
+    for (int k = 0; k < 3; ++k) {
+        light = k > 0, card_page = k == 2 ? 0x101820 : 0;
+        for (int frac = -ONE / 2; frac < ONE / 2; frac += ONE / 5) {
+            bgra_render(shelf, CF_VIEW_W, frac, ring);
+            for (int i = 0; i < 294 * CF_VIEW_W; ++i) hash = (hash ^ shelf[i]) * 16777619u;
+        }
+        for (int e = 0; e <= ONE; e += ONE / 4) {
+            bgra_flip(f, 375, e, (const unsigned *[3]){ shelf, tex[k], back });
+            for (int i = 0; i < 294 * 375; ++i) hash = (hash ^ f[i]) * 16777619u;
+        }
+    }
+    light = 0, card_page = 0;
+    loads = was[0], unloads = was[1], reads = was[2], next_pixels = was[3];
+    assert(hash == 0x3b501743u);
+}
+
 static void depth(void) {
     renderer();
     pinned();
     bgra_frames();
+    screen_bytes();
     column_fuzz();
     /* On the page: the slide_menu spans the frame, one album per CF_STRIDE px, with empty children
        under the drawn covers; the captions sit under the covers, over the reflections' tail. */
@@ -2897,7 +2957,7 @@ static void thumb_wheel(void) {
         const unsigned *iring[15], *one[15] = { 0 };
         for (int i = 0; i < 15; ++i) {
             iring[i] = idx[i];
-            for (int k = 0; k < 160 * 160; ++k) idx[i][k] = 0xff000000u | (unsigned)(i + 1) << 8 | (unsigned)(k % 160);
+            for (int k = 0; k < 160 * 160; ++k) idx[i][k] = 0xff000000u | (unsigned)(i + 1) << 8 | (unsigned)(k / 160); /* its column */
         }
         int hz = shim_themes[1].cf.top + 160 * shim_themes[1].cf.horizon / 100, same = 0, near = 0, far = 0;
         cf_thumb_lead(0);
@@ -3091,7 +3151,7 @@ static void held_row(void) {
     const cf_style_t fixture = shim_themes[1].cf;
     #define ART(a) (abs(a) <= 21 ? art[(a) + 21] : 0) /* album a */
     for (int i = 0; i < 43; ++i)
-        for (int k = 0; k < 160 * 160; ++k) art[i][k] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
+        for (int k = 0; k < 160 * 160; ++k) art[i][k % 160 * 160 + k / 160] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
     square_art = 1, classic = 1;
     for (int ti = 0; ti < 3; ++ti) {
         shim_themes[1].cf = shipped[ti];
@@ -3317,7 +3377,7 @@ static void fold_frames(void) {
     const unsigned *ring[15];
     for (int i = 0; i < 15; ++i) {
         ring[i] = art[i];
-        for (int k = 0; k < 160 * 160; ++k) art[i][k] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
+        for (int k = 0; k < 160 * 160; ++k) art[i][k % 160 * 160 + k / 160] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
     }
     square_art = 1, classic = 1;
     for (int ti = 0; ti < 3; ++ti) {
@@ -3451,7 +3511,7 @@ static void enter_frames(void) {
     const cf_style_t fixture = shim_themes[1].cf;
     #define ART(a) (abs(a) <= 21 ? art[(a) + 21] : 0) /* album a from frac's centre */
     for (int i = 0; i < 43; ++i)
-        for (int k = 0; k < 160 * 160; ++k) art[i][k] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
+        for (int k = 0; k < 160 * 160; ++k) art[i][k % 160 * 160 + k / 160] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
     square_art = 1, classic = 1;
     for (int ti = 0; ti < 3; ++ti) {
         shim_themes[1].cf = shipped[ti];
@@ -3669,7 +3729,7 @@ static void rest_pinned(void) {
     static unsigned f[300 * PITCH], art[15][160 * 160];
     const cf_style_t fixture = shim_themes[1].cf;
     for (int i = 0; i < 15; ++i)
-        for (int k = 0; k < 160 * 160; ++k) art[i][k] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
+        for (int k = 0; k < 160 * 160; ++k) art[i][k % 160 * 160 + k / 160] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
     const unsigned *ring[15];
     for (int j = 0; j < 15; ++j) ring[j] = art[j];
     classic = 1;
@@ -3742,7 +3802,7 @@ static void edge_drawn(void) {
     static const int row_out_min[3] = CF_ROW_OUT_MIN; /* tools/theme.py's, each theme's */
     const cf_style_t fixture = shim_themes[1].cf;
     for (int i = 0; i < 64; ++i)
-        for (int k = 0; k < 160 * 160; ++k) edge_art[i][k] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
+        for (int k = 0; k < 160 * 160; ++k) edge_art[i][k % 160 * 160 + k / 160] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
     square_art = 1, classic = 1;
     for (int ti = 0; ti < 3; ++ti) {
         shim_themes[1].cf = shipped[ti];
@@ -4507,6 +4567,26 @@ static void flip_turn(void) {
     clock_ms += 270;
     assert(tick(0) == 0 && !coverflow_turning() && frames == 1);
     assert(s->visible && label_in(cv, 0)->visible && cv->visible && !cv->numb && !coverflow_tracks(page));
+    /* The header's second line adds the songs' total time, when the switch is on and every song has a length. */
+    static char sub[160];
+    static const struct { int scan, sec; const char *want; } totals[] = {
+        { 1, 200, "Artist · 3:20" }, { 1, -1, "Artist" }, { 0, 200, "Artist" }
+    };
+    for (int i = 0; i < 3; ++i) {
+        dur_scan = totals[i].scan, dur_sec = totals[i].sec;
+        w[s->kids[a]].click(w[s->kids[a]].ctx, 0);
+        to_tracks = timer_fn;
+        timer_fn = 0, to_tracks(0);
+        clock_ms += 270;
+        assert(tick(0) == 0);
+        snprintf(sub, sizeof sub, "%s", label_in(panel_of(), 1)->text);
+        assert(!strcmp(sub, totals[i].want));
+        key(KEY_RETURN);
+        clock_ms += 270;
+        assert(tick(0) == 0 && !coverflow_turning());
+    }
+    dur_scan = 0, dur_sec = -1;
+    panel = panel_of();
     /* No room for the turn: the text list; none for the turn back: straight to the covers. */
     frame_fail = 1;
     w[s->kids[a]].click(w[s->kids[a]].ctx, 0);
@@ -5693,7 +5773,7 @@ static int halves(int remove) { /* the half copies on the card; removed, if aske
     if (d) closedir(d);
     return k;
 }
-static void cover_tex(int a, unsigned *tex) { /* album a's cover as decode() makes it of the shim's */
+static void cover_tex(int a, unsigned *tex) { /* album a's cover of the shim's, by rows (decode() makes its texture by columns) */
     static unsigned char px[160 * 160 * 4];
     char path[600];
     unsigned seed = 0;
@@ -5969,7 +6049,7 @@ static void half_art(void) {
     for (int k = 0; k < 15; ++k) {
         assert(read_half(((w0 + k - 7) % n + n) % n, half));
         for (int y = 0; y < 160; ++y)
-            for (int x = 0; x < 160; ++x) wide[k][y * 160 + x] = half[y / 2 * 80 + x / 2];
+            for (int x = 0; x < 160; ++x) wide[k][x * 160 + y] = half[y / 2 * 80 + x / 2];
         ring[k] = wide[k];
     }
     coverflow_render(f, PITCH, qf, ring + 4);
@@ -7223,6 +7303,21 @@ static void flip_playlist(void) {
     ++playback_loads; /* any other queue started: stock's load (ringnav_load) counts it */
     assert(!coverflow_playlist_queue());
     close_page();
+    /* Every song measured, Scan Song Durations on: the total joins the count; one unmeasured, none. */
+    for (int i = 0; i < 2; ++i) {
+        dur_scan = 1, dur_sec = 200, dur_skip = i ? records[5] : 0;
+        page = &w[nw + 1];
+        assert(coverflow_playlists(d));
+        top_window = page;
+        w[slide()->kids[0]].click(w[slide()->kids[0]].ctx, 0);
+        run();
+        for (int j = 0; j < page->nkids; ++j)
+            if (box(&w[page->kids[j]])[2] == 294) panel = &w[page->kids[j]];
+        for (int j = 0, k = 0; j < panel->nkids; ++j)
+            if (!strcmp(w[panel->kids[j]].type, "hscroll_label") && k++ == 1) assert(!strcmp(w[panel->kids[j]].text, i ? "7 songs" : "7 songs · 23:20"));
+        close_page();
+    }
+    dur_scan = 0, dur_sec = -1, dur_skip = 0;
     /* a podcast in it is left out of the turned panel and its count, as its own list leaves it out */
     const char **path = (const char **)(records[4] + REC_PATH), *was_path = *path;
     *path = "/mnt/mmc/Podcasts/Show/ep.mp3";
@@ -7945,7 +8040,7 @@ static void land_playlist(void) {
     w[view->kids[0]].click(w[view->kids[0]].ctx, 0);
     decode_ms = 0;
     assert(coverflow_landing() && land_tex && !coverflow_playlist_queue() && timer_ms == 1);
-    for (int i = 0; i < 160 * 160; ++i) assert(texel(((unsigned *)land_tex)[i]) == want[i]);
+    for (int i = 0; i < 160 * 160; ++i) assert(((unsigned *)land_tex)[i] == want[i % 160 * 160 + i / 160]); /* the landing's by rows, a texture by columns */
     int (*press)(const void *) = timer_fn;
     press(0);
     assert(played_cls == 0xf001 && coverflow_playlist_queue() && coverflow_landing());

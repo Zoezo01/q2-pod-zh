@@ -61,7 +61,7 @@ enum {
 /* clang-format off */
 enum { BACK = 1000, APPLY, RESET, BYPASS, PER_OUTPUT, MENU, IMPORT, SAVE, ENABLE, TYPE, RAISE, LOWER, TYPED, CHANNEL, STEP,
        YES, CANCEL, DELETE, BALANCE, PREAMP, GAIN, /* these three open the picker, in picks[] order */
-       FREQUENCY, QUALITY, /* and these two the value menu */ KEYBOARD, STOCK, FILE_PREV, FILE_NEXT, RENAME, NAMED };
+       FREQUENCY, QUALITY, /* and these two the value menu */ KEYBOARD, STOCK, FILE_PREV, FILE_NEXT, RENAME, NAMED, IMPORT_ALL };
 /* clang-format on */
 #define FILE_PAGE 128
 #define GRAPH_W (375 - 2 * PEQ_GRAPH_X)
@@ -76,6 +76,7 @@ static struct {
     int screen, band, step, count, previous, rendered, dirty, pick, adjust, tries;
     int capacity, file_page;
     int tab, tabs;   /* tabs: the wheel is on the tab bar, over Advanced's list */
+    int channel;     /* the open band's channels as its switch turned it off; 0: none yet, Both */
     int from_simple; /* Advanced's Stock presets screen, opened from Simple's Presets */
     double typed;
     peq_preset draft, candidate, named; /* named: the preset applied under applied's name */
@@ -229,7 +230,7 @@ static int action(void *ctx, event_t *event);
  * the value, if any, in grey against the right edge, or left of stock's list_into chevron on a row
  * that opens a screen or picker (INTO: coverflow.c's row_into). Returns the last label, the
  * value's if any. Rows start under the graph where it heads the list. */
-enum { DIM = 1, INTO = 2, SMALL = 4, LONG = 8 };
+enum { DIM = 1, INTO = 2, SMALL = 4, LONG = 8, NAME = 16 };
 /* The curve's height in the list: whole rows of the theme's, so whole rows fill it at either
  * end. */
 static int graph_head(void) {
@@ -266,8 +267,17 @@ static widget_t *row_dim(widget_t *view, int index, const char *text, const char
              *label = 0;
     widget_use_style(item, "s_listitem_black");
     for (int i = 0; i < 1 + (value && !(flags & LONG)); ++i) {
-        label = label_create(item, ROW_X, 0, 375 - 2 * ROW_X, rh);
-        widget_use_style(label, "s_label_white20l");
+        if (flags & NAME) {
+            /* a caption of any length (a file's name), in stock's ellipsis label as long_value's:
+             * its 2 px each side put its text in the plain label's box */
+            label = hscroll_label_create(item, ROW_X - 2, 0, 375 - 2 * ROW_X + 4, rh);
+            widget_use_style(label, "s_scrlabel_white20l");
+            hscroll_label_set_only_focus(label, 1);
+            hscroll_label_set_ellipses(label, 1);
+        } else {
+            label = label_create(item, ROW_X, 0, 375 - 2 * ROW_X, rh);
+            widget_use_style(label, "s_label_white20l");
+        }
         if (i || flags & DIM || id < 0)
             widget_set_prop_int(label, "style:normal:text_color", (int)CF_GREY);
         if (i) widget_set_prop_str(label, "style:normal:text_align_h", "right");
@@ -429,6 +439,8 @@ static void list_files(const char *folder, const char *extension) {
         unsigned n = strlen(name), e = strlen(extension);
         if (entry->d_type != 8 && entry->d_type != 0) continue;
         if (n <= e || n >= 256 || strcmp(name + n - e, extension)) continue;
+        if (name[0] == '.' && name[1] == '_')
+            continue; /* macOS's ._ copy beside each file: not a preset */
         if (ui.count == ui.capacity) {
             int capacity = ui.capacity ? ui.capacity * 2 : FILE_PAGE;
             void *names = calloc(capacity, 256);
@@ -447,6 +459,44 @@ static void list_files(const char *folder, const char *extension) {
     closedir(dir);
     if (ui.count) qsort(ui.names, ui.count, 256, compare_names);
     if (!ui.count && !ui.status[0]) snprintf(ui.status, sizeof(ui.status), "未找到预设");
+}
+
+/* The import list's page, one file at a time as a single click does, but a name already saved is
+ * skipped (peq_save without replace, never the confirm) and every file that cannot be read or
+ * written is counted. It stops with the card's room: /mnt/data is also stock's library database.
+ * First built by Travis Cole (kelp/q2-pod fe5b3210).
+ * ponytail: the loop holds the UI thread for the page's writes, at most FILE_PAGE (128) files, each
+ * a ~1 kB temp file, fsync and rename on the synchronous UBIFS mount, so the wheel is dead for the
+ * page; ringnav_wdt_long gives it WDT_LONG_MS (15 min), where the plain WDT_MS (60 s) would
+ * reboot at about 470 ms a file. A worker with a progress row would lift it. */
+static void import_all(void) {
+    ringnav_wdt_long();
+    unsigned made = 0, kept = 0, bad = 0, start = ui.file_page * FILE_PAGE;
+    int full = 0;
+    mkdir(PEQ_SAVED, 0700);
+    for (int i = 0; i < FILE_PAGE && start + i < (unsigned)ui.count; ++i) {
+        char path[600];
+        peq_error error;
+        const char *name = ui.names[start + i];
+        if (!card_room(PEQ_SAVED, 1, 0)) {
+            full = 1;
+            break;
+        }
+        snprintf(path, sizeof(path), PEQ_IMPORT "/%s", name);
+        snprintf(ui.destination, sizeof(ui.destination), PEQ_SAVED "/%.*s.peq",
+                 (int)strlen(name) - 4, name);
+        int saved = peq_import_file(path, &ui.candidate, &error)
+                        ? peq_save(ui.destination, &ui.candidate, 0)
+                        : 0;
+        if (saved == 1)
+            ++made;
+        else if (saved == 2)
+            ++kept;
+        else
+            ++bad;
+    }
+    snprintf(ui.status, sizeof(ui.status), "已导入 %u 个；%u 个已存在；%u 个失败%s", made,
+             kept, bad, full ? "；存储空间不足" : "");
 }
 
 /* File name in ui.destination: sizeof skips PEQ_SAVED and its "/". */
@@ -584,7 +634,7 @@ const char *eq_set(const peq_preset *p, int mode) {
     s.hold = 0;
     if (!eq_commit(&s)) return "无法保存均衡器";
     if (ui.page) {
-        if (p) ui.dirty = 0;
+        if (p) ui.dirty = ui.channel = 0; /* another preset: none of the open band's */
         page_load();
         if (!ui.timer) ui.timer = timer_add(render, 0, 1);
     }
@@ -627,8 +677,10 @@ static int action(void *ctx, event_t *event) {
         else if (ui.screen == NAMING)
             ui.screen = RENAMES;
         else
-            ui.screen =
-                ui.from_simple || ui.screen == BAND || ui.screen == PRESETS ? HOME : PRESETS;
+            ui.screen = ui.from_simple || ui.screen == BAND || ui.screen == PRESETS ||
+                                (ui.screen == CONFIRM && ui.previous == HOME)
+                            ? HOME
+                            : PRESETS;
     } else if (id == MENU)
         ui.screen = PRESETS;
     else if (id == IMPORT)
@@ -659,14 +711,24 @@ static int action(void *ctx, event_t *event) {
         eq_load(&s);
         s.mode = ui.draft.bypass ? EQ_PEQ : EQ_OFF;
         s.hold = 0;
-        if (eq_commit(&s)) ui.draft.bypass = s.mode != EQ_PEQ;
-        else snprintf(ui.status, sizeof(ui.status), "切换失败，均衡器未变");
-    }
-    else if (id == PER_OUTPUT) ringnav_eq_output_toggle();
-    else if (id == ENABLE) b->enabled = !b->enabled;
-    else if (id == TYPE) b->type = (b->type + 1) % 3;
-    else if (id == CHANNEL && b->enabled) b->enabled = b->enabled % 3 + 1; /* both, left, right */
-    else if (id == STEP) ui.step = (ui.step + 1) % 4;
+        if (eq_commit(&s))
+            ui.draft.bypass = s.mode != EQ_PEQ;
+        else
+            snprintf(ui.status, sizeof(ui.status), "%s", "切换失败，均衡器未变");
+    } else if (id == PER_OUTPUT)
+        ringnav_eq_output_toggle();
+    else if (id == ENABLE) {
+        /* Off, then on again on the channels it had. ponytail: an off band's enabled holds no
+         * channel, so leaving its screen or saving forgets them; a field of its own in peq_band
+         * if that matters. */
+        if (b->enabled) ui.channel = b->enabled;
+        b->enabled = b->enabled ? 0 : ui.channel ? ui.channel : 1;
+    } else if (id == TYPE)
+        b->type = (b->type + 1) % 3;
+    else if (id == CHANNEL && b->enabled)
+        b->enabled = b->enabled % 3 + 1; /* both, left, right */
+    else if (id == STEP)
+        ui.step = (ui.step + 1) % 4;
     else if (id == RAISE || id == LOWER || id == TYPED) {
         int k = ui.adjust == QUALITY;
         double *value = k ? &b->q : &b->frequency, step = k ? 0.05 : steps[ui.step];
@@ -676,6 +738,9 @@ static int action(void *ctx, event_t *event) {
     } else if (id == APPLY) {
         snprintf(ui.status, sizeof(ui.status), apply(0) ? "已应用" : "应用失败，当前均衡器未变");
     } else if (id == RESET) {
+        ui.previous = HOME; /* asks first: the unsaved band edits cannot be got back */
+        ui.screen = CONFIRM;
+    } else if (id == YES && ui.previous == HOME) {
         /* The draft returns to peq_default; On/Off is live state, not part of the edit. */
         int bypass = ui.draft.bypass;
         peq_default(&ui.draft);
@@ -683,18 +748,26 @@ static int action(void *ctx, event_t *event) {
         follow_auto();
         ui.name[0] = 0;
         ui.dirty = 1;
-        snprintf(ui.status, sizeof(ui.status), "已重置，请选择应用以启用");
+        snprintf(ui.status, sizeof(ui.status), "%s", "已重置，请选择应用以启用");
+        ui.screen = HOME;
     } else if (id == YES) {
         ui.screen = ui.previous;
         if (ui.screen != DELETES) save_candidate(1);
         /* Saved presets are copies; the active EQ and the editor draft are untouched. */
-        else if (unlink(ui.destination)) snprintf(ui.status, sizeof(ui.status), "删除失败，预设已保留");
-        else snprintf(ui.status, sizeof(ui.status), "已删除 %.100s，当前均衡器未变", deleting());
-    } else if (id == CANCEL) ui.screen = ui.previous;
+        else if (unlink(ui.destination))
+            snprintf(ui.status, sizeof(ui.status), "%s", "删除失败，预设已保留");
+        else
+            snprintf(ui.status, sizeof(ui.status), "已删除 %.100s，当前均衡器未变",
+                     deleting());
+    } else if (id == CANCEL)
+        ui.screen = ui.previous;
+    else if (id == IMPORT_ALL)
+        import_all();
     else if (id < 256) {
         int file = ui.file_page * FILE_PAGE + id;
         if (ui.screen == HOME && id < PEQ_BANDS) {
             ui.band = id;
+            ui.channel = 0;
             ui.screen = BAND;
         } else if (ui.screen == PICK && id < picks[ui.pick - BALANCE].rows) {
             /* Preamp's Auto row: the band-edit cut, which later band edits then keep up to date. */
@@ -703,7 +776,7 @@ static int action(void *ctx, event_t *event) {
                             : picks[ui.pick - BALANCE].first + picks[ui.pick - BALANCE].step * id;
             if (ui.pick == PREAMP) ui.draft.automatic = id ? 2 : 1, remember_preamp();
             if (ui.pick == GAIN && !b->enabled)
-                b->enabled = 1; /* picking a gain is using the band */
+                b->enabled = ui.channel ? ui.channel : 1; /* picking a gain is using the band */
             ui.dirty = 1;
             ui.screen = ui.pick == GAIN ? BAND : HOME;
         } else if (ui.screen == STOCKS && id < STOCK_N) {
@@ -795,7 +868,9 @@ static int render(const void *unused) {
     int head = graph * graph_head(), rh = page_h(48);
     /* Whole rows only, so the last row is never clipped. */
     int rows = (height - 48) / rh * rh;
-    if (ui.view && ui.rendered == ui.screen) {
+    int fresh = !(ui.view && ui.rendered == ui.screen),
+        reset_back = ui.screen == HOME && ui.rendered == CONFIRM && ui.previous == HOME;
+    if (!fresh) {
         selection = widget_get_prop_int(ui.view, "_ringnav_index", 0);
         offset = widget_get_prop_int(ui.view, "yoffset", 0);
     } else if (ui.screen ==
@@ -812,7 +887,11 @@ static int render(const void *unused) {
         /* clang-format off */
         offset = offset < 0 ? 0 : offset > (last + 1) * rh - rows ? (last + 1) * rh - rows : offset;
         /* clang-format on */
+    } else if (ui.screen == CONFIRM) {
+        /* Cancel, as every confirm opens: a second Centre deletes or replaces nothing */
+        selection = 1;
     }
+    if (reset_back) selection = 1; /* the Reset to defaults row, where the user was */
     ui.rendered = ui.screen;
     ui.edit = 0;
     widget_destroy_children(ui.page);
@@ -929,6 +1008,9 @@ static int render(const void *unused) {
         snprintf(text, sizeof(text), "删除 %.100s？确认", deleting());
         fit(row(view, n++, text, YES));
         row(view, n++, "取消", CANCEL);
+    } else if (ui.screen == CONFIRM && ui.previous == HOME) {
+        fit(row(view, n++, "重置所有频段？确认", YES));
+        row(view, n++, "取消", CANCEL);
     } else if (ui.screen == CONFIRM) {
         fit(row(view, n++, "替换现有预设？确认", YES));
         row(view, n++, "取消替换", CANCEL);
@@ -955,15 +1037,21 @@ static int render(const void *unused) {
             ui.file_page = last, offset = 0;
             widget_set_prop_int(view, "_ringnav_index", 0); /* set above, from the page that went */
         }
+        /* Import all is one tick up from the first file, so a stray Centre imports one file */
+        if (fresh && ui.screen == IMPORTS && ui.count)
+            widget_set_prop_int(view, "_ringnav_index", 1);
+        if (ui.screen == IMPORTS && ui.count)
+            row(view, n++, last ? "导入本页" : "导入全部", IMPORT_ALL);
         if (ui.file_page) row(view, n++, "上一页", FILE_PREV);
         if (ui.file_page < last) row(view, n++, "下一页", FILE_NEXT);
         for (int i = 0, start = ui.file_page * FILE_PAGE; i < FILE_PAGE && start + i < ui.count;
              ++i)
-            row(view, n++, ui.names[start + i], i);
+            row_dim(view, n++, ui.names[start + i], 0, i, NAME);
     }
     widget_set_prop_int(view, "virtual_h", head + n * rh);
     /* ringnav keeps the selection above on a view whose row count it already knows. */
-    if (ui.screen == PICK) widget_set_prop_int(view, "_ringnav_count", n);
+    if (ui.screen == PICK || ui.screen == CONFIRM || reset_back)
+        widget_set_prop_int(view, "_ringnav_count", n);
     if (head + n * rh <
         rows) { /* short lists: shrink so the list's white background never shows below the rows */
         widget_resize(list, 375, head + n * rh);
@@ -977,6 +1065,8 @@ static int render(const void *unused) {
     text[0] = 0;
     if (ui.status[0])
         snprintf(text, sizeof(text), "%s", ui.status);
+    else if (ui.screen == CONFIRM && ui.previous == HOME)
+        snprintf(text, sizeof(text), "%s", "恢复默认设置");
     else if (ui.screen == BAND)
         snprintf(text, sizeof(text), "频段 %d", ui.band + 1);
     else if (ui.screen == PICK && ui.pick == GAIN) snprintf(text, sizeof(text), "频段 %d 增益", ui.band + 1);

@@ -236,13 +236,48 @@ long file_size(const char *path) {
 /* Runs that never reached ffmpeg's own exit, from any thread (counted atomically, so none is
  * lost); build_art and photos.c compare before and after. */
 volatile unsigned ff_kills __attribute__((section(".scratch")));
+/* Child pid's wait status, -1 when there is none to reap, what it ran taken from *left: the ms its
+ * request (one picture, every ffmpeg tried for it) has left. One still running when that is spent
+ * is killed (SIGKILL: status 9). Polled every 20 ms, radio_halt's way; the clock (time_now_ms,
+ * stock's CLOCK_MONOTONIC) is read only once the child has not ended at the first look, and each
+ * poll counts at least the 20 ms slept before it, so no clock makes the wait endless. A killed
+ * child still not reaped after FF_GRACE_MS of polls (uninterruptible I/O on a failing card) is
+ * given up as killed and left unreaped: a zombie once its I/O ends, the lesser harm than holding
+ * the caller. Shared with system.c's logo and tidal.c's tagger. ponytail: those children are not
+ * capped, one a request at most, each holding its memory while stuck and a zombie until demo
+ * exits; a short list of held pids, reaped without blocking at each run, and no new run while it
+ * is full, would lift that. */
+int ff_reap(int pid, unsigned *left) {
+    int status = -1, got, killed = 0;
+    unsigned start = 0, polls = 0, ran = 0;
+    while (pid > 0 && (got = waitpid(pid, &status, 1)) != pid) { /* WNOHANG */
+        if (got < 0 && *__errno_location() != 4) {               /* not EINTR: none to reap */
+            status = -1;
+            break;
+        }
+        if (got < 0) continue;
+        unsigned now = time_now_ms();
+        if (!polls++) start = now;
+        ran = now - start > 20 * (polls - 1) ? now - start : 20 * (polls - 1);
+        if (killed && ++killed > FF_GRACE_MS / 20) {
+            status = 9; /* killed, not yet dead: left unreaped */
+            break;
+        }
+        if (!killed && ran >= *left) chapter_kill(pid, 9), killed = 1;
+        sleep_ms(20);
+    }
+    if (polls) { /* the last sleep too */
+        unsigned now = time_now_ms() - start;
+        ran = now > 20 * polls ? now : 20 * polls;
+    }
+    *left = ran < *left ? *left - ran : 0;
+    return status;
+}
+
 /* The wait for ffmpeg's child pid, writing tmp, which is renamed onto dst on success; shared with
  * playlist_art.c's 2x2. */
-int ff_wait(int pid, const char *tmp, const char *dst, int *exited) {
-    int status = -1;
-    while (pid > 0 && waitpid(pid, &status, 0) < 0 &&
-           *__errno_location() == 4) { /* EINTR: reap it */
-    }
+int ff_wait(int pid, const char *tmp, const char *dst, int *exited, unsigned *left) {
+    int status = ff_reap(pid, left);
     /* WIFEXITED, less execl's failure (127: out of memory, as ffmpeg is stock's); never for -1 */
     *exited = !(status & 0x7f) && ((status >> 8) & 0xff) != 127;
     if (!*exited) __atomic_fetch_add(&ff_kills, 1, __ATOMIC_RELAXED);
@@ -258,12 +293,13 @@ int ff_wait(int pid, const char *tmp, const char *dst, int *exited) {
  * one; either is removed and dst is left alone, as stock's caches take any file for art.
  * -xerror stops at a picture's first decode error rather than demuxing the rest of the file.
  * *exited: ffmpeg ran to its own exit (no refused fork, no kill), so a failure is the picture's.
+ * With under a poll's 20 ms left no ffmpeg starts: a refused fork's failure, a kill's.
  * ponytail: a process per cover; a resident decoder if first builds drag. */
-static int ff_run(const char *src, const char *dst, int w, int h, int *exited) {
+static int ff_run(const char *src, const char *dst, int w, int h, int *exited, unsigned *left) {
     char vf[80], tmp[1040];
     tk_snprintf(vf, sizeof(vf), "scale=%d:%d:force_original_aspect_ratio=decrease", w, h);
     tk_snprintf(tmp, sizeof(tmp), "%s.ff", dst);
-    int pid = fork();
+    int pid = *left >= 20 ? fork() : -1; /* less than a poll's: spent */
     if (!pid) {
         child_oom_first(); /* its one picture can need tens of MB (#169) */
         execl(ART_FFMPEG, ART_FFMPEG, "-nostdin", "-v", "quiet", "-xerror", "-i", src, "-frames:v",
@@ -271,13 +307,13 @@ static int ff_run(const char *src, const char *dst, int w, int h, int *exited) {
               (char *)0);
         child_exit(127);
     }
-    return ff_wait(pid, tmp, dst, exited);
+    return ff_wait(pid, tmp, dst, exited, left);
 }
 
 /* shared with playlist_art.c, for a playlist's own picture, which stock's decoder never sees */
-int ff_thumb(const char *src, const char *dst, int w, int h) {
+int ff_thumb(const char *src, const char *dst, int w, int h, unsigned *left) {
     int exited;
-    return ff_run(src, dst, w, h, &exited);
+    return ff_run(src, dst, w, h, &exited, left);
 }
 
 static unsigned be16(const unsigned char *p) { return p[0] << 8 | p[1]; }
@@ -326,17 +362,23 @@ static int big_picture(const char *path) {
            ((kind == PICTURE_PNG || kind == 0xc2) && (w > 1024 || h > 1024));
 }
 
-/* stock's thumbnailer, under the lock every stock caller holds, else ffmpeg; shared with photos.c.
- * A picture stock would decode whole in demo goes to ffmpeg alone, whose child the kernel kills
+/* stock's thumbnailer, under the lock every stock caller holds, else ffmpeg within *left (ff_reap);
+ * shared with photos.c (PH_FF_WAIT_MS a photo) and spotify.c (UI_FF_WAIT_MS a track's art). A
+ * picture stock would decode whole in demo goes to ffmpeg alone, whose child the kernel kills
  * first. */
-int thumb(const char *src, const char *dst, int w, int h) {
-    int ok = 0;
+int thumb_within(const char *src, const char *dst, int w, int h, unsigned *left) {
+    int ok = 0, exited;
     if (!big_picture(src)) {
         pthread_mutex_lock((void *)parse_cover_mutex);
         ok = toolsThumbSpecCover(src, dst, w, h) == 1;
         pthread_mutex_unlock((void *)parse_cover_mutex);
     }
-    return ok || (!access(src, 4) && ff_thumb(src, dst, w, h)); /* none for a missing file */
+    return ok || (!access(src, 4) && ff_run(src, dst, w, h, &exited, left)); /* none if missing */
+}
+/* one picture of its own, FF_WAIT_MS */
+int thumb(const char *src, const char *dst, int w, int h) {
+    unsigned left = FF_WAIT_MS;
+    return thumb_within(src, dst, w, h, &left);
 }
 
 /* Which albums share a folder with another album (job_t.shared), one byte per album; 0 without
@@ -381,8 +423,8 @@ __attribute__((noinline)) static unsigned char *folders_shared(void *albums, uns
 
 /* The cover and folder images beside track through fit (none when shared: a folder shared with
  * other albums, whose cover.jpg would be theirs too). */
-static int beside_art(const char *track, const char *dst, int w, int h, int shared,
-                      int (*fit)(const char *, const char *, int, int)) {
+static int beside_art(const char *track, const char *dst, int w, int h, int shared, unsigned *left,
+                      int (*fit)(const char *, const char *, int, int, unsigned *)) {
     char src[1024];
     const char *slash = strrchr(track, '/');
     int folder = slash ? (int)(slash - track) : 0, ok = 0;
@@ -391,7 +433,7 @@ static int beside_art(const char *track, const char *dst, int w, int h, int shar
     for (unsigned i = 0; i < sizeof(names) / sizeof(*names) && !ok && !shared; ++i) {
         if (snprintf(src, sizeof(src), "%.*s/%s", folder, track, names[i]) >= (int)sizeof src)
             continue; /* cut: a prefix of the name, another file's at best */
-        ok = !access(src, 4) && fit(src, dst, w, h);
+        ok = !access(src, 4) && fit(src, dst, w, h, left);
     }
     return ok;
 }
@@ -414,9 +456,10 @@ static int marked_empty(const char *track) {
  * same-named album's embedded-only WebP or large PNG shows no art here; a per-track probe cache
  * if that matters. */
 int coverflow_player_cover(const char *track, const char *dst, int w, int h) {
+    unsigned left = FF_WAIT_MS; /* the lock is held FF_WAIT_MS at most for every ffmpeg in all */
     return toolsGetExternCover(track, dst, w, h) == 1 ||
-           beside_art(track, dst, w, h, 0, ff_thumb) ||
-           (!marked_empty(track) && ff_thumb(track, dst, w, h));
+           beside_art(track, dst, w, h, 0, &left, ff_thumb) ||
+           (!marked_empty(track) && ff_thumb(track, dst, w, h, &left));
 }
 
 /* parse_albumcovertask_thd's embedded-art calls (Albums grids; Folder view's folder and track
@@ -441,7 +484,8 @@ static int grid_cover(const char *track, const char *dst, int w, int h, int albu
         if (miss[i] == key) return 0;
     if (album && toolsGetExternCover(track, dst, w, h) == 1) return 1;
     pthread_mutex_unlock((void *)parse_cover_mutex);
-    int exited, ok = ff_run(track, dst, w, h, &exited);
+    unsigned left = FF_WAIT_MS;
+    int exited, ok = ff_run(track, dst, w, h, &exited, &left);
     pthread_mutex_lock((void *)parse_cover_mutex);
     if (!ok && exited && miss && !access(track, 4)) miss[n++ % 1024] = key;
     return ok;
@@ -552,7 +596,7 @@ int coverflow_folder_cover(const char *track, const char *dst, int w, int h) {
 /* A track's album art at dst, ART_SIZE: embedded art, then beside_art, then ffmpeg's read of the
  * embedded art, last as it costs a process for every album without art; shared with
  * playlist_art.c. */
-int album_art(const char *track, const char *dst, int shared) {
+int album_art(const char *track, const char *dst, int shared, unsigned *left) {
     /* toolsGetAlbumCover goes through the shared /tmp/.tmp_picture, which stock guards with
      * either lock (parse_albumcovertask_thd, player_parsecover_thd); hold both, as before
      * ringnav_album_cover had its own for the file. Stock never nests them, so this order
@@ -562,8 +606,8 @@ int album_art(const char *track, const char *dst, int shared) {
     int ok = toolsGetAlbumCover(track, dst, ART_SIZE, ART_SIZE) == 1;
     pthread_mutex_unlock((void *)g_playcover_mutex);
     pthread_mutex_unlock((void *)parse_cover_mutex);
-    return ok || beside_art(track, dst, ART_SIZE, ART_SIZE, shared, thumb) ||
-           ff_thumb(track, dst, ART_SIZE, ART_SIZE);
+    return ok || beside_art(track, dst, ART_SIZE, ART_SIZE, shared, left, thumb_within) ||
+           ff_thumb(track, dst, ART_SIZE, ART_SIZE, left);
 }
 
 /* head and track appended to the card's q2-crash.log, synced (art_strike says why) */
@@ -583,9 +627,10 @@ static void build_art(const job_t *j) {
     if (access(j->track, 0)) return; /* storage gone: no marker, the next open retries */
     art_path(dst, j->key, "");
     art_path(tmp, j->key, ".tmp");
-    unsigned kills = ff_kills;
-    if (album_art(j->track, tmp, j->shared) && !rename(tmp, dst)) return;
+    unsigned kills = ff_kills, left = FF_WAIT_MS; /* the album's every ffmpeg, so a join's wait */
+    if (album_art(j->track, tmp, j->shared, &left) && !rename(tmp, dst)) return;
     unlink(tmp);
+    if (cf.cancel) return; /* stopped mid-album: no verdict, the next open retries */
     /* No marker when an ffmpeg run meanwhile never reached its own exit (a refused fork, or killed:
      * the kernel takes it first when memory runs out, #169; another thread's run counts too, a
      * retry at worst) or storage is gone: the next open retries. */
@@ -1784,6 +1829,29 @@ int blob_io(const char *path, const char *tmp, void *buf, unsigned size, int wri
     return !write || !rename(tmp, path);
 }
 
+/* A table kept whole in path (play counts, saved places, ratings) read into buf: 1 with what the
+ * file holds and zeros after it, all zeros with no file; 0 when it could not be read (buf zeros),
+ * so the caller keeps it unread, saves nothing over it and reads it again at the next use. A
+ * save's read counts in fails when the fault is the file's own (a read error, or EIO at the
+ * open; never EMFILE, ENOMEM or the like): the third sets the file aside as <path>.bad and
+ * answers an empty table, so a file that stays unreadable does not stop the saves for good.
+ * ponytail: a file set aside is never read back (the flash is not reachable to move it back),
+ * and no copy is kept when the rename fails or a <path>.bad is already there (the first one is
+ * kept): the next save then replaces the unreadable file. */
+int blob_load(const char *path, void *buf, unsigned size, unsigned *fails) {
+    memset(buf, 0, size);
+    void *f = fopen(path, "rb");
+    int e = f ? 0 : *__errno_location(), bad = f && (fread(buf, 1, size, f), ferror(f));
+    int closed = !f || !fclose(f);
+    if (f ? !bad && closed : e == 2) return 1; /* read, or ENOENT */
+    memset(buf, 0, size);
+    if (!fails || !(bad || e == 5) || ++*fails < 3) return 0; /* 5: EIO */
+    char aside[64];
+    tk_snprintf(aside, sizeof aside, "%s.bad", path);
+    if (access(aside, 0)) rename(path, aside);
+    return 1;
+}
+
 /* Stock pattern (album rows, Now Playing): load the file, set it, drop the load's reference, so the
  * next paint decodes the file again rather than a stale cached copy. Returns 0 when the load fails,
  * as for the empty "no art" marker. size, if given, gets the image's width and height (bitmap_t
@@ -1951,8 +2019,9 @@ HOT void put(unsigned *px, unsigned colour, unsigned cov) {
 /* What dimming washes towards: black, or Light Mode's paper (set per frame). */
 static unsigned cf_paper;
 
-/* One texture column (texels ART_SIZE apart) h high (1/256 px) on the horizon at frame column col,
- * its partial end rows by coverage, then its reflection fading out below. */
+/* One texture column (its texels adjacent: coverflow.h's CF_TEXELS) h high (1/256 px) on the
+ * horizon at frame column col, its partial end rows by coverage, then its reflection fading out
+ * below. */
 static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, int inset) {
     if (h < 16) return;
     unsigned *d = f->d + col;
@@ -1979,9 +2048,9 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, 
                 int from = y << 8 > clipped_top ? y << 8 : clipped_top,
                     to = (y + 1) << 8 < clipped_bottom ? (y + 1) << 8 : clipped_bottom;
                 cov = (unsigned)(to - from);
-                t = tex[(v < 0 ? 0 : v >> 16 >= ART_SIZE ? ART_SIZE - 1 : v >> 16) * ART_SIZE];
+                t = tex[v < 0 ? 0 : v >> 16 >= ART_SIZE ? ART_SIZE - 1 : v >> 16];
             } else
-                t = tex[(v >> 16) * ART_SIZE];
+                t = tex[v >> 16];
             put(px, whole ? t : shade(t, (unsigned)bright) + wash, cov); /* put ignores t's alpha */
         }
     }
@@ -2000,7 +2069,7 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, 
         int row = ART_SIZE - 1 - (mirrored >= ART_SIZE ? ART_SIZE - 1 : mirrored);
         unsigned cov =
             (unsigned)(((y + 1) << 8) - from) * (256u - (unsigned)(dist * fade >> 16)) >> 8;
-        put(px, shade(tex[row * ART_SIZE], dim) + wash, cov);
+        put(px, shade(tex[row], dim) + wash, cov);
     }
     /* The rows this body covers whole are opaque now: join them to the known span, or keep the
      * longer of the two. */
@@ -2022,7 +2091,7 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, 
 void cf_column(unsigned *d, int pitch, short *solid, int col, const unsigned *tex, int h,
                int bright, int inset) {
     static shelf_t f;
-    cf_paper = RGBA(flat_page()) & 0xffffff;
+    cf_paper = flat_page() & 0xffffff;
     f.d = d, f.pitch = pitch, f.solid_top[col] = solid[0], f.solid_bottom[col] = solid[1];
     column(&f, col, tex, h, bright, inset);
     solid[0] = f.solid_top[col], solid[1] = f.solid_bottom[col];
@@ -2080,7 +2149,8 @@ void draw_posed(shelf_t *f, const pose_t *p, int side, const unsigned *tex) {
         if (col < 0 || col >= CF_VIEW_W || !unproject(p, (2 * v + 1 - 2 * CF_CX) * 8, &u, &h))
             continue;
         int k = cf_texel(u + CF_HALF16, 2 * CF_HALF16, q);
-        column(f, col, tex + (side > 0 ? k : ART_SIZE - 1 - k), h, p->bright, cf_inset[k]);
+        column(f, col, tex + (side > 0 ? k : ART_SIZE - 1 - k) * ART_SIZE, h, p->bright,
+               cf_inset[k]);
     }
 }
 
@@ -2103,7 +2173,8 @@ void draw_quad(shelf_t *f, int xl, int xr, int hl, int hr, const unsigned *tex, 
         float p = (float)dx / (float)(xr - xl);
         int k = cf_texel(left ? xr - xl - dx : dx, xr - xl, q);
         k = left ? ART_SIZE - 1 - k : k;
-        column(f, col, tex + k, (int)((float)hl + (float)(hr - hl) * p), bright, cf_inset[k]);
+        column(f, col, tex + k * ART_SIZE, (int)((float)hl + (float)(hr - hl) * p), bright,
+               cf_inset[k]);
     }
 }
 
@@ -2133,7 +2204,7 @@ static int slot(int frac, int k, int i) {
 void coverflow_render(unsigned *d, int pitch, int frac, const unsigned *const *ring) {
     if (!cfs.eye) cf_restyle(); /* once, for callers which render without opening the page */
     cf_corners();
-    cf_paper = RGBA(flat_page()) & 0xffffff; /* the texels' order, red low */
+    cf_paper = flat_page() & 0xffffff; /* 0xRRGGBB: the texels' order, the screen's */
     shelf_t f;
     f.d = d, f.pitch = pitch;
     for (int x = 0; x < CF_VIEW_W; ++x) f.solid_top[x] = f.solid_bottom[x] = 0;
@@ -2148,17 +2219,17 @@ void coverflow_render(unsigned *d, int pitch, int frac, const unsigned *const *r
                 int j = slot(frac, k, i), t = (j - CF_REACH) * CF_ONE - frac;
                 if (shelf_draws(t)) draw_cover(&f, t, ring[j]);
             }
-    /* Over black, or Light Mode's paper as the page's black flips to it; then in the screen's
-     * BGRA8888, opaque, as stock copies it (opaque_frame): stock's blends and Night Shift read the
-     * alpha it leaves on the screen. */
+    /* Over black, or Light Mode's paper as the page's black flips to it, opaque, as stock copies it
+     * (opaque_frame): stock's blends and Night Shift read the alpha it leaves on the screen. The
+     * texels are the screen's BGRA8888 already. */
     for (int y = 0; y < cfs.view_h; ++y) {
         unsigned *p = d + y * pitch;
         int x = CF_VIEW_W; /* count-down loops, which -Oz keeps tight */
         if (cf_paper) {
-            do put(p, cf_paper, 256), *p = bgra(*p), ++p;
+            do put(p, cf_paper, 256), ++p; /* put leaves every pixel's alpha 255 */
             while (--x);
         } else {
-            do *p = bgra(*p), ++p;
+            do *p++ |= 0xff000000u;
             while (--x);
         }
     }
@@ -2197,7 +2268,8 @@ unsigned *fx_buf(int i) { /* slot i's texture */
 
 /* A decoded image copied into a texture: fitted whole and centred, nearest sampled to ART_SIZE,
  * over bar (a grey level: 0 black, the shelf's), so a non-square cover shows uncropped between
- * bars, as Now Playing shows it.
+ * bars, as Now Playing shows it. By columns (CF_TEXELS): column() walks down one. In the screen's
+ * BGRA8888, opaque, so a frame needs no swap.
  * Only 32-bit formats (BITMAP_RGBA_AT); stock decodes covers to RGBA8888 with straight alpha,
  * composited over the page (black or Light Mode's paper). The image manager's copy is only read,
  * and a cover's load is dropped again at once, as stock does. */
@@ -2220,7 +2292,7 @@ int cf_decode(const char *url, unsigned *out, int unload, unsigned bar) {
             unsigned sy = y * side / ART_SIZE - (side - h) / 2; /* wraps above the image */
             for (unsigned x = 0; x < ART_SIZE; ++x) {
                 if (sy >= h || xoff[x] == ~0u) {
-                    *out++ = 0xff000000u | bar * 0x010101u;
+                    out[x * ART_SIZE + y] = 0xff000000u | bar * 0x010101u;
                     continue;
                 }
                 const unsigned char *px = data + sy * stride + xoff[x];
@@ -2230,13 +2302,22 @@ int cf_decode(const char *url, unsigned *out, int unload, unsigned bar) {
                     r = (r * a + (paper & 255) * k) / 255,
                     g = (g * a + (paper >> 8 & 255) * k) / 255,
                     b = (b * a + (paper >> 16 & 255) * k) / 255;
-                *out++ = 0xff000000u | r | g << 8 | b << 16;
+                out[x * ART_SIZE + y] = 0xff000000u | r << 16 | g << 8 | b;
             }
         }
         bitmap_unlock_buffer(bitmap);
     }
     if (unload) widget_unload_image(cf.page, bitmap);
     return data != 0;
+}
+
+/* The n x n square t turned about its diagonal, in place: rows to columns and back. */
+void cf_transpose(unsigned *t, int n) {
+    for (int y = 0; y < n; ++y)
+        for (int x = y + 1; x < n; ++x) {
+            unsigned a = t[y * n + x];
+            t[y * n + x] = t[x * n + y], t[x * n + y] = a;
+        }
 }
 
 static void fx_close(void) {
@@ -2582,10 +2663,13 @@ void coverflow_flip_render(unsigned *d, int pitch, int e, const unsigned *const 
         int ins = back ? 0 : h * cf_inset[col] / (ART_SIZE * 256), from = y0 + ins, to = y1 - ins;
         int first = from >> 8, last = (to - 1) >> 8, y = first < 0 ? 0 : first;
         unsigned *o = d + y * pitch + x;
+        /* the texel column: the back is a capture, by rows; the front a texture, by columns */
+        const unsigned *tc = back ? t + col : t + col * ART_SIZE;
+        int down = back ? aw : 1;
         for (; y <= last && y < FLIP_H; ++y, o += pitch) {
             int v = (((y << 8) + 128 - y0) >> 4) * step >> 20; /* texel row */
-            unsigned px = t[(v < 0 ? 0 : v >= ah ? ah - 1 : v) * aw + col];
-            px = back ? px | 0xff000000u : bgra(px); /* the back is the screen's already */
+            unsigned px = tc[(v < 0 ? 0 : v >= ah ? ah - 1 : v) * down];
+            px |= 0xff000000u; /* both the screen's: the back a capture, the front a texture */
             if (y != first && y != last) {
                 *o = px;
                 continue;
@@ -3636,12 +3720,16 @@ static int flip_open(void *r, int n) {
     fl.card = flat_pages() ? PANEL_HEAD - 1 + rows + HOLD_FOOT : 0;
     widget_t *view = rows_view(fl.panel, PANEL_HEAD, BACK_W, rows, n, row);
     char name[512];
+    int total = 0, timed = n > 0; /* the header's total: only when every song has a length */
     for (int i = 0; i < n; ++i) {
         void *t = deque_at(cf.tracks, (unsigned)i);
         widget_t *item = list_item_create(view, 0, i * row, BACK_W, row);
         widget_use_style(item, "s_listitem_black");
         char duration[24];
         duration_text(duration, sizeof duration, t);
+        int sec =
+            *duration ? duration_seconds(t) : 0; /* empty: switch off, unmeasured or unreadable */
+        timed &= sec > 0, total += sec;
         int time_w = strlen(duration) > 5 ? 88 : 66; /* h:mm:ss */
         widget_t *title = panel_label(item, 12, 0, *duration ? 260 - time_w : 270, pl ? 26 : row,
                                       track_name(name, sizeof name, t), 25, 1);
@@ -3660,12 +3748,18 @@ static int flip_open(void *r, int n) {
         widget_on(item, EVT_CLICK, play, (void *)(long)i);
     }
     /* cf.title: where a row's "存储不可用" goes */
-    char songs[24];
+    char songs[64], sub[300];
+    const char *by = pl ? songs_text(songs, sizeof songs, (unsigned)n) : cover_artist(r);
+    if (timed && by) { /* ponytail: a long artist's ellipsis hides the total; a separate label would
+                          keep it */
+        char time[16];
+        toolsTimeItoa(time, total);
+        tk_snprintf(sub, sizeof sub, "%s · %s", by, time);
+        by = sub;
+    }
     cf.title = fl.title =
         panel_label(fl.panel, 12, 1, 270, 33, pl ? P(r, REC_TITLE) : album_name(r), 31, 1);
-    fl.artist =
-        panel_label(fl.panel, 12, 30, 270, 20,
-                    pl ? songs_text(songs, sizeof songs, (unsigned)n) : cover_artist(r), 18, 0);
+    fl.artist = panel_label(fl.panel, 12, 30, 270, 20, by, 18, 0);
     panel_ink();
     widget_set_sensitive(cf.covers, 0);
     flip_shelf(0);
@@ -4152,6 +4246,13 @@ void *queue_now(unsigned *pos, unsigned *n) {
     *n = queue ? deque_size(queue) : 0;
     return *pos < *n ? deque_at(queue, *pos) : (void *)0;
 }
+/* 1 while the queue has a song at its place, playing, paused or stopped: what Now Playing shows
+ * (np_sync), so Home lists its row (coverflow_home_layout) and the page opens to look
+ * (ringnav_playing). Internet Radio, Spotify and stock's AirPlay receiver have their own pages. */
+int queue_loaded(void) {
+    unsigned at, n;
+    return queue_now(&at, &n) != 0;
+}
 
 /* r's REC_ALBUM, REC_ARTIST, REC_ALBUM_ARTIST or REC_TITLE as the player parsed it from the file,
  * once it has parsed r's; else the record's own. Folder plays' records, and those of the next
@@ -4200,6 +4301,7 @@ static struct {
     unsigned ring[4][HOME_PW];
     int clip[4]; /* the canvas clip while the art paints, restored after */
     int clipped;
+    int playing; /* Now Playing's row shown, as last laid out (queue_loaded) */
 } home __attribute__((section(".scratch")));
 extern int ipod_home(void), ipod_home_rockbox(void), home_shortcut_open(void *, event_t *),
     home_lib_on(void), row_preview_on(void), show_q2pod(void), library_search(void);
@@ -5054,26 +5156,32 @@ static void home_show(widget_t *w, int on) {
 /* Stored HOME=0/1/2 is Split/Full/Carousel in every theme: Split halves the screen, the art in the
  * right panel; Full hides the art and widens the list, its rows to the theme's home_full_row;
  * Carousel hides the art and shows stock's cards (tools/ipod.py ipod_home) in the
- * lists' place, and leaving it, the main list. Rockbox without the card's, and Folder and
- * Streaming hidden in Appearance, are restacked last, as the native layout includes hidden rows,
- * and made insensitive, as hidden rows keep their taps. */
+ * lists' place, and leaving it, the main list. Now Playing with no song loaded (queue_loaded, as an
+ * iPod's), Rockbox without the card's, and Folder and Streaming hidden in Appearance, are restacked
+ * last, as the native layout includes hidden rows, and made insensitive, as hidden rows keep their
+ * taps. Now Playing's row moves the list's count and selection with it (list_row_show): it comes
+ * and goes while Home shows (bar_sync). */
 void coverflow_home_layout(void) {
     int mode = ipod_home(), full = mode == 1, carousel = mode == 2;
     const theme_t *T = theme();
     /* The art goes back to the panel; Split's next paint resumes the pan. */
     stop_timer(&home.drift);
     if (!home.list) return;
-    /* Folder, Rockbox and Streaming in their places (HOME_ROWS), then the hidden ones last, as the
-     * native layout includes hidden rows; hidden, they take no taps (Rockbox would take
-     * Streaming's). ponytail: Carousel keeps Folder's and Streaming's cards, as it keeps the
-     * Shortcut's (below). */
-    static const char *const rows[] = { "btn_folder", "btn_rockbox", "btn_stream" };
-    int shown[] = { !pod_value(POD_HIDE_FOLDER), ipod_home_rockbox(), !pod_value(POD_HIDE_STREAM) };
+    /* Now Playing, Folder, Rockbox and Streaming in their places (HOME_ROWS), then the hidden ones
+     * last, as the native layout includes hidden rows; hidden, they take no taps (Rockbox would
+     * take Streaming's). ponytail: Carousel keeps Now Playing's, Folder's and Streaming's cards, as
+     * it keeps the Shortcut's (below); Now Playing's card with nothing loaded opens nothing
+     * (ringnav_playing). Building the carousel's cards again would take it out. */
+    static const char *const rows[] = { "btn_playing", "btn_folder", "btn_rockbox", "btn_stream" };
+    static const unsigned char at[] = { 0, 3, 4, 5 };
+    int shown[] = { home.playing = queue_loaded(), !pod_value(POD_HIDE_FOLDER), ipod_home_rockbox(),
+                    !pod_value(POD_HIDE_STREAM) };
     for (int pass = 0; pass < 2; ++pass)
-        for (int i = 0; i < 3; ++i) {
+        for (int i = 0; i < 4; ++i) {
             widget_t *row = widget_lookup(home.list, rows[i], 1); /* not the carousel's cards */
             if (!row || (pass && shown[i])) continue;
-            widget_restack(row, pass ? 6 : 3 + i);
+            widget_restack(row, pass ? 6 : at[i]);
+            if (!i && !pass) list_row_show(row, shown[i]); /* in its place: the selection's row */
             home_show(row, shown[i]);
         }
     widget_t *rockbox = widget_lookup(home.win, "btn_rockbox", 1);
@@ -5106,6 +5214,12 @@ void coverflow_home_layout(void) {
     }
     home.key = ~0u; /* Split shows the current cover again, next frame if laid out mid-paint */
     rearm(&home.repaint, home_repaint, 0);
+}
+
+/* bar_sync, at each bar paint: Home laid out again when a song loads or the last goes, on screen or
+ * under a page. */
+void coverflow_home_sync(void) {
+    if (home.list && home.playing != queue_loaded()) coverflow_home_layout();
 }
 
 /* w from x+dx to its x over m's ms and easing. Returns 0 without touching w when m->ms is 0;

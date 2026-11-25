@@ -400,7 +400,7 @@ int land_start(void *t, int row, unsigned t0) {
         land_end();
         return 0;
     }
-    for (int i = 0; i < CF_TEXELS; ++i) land.front[i] = bgra(land.front[i]);
+    cf_transpose(land.front, ART_SIZE); /* by rows, as land_frame and slant_render read it */
     ringnav_light(widget_get_child(widget_get_child(fl.panel, 1), 0), row); /* lit, tapped too */
     int painted = flip_capture();
     widget_set_visible(fl.panel, 1, 0);

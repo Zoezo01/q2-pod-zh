@@ -71,13 +71,14 @@ static void lyric_glide(widget_t *lrc, int to) {
 /* The Now Playing timer's follow (LYRIC_FOLLOW in tools/build.py): stock scrolls to the row three
  * lines above the current one, which past the end clamps to it. iPod: lyrics the wheel or a finger
  * moved stay (lyric_held) until Now Playing goes or another song starts, and a finger on the
- * screen keeps them too; on the page, the follow glides. The lyrics page follows its own playing
- * line (lyric_follow). */
+ * screen keeps them too; on the page, the follow glides, except the one a wake owes after dark
+ * ticks skipped it (st.np_stale), which scrolls at once as a dark follow did. The lyrics page
+ * follows its own playing line (lyric_follow). */
 int ringnav_lyric_follow(widget_t *lrc, int x, int y, int ms) {
     lyric_pad(lrc);
     if (lrc == st.np_lrc) {
         if (st.lyric_held || nl.lyric_spun == 2 || lyrics_on(lrc) || pointer_down()) return 0;
-        if (lyrics_shown()) {
+        if (lyrics_shown() && !st.np_stale) {
             lyric_glide(lrc, y * 16);
             return 0;
         }

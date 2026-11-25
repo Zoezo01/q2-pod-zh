@@ -1,5 +1,53 @@
 # Changelog
 
+- **1.9.2**:
+  - Now Playing: the heart fills or empties as soon as you choose **Add to Favourites** or **Remove from Favourites** on the hold menu. It kept its old look until the next song, so tapping it then undid the change.
+  - Playback: **Previous** then **Next** comes back to the song you left after changing Shuffle, Repeat or Group by, or at the start of a new shuffled Repeat All round, and the songs not yet played still play. Next could jump past them, or stop the queue under Play All. **Previous Album** at those moments no longer skips the albums between.
+  - Playback: with Shuffle Off or Songs in Album, a song added with **Add to Queue** plays even when its album has already played, and the rest of the album you were in still plays after a **Play Next** song from another album and a later edit. With Shuffle Albums, a repeat of an earlier song of the album playing plays too. They could be skipped, and under Play All never play. After a jump in **View Queue** with Shuffle Off or Songs in Album, the songs the jump passed count as played, so **Previous** then **Next** does not give them back.
+  - Playback: in **View Queue**, deleting the song that's playing when it's the last row, then more rows, and then picking a **Play Next** song no longer writes past the end of the play order in memory, which could crash Q2 Pod.
+  - Playback: with a shuffle and **Repeat Song**, **Next** at the end of a round starts the next round. When that round began with the song playing, every **Next** restarted that song until you changed an option; now it plays once more and the next **Next** moves on.
+  - Cover Flow: under Classic and Classic Modern, a turned-over album or playlist shows its songs' total time after the artist or the song count, when **Scan Song Durations** is on and every song has a measured length.
+  - Appearance: a **Hide Hi-Res** switch, after **Hide App Store**, takes the **Hi-Res** row out of the Library.
+  - Languages: with a Chinese language pack, the keyboard starts in pinyin, and one key goes round pinyin, lower case and capitals (**abc**, **ABC**, **中**). An app's sign-in fields keep the letters.
+  - Cover Flow: turning the covers takes less of the processor. Each cover's picture is now held in the order the screen draws it, column by column, so drawing one reads memory in a straight run.
+  - App Store: removing an app no longer deletes a file off the card that the app's list of files names. The list is kept on the card, where any app can write to it.
+  - EQ: a band set to **Left** or **Right** stays on that channel when you turn it off and on again on its screen, by its **Band** switch or by picking a **Gain**. It came back as **Both**.
+  - Sound: seeking in a VBR MP3 made with error protection (CRC) lands on the time asked for. Q2 Pod did not find such a file's seek table and went by its average bitrate, which in a long mix could land minutes off.
+  - EQ: **Import from SD /EQ** no longer lists the `._` files a Mac leaves on the card beside each file it copies.
+  - App Store: installing an app makes no folder off the card. The list of the files an install unpacked is kept on the card while it runs, and a line changed there to point off the card had its folders made.
+  - Playlists, EQ and Spotify: **Remove song?** in **Edit Playlist**, the EQ's delete and replace prompts and Spotify's **Remove Downloads?** open on **Cancel**, as the other prompts do, so a second press of Centre removes nothing.
+  - Playback: with Shuffle off and a Repeat option set, a long queue starts a little sooner: its order is sorted once, not twice.
+  - Memory Playback: a new track no longer rewrites the whole saved queue, only its place in it, when no Shuffle or Repeat option is set.
+  - Prompts: four of stock's messages get the space they lacked, as in **Line Out sets max volume, continue?** and **Storage is full. Some songs couldn't be added.**
+  - Settings: the **Shortcut** row's value reads **Favourites**, the spelling every other screen uses.
+  - Apps: a search that is too long says **Search is too long**. It said **Too long**, which a name or password box still says.
+  - Lyrics: the lyrics in a song's tag are read to their first 64 KB. A tag with megabytes of text on one line could stall or crash the player.
+  - Apps: stopping an app signals only the one process its pid file names. Any other text in that file went to `kill` as arguments.
+  - Prompts: a prompt's second button says what it does, in every theme: **Shut Down** on **Shut Down?**, **Restart** on **Restart to apply?** and **Delete** on **Delete File**. It said **OK**.
+  - EQ: on **Import from SD /EQ**, a preset file's long name ends in an ellipsis and scrolls while it is selected.
+  - EQ: **Reset to defaults** on the Advanced EQ page asks first. One press threw away band edits that were not saved.
+  - EQ: **Import from SD /EQ** has a first row, **Import all**, that saves every preset file on the page shown, up to 128 at a press. A preset already saved under the same name is left as it is, and the title says how many were saved, already there or could not be read.
+  - Languages: a language pack's font that is damaged or cut short is not loaded. Such a font could crash the player when a Hebrew or Arabic title was drawn.
+  - Languages: a translated line is left in English when its format codes differ from the English line's, as with a stray `% S` or a code cut short at the end of the line. Such a line could crash the player.
+  - Classic: the bar's title has more room, so **Update Library** and the titles of **Internet Radio**, **Rated Albums** and **Configuration** show whole instead of ending in an ellipsis.
+  - Minimal: the USB Storage page says **Eject before disconnecting**, as the other themes do.
+  - Library: on a card that was never scanned, **Albums**, **Artists**, **Composers** and **Genres** say **Update Library first**. They said **No albums** and the like, as if the scan had found none.
+  - Volume: turning the volume no longer saves the setting at every step. It is saved once, a moment after you stop, and before the Q2 turns off or goes to Standby.
+  - Artwork: an ffmpeg that hangs on a bad cover, photo or boot logo is stopped after 10 seconds (20 for a photo). Leaving Cover Flow, Photos or a playlist while one hung could freeze the Q2 until it restarted itself.
+  - Volume: the volume bar shows a small triangle at your **Max Volume** limit, as an iPod's does. With no limit set, nothing shows.
+  - Power: while the Sleep Timer runs, Power's row shows the time left, as in **Sleep Timer: 45 min**, or **Sleep Timer: 1:30** from an hour on.
+  - Cover Flow: a cover's picture is held in the screen's own colour order, so drawing a frame no longer converts every pixel.
+  - Display: Quick Settings, Home's pane and Classic's dark bars draw a plain ground in one step, not row by row.
+  - Playback: with Shuffle or a Repeat option on, skipping through several songs quickly no longer saves the whole queue at every skip. The first skip saves at once and the rest are saved together within 5 seconds, and before the Q2 turns off or goes to Standby.
+  - Settings: on the Crossfade, Wheel Sensitivity, Resume Songs and Night Shift pages, a turn of the wheel or a drag of the slider no longer saves the setting at every step. Each step still applies at once, and the setting is saved once when you leave the page, turn the Q2 off or put it in Standby.
+  - Menus: a menu opens on its first row, as an iPod's menus do, and Return still brings you back to the row you left. Settings, Library, Most Played, Long Songs and the Ratings lists opened on the row last chosen in them, so **Loved** could open on the row left in **Top Rated**, and Display's **Cover Flow** opened on **Position Bar**.
+  - Lists: every list carries over from its last row to its first, and back, when you pause at the end and turn on, as Home and the Library always did. Settings, View Queue, the EQ and its pickers, Most Played, Internet Radio, Search, Photos and the other lists that stopped at their ends now do too. A pop-up's buttons, and the Tidal and Baidu lists that load in pages, still stop.
+  - Library: play counts, resume places and ratings are no longer lost when their file can't be read for a moment. Q2 Pod started again from an empty list and saved it over the old one at the next song, place or rating; now it leaves the file alone and reads it again next time.
+  - Watchdog: the record of what the Q2 was doing is written whole, so a power cut while it was being saved no longer leaves an empty one.
+  - Boot logo and card themes: a card taken out at the wrong moment no longer deletes the boot logo or card theme copied from it. Only a mounted card that no longer has the file removes them.
+  - Hold menu: when **Play Next** or **Add to Queue** works, the row you chose blinks and then the menu closes, as on an iPod. The menu just closed, so nothing told you the song was queued.
+  - Home: as on an iPod, **Now Playing** is on Home only while a song is loaded. After a start with nothing to resume it is not there, and it comes back as soon as you play something. It opened an empty Now Playing.
+  - Now Playing: with the screen off, the page no longer updates its times, bar and lyric line four times a second for a screen nobody sees. The screen wakes with them up to date.
 - **1.9.1**:
   - Standby: going into Standby gives the card up to 2 seconds to finish and unmount before its power is cut, where it used to cut it at once with files still open, which could leave the card marked as not properly unmounted and lose what was still being written.
   - EQ: in **Advanced**, drag a band up or down on the curve to set its gain, as you drag Simple's sliders. Touch the ring of a band that's on. Choose **Apply changes** to hear it.

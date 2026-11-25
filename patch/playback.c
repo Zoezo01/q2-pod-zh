@@ -13,8 +13,8 @@
 /* ponytail: Play Next's pending list holds 64 queue indices; a new one past that drops the oldest
  * (the last). Raise it, a fixed array in the struct, if more are wanted. */
 #define PEND_LIMIT 64
-/* ponytail: a larger queue is not kept across a reboot, as the snapshot is the whole queue,
- * rewritten each track change; save the order once and positions after to lift it. */
+/* ponytail: a larger queue is not kept across a reboot, as advanced play's snapshot is the whole
+ * queue, rewritten each track change; save its order once and positions after to lift it. */
 #define SAVE_LIMIT 999
 extern int stock_load_trampoline(void *, int, int), stock_next_trampoline(int),
     stock_prev_trampoline(void), stock_mode_trampoline(int), stock_preload_trampoline(void),
@@ -45,7 +45,7 @@ typedef struct {
     unsigned resume_key, resume_pos;
     entry *order, *cycle;
     unsigned *groups, *seen, *history;
-    unsigned poll_stamp;
+    unsigned poll_stamp, snap_at; /* snap_at: the last snapshot write's (playback_poll) */
 } playback;
 static playback s __attribute__((section(".scratch")));
 /* Each queue entry's identity (its path's hash and CUE start) as the last rebuild took the queue,
@@ -101,7 +101,7 @@ int wheel_pct(void) {
     }
     return wheel_percent;
 }
-/* The nearest ten within 10-200%, live on the next sample; crossfade.c's refresh saves it. */
+/* The nearest ten within 10-200%, live on the next sample; crossfade.c's xfade_save saves it. */
 void wheel_set_pct(int n) {
     n = n < WHEEL_PCT_MIN ? WHEEL_PCT_MIN : n > 200 ? 200 : (n + 5) / 10 * 10;
     if (n != wheel_pct()) wheel_apply(n);
@@ -534,6 +534,8 @@ static void release(void) {
     s.n = s.hn = s.cursor = s.npend = 0;
     s.resume_key = s.resume_pending = s.resume_wait = s.save_failed = 0;
     unlink(QUEUE_FILE);
+    unlink(CHECKPOINT_FILE); /* or it would fit the same queue picked again at the same row */
+    s.saved_queue = 0;
     s.dirty = 1; /* the next save writes a plain snapshot whole */
 }
 /* Albums as Coverflow tells them apart (album_cmp: tagged albums first), or folders. */
@@ -674,8 +676,29 @@ static int rebuild(int keep) {
     unsigned at = (unsigned)M(MCL_POS), k = 0;
     if (at < n) {
         if (!keep) history(at);
-        if (s.shuffle == 1) {
-            /* Shuffle All pins the current occurrence between visited and remaining entries. */
+        if (s.shuffle >= 3) {
+            /* Finish the current category before the other shuffled categories; keep its
+             * track order, even when the playing track is halfway through that category. */
+            for (unsigned i = 0; i < n; ++i)
+                if (groups[order[i].index] == groups[at]) cycle[k++] = order[i];
+            for (unsigned i = 0; i < n; ++i)
+                /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound): order permutes 0..n-1 */
+                if (groups[order[i].index] != groups[at]) cycle[k++] = order[i];
+            memcpy(order, cycle, n * sizeof *order);
+        }
+        if (s.shuffle == 2 || s.shuffle == 4) {
+            unsigned first = 0, current = 0;
+            while (first < n && groups[order[first].index] != groups[at]) ++first;
+            while (current < n && order[current].index != at) ++current;
+            entry playing = order[current];
+            for (; current > first; --current) order[current] = order[current - 1];
+            order[first] = playing;
+        }
+        if (s.shuffle == 1 || keep == 2) {
+            /* Shuffle All, and an edit's new order (keep 2: Add to Queue, Play Next, a delete),
+             * pin the current occurrence between visited and remaining entries, so nothing
+             * unplayed is left behind the cursor. */
+            k = 0;
             for (unsigned i = 0; i < n; ++i)
                 if (order[i].index != at && seen[order[i].index]) cycle[k++] = order[i];
             s.cursor = k;
@@ -685,24 +708,6 @@ static int rebuild(int keep) {
                 if (order[i].index != at && !seen[order[i].index]) cycle[k++] = order[i];
             memcpy(order, cycle, n * sizeof *order);
         } else {
-            if (s.shuffle >= 3) {
-                /* Finish the current category before the other shuffled categories; keep its
-                 * track order, even when the playing track is halfway through that category. */
-                for (unsigned i = 0; i < n; ++i)
-                    if (groups[order[i].index] == groups[at]) cycle[k++] = order[i];
-                for (unsigned i = 0; i < n; ++i)
-                    /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound): order permutes 0..n-1 */
-                    if (groups[order[i].index] != groups[at]) cycle[k++] = order[i];
-                memcpy(order, cycle, n * sizeof *order);
-            }
-            if (s.shuffle == 2 || s.shuffle == 4) {
-                unsigned first = 0, current = 0;
-                while (first < n && groups[order[first].index] != groups[at]) ++first;
-                while (current < n && order[current].index != at) ++current;
-                entry playing = order[current];
-                for (; current > first; --current) order[current] = order[current - 1];
-                order[first] = playing;
-            }
             for (unsigned i = 0; i < n; ++i)
                 if (order[i].index == at) {
                     s.cursor = i;
@@ -711,9 +716,15 @@ static int rebuild(int keep) {
             for (unsigned i = 0; i < s.cursor; ++i) seen[order[i].index] = 1;
         }
         seen[at] = 1;
-    }
-    /* Generate the following cycle on commit, never in the preload/peek path. */
-    make_order(cycle);
+    } else if (s.cursor >= n) /* the playing last row deleted: the cursor stays inside the order */
+        s.cursor = n ? n - 1 : 0;
+    /* Generate the following cycle on commit, never in the preload/peek path. Shuffle Off's is the
+     * order just sorted, which only an edit's pin (keep 2) has changed since: a copy, not a second
+     * sort of the whole queue. */
+    if (s.shuffle || keep == 2)
+        make_order(cycle);
+    else
+        memcpy(cycle, order, n * sizeof *cycle);
     s.dirty = 1;
     return 1;
 }
@@ -754,7 +765,7 @@ static int follow_queue(void) {
     unsigned at = (unsigned)M(MCL_POS);
     /* the playing entry gone, stock's position names the one after it: Previous comes back here */
     if (at < m && (!s.hn || s.history[s.hn - 1] != at)) history(at);
-    s.active = rebuild(1);
+    s.active = rebuild(2); /* 2: an edit, the played entries stay first */
     return 0;
 }
 int playback_option(int kind) {
@@ -907,6 +918,12 @@ static unsigned order_find(unsigned i, unsigned x) {
     while (i < s.n && s.order[i].index != x) ++i;
     return i;
 }
+/* Order entry i moves back to place to, the entries from to on one place later. */
+static void move_back(unsigned i, unsigned to) {
+    entry t = s.order[i];
+    for (; i > to; --i) s.order[i] = s.order[i - 1];
+    s.order[to] = t;
+}
 /* A Play Next pick plays now: its order entry moves immediately after the cursor, leaving other
  * order intact, even when the order sorted it before the cursor (already marked seen). */
 static void play_now(unsigned next) {
@@ -922,22 +939,36 @@ static void play_now(unsigned next) {
         s.order[i] = t;
     }
     s.seen[next] = 0;
+    s.dirty = 1; /* the order changed: saved at once (playback_poll) */
 }
-static void commit(unsigned next) {
+/* replay: Repeat Song's own replay at a song's end, which stays in its round.
+ * ponytail: a manual Next at a round's end may start a new round with the playing song, which plays
+ * once more, as under Repeat All; skipping it needs upcoming and the preload to agree */
+static void commit(unsigned next, int replay) {
     s.resume_key = s.resume_pending = 0;
     if (pend_take(next)) play_now(next);
-    unsigned i = order_find(s.cursor + 1, next);
-    if ((i == s.n || s.seen[next]) && !(s.repeat == 3 && next == (unsigned)M(MCL_POS))) {
+    unsigned i = order_find(s.cursor + 1, next), from = s.cursor + 1;
+    if ((i == s.n || s.seen[next]) && !replay) {
         memcpy(s.order, s.cycle, s.n * sizeof *s.order);
         memset(s.seen, 0, s.n * sizeof *s.seen);
         make_order(s.cycle);
         i = order_find(0, next);
+        from = 0; /* a new round: what it draws ahead of the pick was jumped over */
+        s.dirty = 1;
     }
-    if (i < s.n) s.cursor = i;
+    if (i < s.n) {
+        /* Shuffle Off / Songs in Album: the entries jumped over stay skipped, so behind the cursor
+         * means seen (an edit's rebuild(2) relies on it). A group shuffle's pick leaves them owed:
+         * Previous gives them back.
+         * ponytail: so an edit later plays a same-album one after the pick. */
+        if (s.shuffle == 0 || s.shuffle == 2)
+            for (unsigned j = from; j < i; ++j) s.seen[s.order[j].index] = 1;
+        s.cursor = i;
+    }
     s.seen[next] = 1;
     history(next);
     s.next_valid = 0;
-    s.dirty = 1;
+    if (s.dirty != 1) s.dirty = 2; /* the place alone: playback_poll may hold it */
 }
 /* player_start_queue: stock's View Queue row (and its queue delete, DLNA and URL plays) start queue
  * index at. In advanced play the pick is committed first: a shuffle's through Play Next's path, so
@@ -956,7 +987,7 @@ int ringnav_start_queue(int at) {
     if (s.active && x < s.n && x != (unsigned)M(MCL_POS) && queue() && deque_size(queue()) == s.n) {
         close_preload();
         if (s.shuffle == 1 && pend_find(x) == s.npend) play_now(x);
-        commit(x);
+        commit(x, 0);
     }
     return stock_start_queue_trampoline(at);
 }
@@ -1063,7 +1094,7 @@ static int next_song(int automatic) {
         mclStop();
         return -1;
     }
-    commit((unsigned)next);
+    commit((unsigned)next, automatic && s.repeat == 3);
     if (automatic && M(MCL_PRELOAD) == 1 && M(MCL_PREPOS) == next)
         return stock_next_trampoline(automatic); /* stock consumes the preloaded decoder */
     close_preload();
@@ -1106,9 +1137,20 @@ int ringnav_prev(void) {
     if ((unsigned)M(MCL_POS) < s.n) s.seen[M(MCL_POS)] = 0;
     M(MCL_POS) = (int)at;
     unsigned i = order_find(0, at);
+    /* Played before this order was drawn (the last round, a Shuffle or Repeat change), it can lie
+     * past the track left: it moves just ahead of it, so Next comes back there. A plain ordered
+     * Repeat All round is left as it was: the last song stays at the end for the loop. */
+    /* ponytail: Shuffle Songs then Shuffle Off under Repeat All lands in the exemption too, and its
+     * Previous-then-Next still skips (docs/internals.md). */
+    if (i < s.n && i > s.cursor && (s.shuffle || s.repeat != 5)) {
+        move_back(i, s.cursor);
+        i = s.cursor;
+        s.dirty = 1; /* the order changed: saved at once */
+    }
     if (i < s.n) s.cursor = i;
+    s.seen[at] = 1;
     s.next_valid = 0;
-    s.dirty = 1;
+    if (s.dirty != 1) s.dirty = 2; /* the place alone: playback_poll may hold it */
     return mclStartPlayer();
 }
 /* Would this manual Next/Prev start the playing file again? With more tracks stock moves on, Repeat
@@ -1267,12 +1309,13 @@ int playback_group_skip(int forward) {
         for (unsigned i = 0; i < s.n; ++i)
             if (s.groups[i] == group) s.seen[i] = 1;
         s.npend = 0;
-        commit(next);
+        commit(next, 0);
     } else {
         unsigned h = s.hn;
         while (h && s.groups[s.history[h - 1]] == group) --h;
         if (!h) return 0;
         group = s.groups[s.history[h - 1]];
+        unsigned left = s.cursor;
         for (unsigned i = 0; i < s.n; ++i)
             if (s.groups[s.order[i].index] == group) {
                 next = s.order[i].index;
@@ -1280,6 +1323,14 @@ int playback_group_skip(int forward) {
                 break;
             }
         if (next == s.n) return 0;
+        /* As Previous: drawn since (a new round, a Shuffle or Repeat change), the group can lie
+         * past the track left; it moves in front of it, so the groups between still play. A plain
+         * ordered Repeat All round is left as it was. */
+        if (s.cursor > left && (s.shuffle || s.repeat != 5)) {
+            for (unsigned i = s.cursor, to = left; i < s.n; ++i)
+                if (s.groups[s.order[i].index] == group) move_back(i, to++);
+            s.cursor = left;
+        }
         for (unsigned i = 0; i < s.n; ++i)
             if (s.groups[i] == group) s.seen[i] = 0;
         s.hn = h;
@@ -1323,7 +1374,7 @@ void playback_insert(unsigned at, unsigned n, int next) {
     s.n += n;
     for (unsigned i = 0; i < s.hn; ++i)
         if (s.history[i] >= at) s.history[i] += n;
-    s.active = rebuild(1);
+    s.active = rebuild(2); /* 2: an edit, the played entries stay first */
     for (unsigned i = 0; i < s.npend; ++i)
         if (s.pend[i] >= at) s.pend[i] += n;
     /* Play Next again before the last one finished: the new tracks go first, in order */
@@ -1401,12 +1452,13 @@ typedef struct {
     unsigned magic, version, size, checksum, n, pos, elapsed, shuffle, repeat, folder, cursor, hn,
         npend, type;
 } snapshot;
-/* Elapsed time for the snapshot whose checksum is snapshot, at pos. */
+/* Elapsed time for the snapshot whose checksum is snapshot, at pos: the snapshot's own track, or
+ * the one a plain queue has reached since. */
 typedef struct {
     unsigned checksum, snapshot, pos, elapsed;
 } checkpoint;
-static int save_elapsed(int sec) {
-    checkpoint c = { 0, s.saved_sum, s.saved_pos, (unsigned)sec };
+static int save_elapsed(unsigned pos, int sec) {
+    checkpoint c = { 0, s.saved_sum, pos, (unsigned)sec };
     c.checksum = hash_bytes(FNV_SEED, (const unsigned char *)&c.snapshot, 3 * 4);
     return BLOB_IO(CHECKPOINT_FILE, c, 1);
 }
@@ -1448,11 +1500,17 @@ void playback_save(void) {
     /* Failed checkpoints stay pending; the UI loop retries at most every five seconds. */
     s.save_failed = 1;
     s.stamp = time_now_ms();
-    if (!s.dirty && pos == s.saved_pos) {
-        if (save_elapsed(sec)) s.saved_elapsed = sec, s.save_failed = 0;
+    /* A plain queue's track change moves nothing but the position, which the checkpoint holds: the
+     * snapshot written when the queue last changed (saved_queue, its hash) stays as it is. Advanced
+     * play's moves the cursor, the played marks and the history too.
+     * ponytail: firmware before this takes a checkpoint at another track for a stale one, so after
+     * a downgrade a plain queue comes back at the track its snapshot was written on. */
+    if (!s.dirty && (pos == s.saved_pos || (plain && s.saved_queue))) {
+        if (save_elapsed(pos, sec)) s.saved_elapsed = sec, s.saved_pos = pos, s.save_failed = 0;
         return;
     }
     s.dirty = 1;
+    s.snap_at = s.stamp;
     unsigned size = sizeof(snapshot) + (n * 3 + hn + npend) * 4;
     for (unsigned i = 0; i < n; ++i) {
         const char *path = P(deque_at(queue(), i), REC_PATH);
@@ -1509,7 +1567,7 @@ void playback_save(void) {
         s.saved_sum = sum;
         s.saved_queue = qsum;
         s.dirty = 0;
-        s.save_failed = !save_elapsed(sec);
+        s.save_failed = !save_elapsed(pos, sec);
     }
 }
 typedef struct {
@@ -1577,10 +1635,13 @@ int ringnav_memory(void *out) {
         ok = 0;
     if (fclose(f)) ok = 0;
     checkpoint c;
-    if (ok && BLOB_IO(CHECKPOINT_FILE, c, 0) && c.snapshot == h.checksum && c.pos == h.pos &&
-        c.elapsed <= 0x7fffffff &&
-        hash_bytes(FNV_SEED, (const unsigned char *)&c.snapshot, 3 * 4) == c.checksum)
+    if (ok && BLOB_IO(CHECKPOINT_FILE, c, 0) && c.snapshot == h.checksum &&
+        (c.pos == h.pos || (h.version == 4 && c.pos < h.n)) && c.elapsed <= 0x7fffffff &&
+        hash_bytes(FNV_SEED, (const unsigned char *)&c.snapshot, 3 * 4) == c.checksum) {
         h.elapsed = c.elapsed;
+        if (h.version == 4)
+            h.pos = h.cursor = c.pos; /* a plain queue's track since (playback_save) */
+    }
     /* Validate the entire snapshot before queries or mutations. */
     unsigned *indices = (unsigned *)(buf ? buf + header_size : 0);
     unsigned char *p = buf ? buf + header_size + (h.n * 3 + h.hn + h.npend) * 4 : 0;
@@ -1818,7 +1879,15 @@ void playback_poll(void) {
     /* playback_save writes only what changed, at most every 5 s. A track that just plays on
      * writes its elapsed second every 30 s instead (a synced flash write each); a new track, a
      * pause or a seek go within 5 s, a failed write retries every 30 s, and power-off saves
-     * exactly (ringnav_savequeue). */
+     * exactly (ringnav_savequeue). A change to the queue or its order is saved on the next pass;
+     * so is advanced play's track change (dirty 2: the place alone, in an order that stays), unless
+     * a snapshot was written in the last 5 s: then it waits for the 5 s, so quick skips are two
+     * whole snapshots, not one each. A clean end and Standby write it (playback_flush).
+     * ponytail: an end that isn't clean (a crash, the watchdog) within those 5 s comes back at the
+     * place of the last snapshot, the skips since lost; a save a skip would lift it, at a whole
+     * snapshot each. Standby's flush comes after stock stopped the player, so a skip held then is
+     * saved at its song's second 0. */
+    if (s.dirty == 2 && now - s.snap_at < 5000) return;
     if (!(s.dirty && !s.save_failed)) {
         if (now - s.stamp < (s.save_failed ? 30000u : 5000u) || now - s.poll_stamp < 5000) return;
         s.poll_stamp = now;
@@ -1829,6 +1898,11 @@ void playback_poll(void) {
             return;
     }
     playback_save(), s.stamp = now;
+}
+
+/* A save still held (playback_poll), written now: at a clean end and before Standby's suspend. */
+void playback_flush(void) {
+    if (s.dirty) playback_save();
 }
 
 int ringnav_savequeue(void) {

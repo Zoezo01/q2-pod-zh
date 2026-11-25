@@ -222,9 +222,15 @@ def in_fork(test):
             os._exit(1 if failure else 0)
         os.close(write)
         failure = b''
-        while chunk := os.read(read, 65536):
-            failure += chunk
-        os.close(read)
+        try:
+            while chunk := os.read(read, 65536):
+                failure += chunk
+        except BaseException:  # pytest-timeout's alarm, which the child never gets: it would run on, unwatched
+            os.kill(child, 9)
+            os.waitpid(child, 0)
+            raise
+        finally:
+            os.close(read)
         status = os.waitpid(child, 0)[1]
         if status:
             pytest.fail(f'child status {status:#x}\n' + failure.decode())
@@ -337,11 +343,13 @@ class Rows(Deques):
 
 
 class Files:
-    """The card's and flash's files as a dict: fopen and all, so blob_io and the snapshot's reader run whole; "a" appends."""
+    """The card's and flash's files as a dict: fopen and all, so blob_io and the snapshot's reader run whole; "a" appends.
+    A read open of a missing file fails with ENOENT; fail_open, an errno, fails every read open with it."""
     def __init__(self, fw, files=None):
         self.files = files if files is not None else {}
         self.open = {}
         self.fail_rename = False
+        self.fail_open, self.errno = 0, fw.fn('fw___errno_location', C.POINTER(C.c_int))
         fw.mock('fw_fopen', self.fopen)
         fw.mock('fw_fread', self.fread)
         fw.mock('fw_fseek', self.fseek)
@@ -353,7 +361,8 @@ class Files:
 
     def fopen(self, path, mode, *_):
         path, mode = C.string_at(path).decode(), C.string_at(mode).decode()
-        if 'r' in mode and path not in self.files:
+        if 'r' in mode and (self.fail_open or path not in self.files):
+            self.errno()[0] = self.fail_open or 2
             return 0
         handle = 0x2000 + len(self.open)
         while handle in self.open:  # one closed since leaves this count on a file still open
@@ -398,10 +407,12 @@ class Files:
 class Card:
     """A card's files as a dict, written through: fopen creates the entry, fwrite appends to it, fclose is a flag.
     fail_write, fail_rename, fail_sync, fail_close and fail_ferror make those calls fail; unlinked lists the paths removed.
+    A read open of a missing file fails with ENOENT; fail_open, an errno, fails every read open with it.
     access=False leaves fw_access to the test (games' listing asks the real one)."""
     def __init__(self, fw, files=None, access=True):
         self.files, self.open, self.unlinked = dict(files or {}), {}, []
         self.fail_write = self.fail_rename = self.fail_sync = self.fail_close = self.fail_ferror = False
+        self.fail_open, self.errno = 0, fw.fn('fw___errno_location', C.POINTER(C.c_int))
         for name in 'fopen fread fwrite fseek ftell rename unlink'.split():
             fw.mock('fw_' + name, getattr(self, name))
         fw.mock('fw_fclose', lambda *_: self.fail_close)
@@ -416,7 +427,8 @@ class Card:
 
     def fopen(self, path, mode, *_):
         name, write = self.name(path), C.string_at(mode)[:1] == b'w'
-        if not write and name not in self.files:
+        if not write and (self.fail_open or name not in self.files):
+            self.errno()[0] = self.fail_open or 2
             return 0
         handle = 0x1000 + len(self.open)
         self.open[handle] = [name, 0]

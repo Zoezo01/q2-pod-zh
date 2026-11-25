@@ -32,6 +32,7 @@ static struct {
     lang_line_t *line;
     int picks; /* the page's tables: code, own name, the card file */
     char code[LANG_PICKS][12], name[LANG_PICKS][48], file[LANG_PICKS][96];
+    int zh; /* the language in use is Chinese: its code starts "zh" */
 } lg;
 
 /* s's \n, \t and \\ undone in place; any other backslash stays. */
@@ -50,31 +51,47 @@ static int in(const char *set, char c) {
         if (*set == c) return 1;
     return 0;
 }
-static int digit(char c) { return (c >= '0' && c <= '9') || c == '*'; }
+static int dig(char c) { return c >= '0' && c <= '9'; }
+static const char *num(const char *e) {
+    while (dig(*e)) ++e;
+    return e;
+}
+/* Past a positional "n$" (n above 0) at e, else e. */
+static const char *pos(const char *e) {
+    const char *z = e, *p;
+    while (*z == '0') ++z;
+    p = num(z);
+    return *p == '$' && p > z ? p + 1 : e;
+}
 
-/* The next printf conversion in s, as tools/langpack.py's CONVERSION: flags, width, precision,
- * length, then a conversion's letter; "%%" and a '%' with no letter are none. Where it starts, its
- * length in *n; 0 past the last. */
+/* The next printf conversion in s, as tools/langpack.py's conversions(): the spec glibc reads, "%",
+ * a positional "n$", flags, width, precision, length, then a conversion's letter. "%%" (and "%5%")
+ * and a spec with an unknown letter are none, unless a '*' or "n$" in it takes an argument. A spec
+ * the string's end cuts short (glibc fails the whole call) is one conversion, *n 0, equal to any
+ * other such end. Where it starts, its length in *n; 0 past the last. */
 static const char *conversion(const char *s, unsigned *n) {
     for (; *s; ++s) {
         if (*s != '%') continue;
-        if (s[1] == '%') {
-            ++s;
-            continue;
-        }
-        const char *e = s + 1;
-        while (*e && in("-+ #0", *e)) ++e;
-        while (digit(*e)) ++e;
-        if (*e == '.' && digit(e[1]))
-            for (++e; digit(*e); ++e) {}
+        const char *e = pos(s + 1), *p;
+        while (*e && in("-+ #0'I", *e)) ++e;
+        e = *e == '*' ? pos(e + 1) : num(e);
+        if (*e == '.') ++e, e = *e == '*' ? pos(e + 1) : num(e);
         if ((*e == 'h' || *e == 'l') && e[1] == *e)
             e += 2;
-        else if (*e && in("hlLqjzt", *e))
+        else if (*e && in("hlLqjzZt", *e))
             ++e;
-        if (*e && in("diouxXeEfFgGaAcspn", *e)) {
+        if (!*e) { /* cut short: glibc fails the whole call; one conversion of its own kind */
+            *n = 0;
+            return s;
+        }
+        for (p = s; p < e && *p != '*' && *p != '$'; ++p) {}
+        /* a '*' or an "n$" takes its argument whatever follows; the letter, none to take, only when
+         * known */
+        if (p < e || (*e != '%' && in("diouxXeEfFgGaAcspnCSm", *e))) {
             *n = (unsigned)(e + 1 - s);
             return s;
         }
+        s = e;
     }
     return 0;
 }
@@ -86,6 +103,7 @@ static int same_conversions(const char *a, const char *b) {
         a = conversion(a, &m), b = conversion(b, &n);
         if (!a || !b) return a == b;
         if (m != n || memcmp(a, b, m)) return 0;
+        if (!m) return 1; /* the ends, the last of each */
         a += m, b += n;
     }
 }
@@ -148,6 +166,7 @@ static void lang_load(void) {
     }
     qsort(line, m, sizeof *line, by_key_sort);
     lg.raw = raw, lg.line = line, lg.n = m;
+    lg.zh = code[0] == 'z' && code[1] == 'h';
 }
 
 /* Q2 Pod's own English, translated: the same pointer when the language has no line for it. */
@@ -177,6 +196,37 @@ const char *ringnav_locale_tr(void *info, const char *key) {
     const char *t = key && en && lg.n ? find(key, en) : 0;
     if (!t && !lg.n) t = zh_asset(en); /* no pack: the asset's own Chinese */
     return t ? t : en;
+}
+
+/* Stock's T9 keyboard as it loads (ringnav_ui_load), built afresh at each open. With a Chinese
+ * pack it starts on stock's pinyin page, by the two calls stock's own key to it makes (0x5f0a38,
+ * 0x5f0ac8: the page, then its lang), and the capitals' case key leads there, so one key takes
+ * lower, upper and pinyin in turn; the pinyin page's own key goes back to lower. A search or
+ * free text starts there: a text box (input_type 0, as stock reads it at 0x69f77c). A sign-in
+ * keeps the letters: a password box (kbwifipass_dialog and searchbox_dialog name kb_default_t9
+ * for theirs), Wi-Fi's editwifi_dialog, whose one text box takes a network's name or its
+ * password, and a card app's field (addon.c marks it _ringnav_letters).
+ * ponytail: stock's engine has Simplified pinyin alone (0x6b1060: zh_cn or en_us), so a
+ * Traditional pack gets Simplified candidates and Japanese or Korean have no method; another
+ * needs an engine of its own. A box is a sign-in only by those marks: q2app has no password
+ * field, so a card app's field rows all keep the letters, a Chinese user name too. */
+void language_keyboard(widget_t *kb) {
+    if (tk_strcmp(widget_get_prop_str(kb, "name", ""), "kb_default_t9")) return;
+    input_method_t *im = input_method();
+    widget_t *box = im ? P(im, IM_WIDGET) : (void *)0; /* set before it loads (0x69f734) */
+    if (!box || widget_get_prop_int(box, "input_type", -1) ||
+        widget_get_prop_int(box, "_ringnav_letters", 0) ||
+        !tk_strcmp(widget_get_prop_str(window_of(box), "name", ""), "editwifi_dialog"))
+        return;
+    if (!lg.loaded) lang_load();
+    widget_t *panel = lg.zh ? widget_lookup(kb, "panel", 1) : 0,
+             *upper = panel ? widget_lookup(kb, "upper", 1) : 0,
+             *key = upper ? widget_lookup(upper, "page:lower", 1) : 0; /* case key: shift's after */
+    if (!key) return;
+    widget_set_name(key, "page:chinese");
+    widget_set_text_utf8(key, "中");
+    pages_set_active_by_name(panel, "chinese");
+    input_method_set_lang(im, "zh_cn");
 }
 
 /* How many of s's first characters make a code: letters and '_', 2 to 11 of them; 0 for fewer
@@ -330,7 +380,9 @@ static void refresh(lang_find_t *f, const char *dst, unsigned max) {
     unsigned a = 0;
     lang_apps(file_in, f);
     char *card = *f->file ? read_all(f->file, max, &a) : 0;
-    if (card && !file_holds(dst, card, a, max)) copy_buf(dst, card, a);
+    int font = !strcmp(dst, LANG_FONT);
+    if (card && !(font && !sfnt_whole((unsigned char *)card, a)) && !file_holds(dst, card, a, max))
+        copy_buf(dst, card, a);
     free(card);
 }
 

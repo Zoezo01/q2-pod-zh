@@ -160,7 +160,7 @@ extern int coverflow_wheel_live(void), coverflow_wheel_poll(int usable, int gate
 extern int coverflow_turning(void), land_key(unsigned key);
 extern unsigned coverflow_scope(widget_t *page);
 extern void coverflow_home_art(widget_t *top);
-extern void coverflow_home_layout(void);
+extern void coverflow_home_layout(void), coverflow_home_sync(void);
 extern int ringnav_reboot(void);
 extern void coverflow_home_clip(widget_t *w, canvas_t *canvas, int begin);
 extern void coverflow_slant(widget_t *w, canvas_t *canvas, unsigned paper),
@@ -218,10 +218,10 @@ menu_t g_menu __attribute__((section(".scratch")));
  * Contexts, panes and timers
  **************************************************************************************************/
 
-/* Audited top windows, each tagged with its content-identity class and whether its row list is
- * one of the audited local row lists that carry over at the ends. The index is remembered
- * instead of the name pointer: AWTK owns and frees the window's name string. */
-enum { RING = 1, DRILL = 2, BUTTONS = 4, CHOICE = 8 };
+/* Audited top windows, each tagged with its content-identity class and its flags
+ * (contexts.inc). The index is remembered instead of the name pointer: AWTK owns and frees the
+ * window's name string. */
+enum { MORE = 1, DRILL = 2, BUTTONS = 4, CHOICE = 8 };
 const context_t contexts[] = {
 #include "contexts.inc"
 };
@@ -233,17 +233,14 @@ int context_id(const char *name) {
     return -1;
 }
 
-/* The audited local row lists built from the compact assets: the file and music views. Grids
- * (album_page, but its Albums list below), other dynamic pages and the home carousel
- * keep hard ends; iPod Home's lists wrap at once (home_menu). */
-/* By the top window's name, not m->ctx: a dynamic page (the hold menu) has no memory context.
- * album_page also holds an album's songs (0xff10), which keep hard ends. */
+/* One rule for list ends: every list of two rows or more carries over after the pause, but a
+ * confirm's buttons (BUTTONS) and a list that loads more at its end (MORE), where the next rows
+ * are still to come. By the top window's name, not m->ctx: a dynamic page (the hold menu) has no
+ * memory context. */
 static int ring_list(const menu_t *m) {
     widget_t *top = window_manager_get_top_window(window_manager());
-    const char *name = top ? widget_get_prop_str(top, "name", (void *)0) : (void *)0;
-    int ctx = context_id(name), ring = ctx >= 0 && (contexts[ctx].flags & RING);
-    if (ctx >= 0 && !tk_strcmp(name, "album_page")) ring = I(g_class_type, 0) == CLASS_ALBUMS;
-    return m->w && ring && m->rows >= 2;
+    int ctx = context_id(top ? widget_get_prop_str(top, "name", (void *)0) : (void *)0);
+    return m->w && ctx >= 0 && !(contexts[ctx].flags & (BUTTONS | MORE)) && m->rows >= 2;
 }
 
 /* The view kinds load() actually navigates: a vertical scroll view, a table client, a slide
@@ -818,7 +815,9 @@ static int position(menu_t *m) {
 
 /* Remember where the user was. Widget props die with a recreated page; this survives it.
  * Non-virtual lists also remember the row's first two text values, so a reordered list restores
- * the same item and duplicate names can be told apart by their second line. */
+ * the same item and duplicate names can be told apart by their second line. A fixed menu is
+ * never remembered: opened forward it starts at its top, as the iPod's do, and a Return shows the
+ * live window, whose view keeps its row. */
 static void select(menu_t *m, int id) {
     if (st.center_timer && (m->w != st.center_surface || id != st.center_id)) cancel_center();
     if (st.reveal_surface == m->w) st.reveal_surface = (void *)0;
@@ -833,7 +832,7 @@ static void select(menu_t *m, int id) {
                 hash2 = r.two;
             }
         }
-        if (ctx >= 0) {
+        if (ctx >= 0 && contexts[ctx].kind != CTX_FIXED) {
             int p = position(m);
             if (p < 0) p = POS_MEM - 1;
             for (; p > 0; --p) st.pos[p] = st.pos[p - 1];
@@ -1453,12 +1452,16 @@ unsigned stops_row(const stops_t *s, int j, int h) {
 }
 /* An N-stop gradient s over x, y, w, h in one-pixel bands; pixel row j sits j / (h - 1) of the way
  * down, mixed between the stops around it. A screen-colour painter's: its colours are final, never
- * flipped. As many stops as rows: each row its own. Fewer than two stops draw nothing. */
+ * flipped. As many stops as rows: each row its own. Fewer than two stops draw nothing. Stops all
+ * one colour (a flat ground) are one opaque rect of the box: every row is that colour (mix of a
+ * colour with itself is it), so the pixels are the rows'. */
 void paint_stops(canvas_t *canvas, int x, int y, int w, int h, const stops_t *s) {
     if (s->n < 2) return;
-    for (int j = 0; j < h; ++j) {
+    int k = 1;
+    while (k < s->n && s->rgb[k] == s->rgb[0]) ++k;
+    for (int j = 0, step = k == s->n ? h : 1; j < h; j += step) {
         stock_canvas_set_fill_color(canvas, RGBA(stops_row(s, j, h)));
-        canvas_fill_rect(canvas, x, y + j, w, 1);
+        canvas_fill_rect(canvas, x, y + j, w, step);
     }
 }
 /* How far a rounded box's row i starts in from its side: a hard corner. */
@@ -2113,15 +2116,42 @@ unsigned ringnav_hscroll_lull(widget_t *w, int (*lulled)(const void *), unsigned
 /* Classic's dialogs (CONFIRM_CLASSIC_LIGHT), in screen pixels and final colours. A dialog
  * is full-screen (0, 0, 375, 320) and its background clear, so the bar and the page show through.
  */
-/* The confirm's form: the tray for the prompt confirm_over asked for, the page for any other. The
- * first confirm painted after the call takes the flag, so a prompt stock opens over it (a held
- * power key) stays a question. None where the theme leaves its prompts stock's. */
+/* The confirm's form: the tray for the prompt confirm_over asked it for, the page for any other.
+ * The first confirm painted after the call takes its verb and form, so a prompt stock opens over it
+ * (a held power key) keeps its own. None where the theme leaves its prompts stock's. */
 static int confirm_form(widget_t *win) {
-    if (theme()->painter[PAINT_CONFIRM] == CONFIRM_STOCK || P(win, W_PARENT) != window_manager() ||
+    if (P(win, W_PARENT) != window_manager() ||
         tk_strcmp(widget_get_prop_str(win, "name", ""), "confirminfo_dialog"))
         return FORM_NONE;
     if (st.confirm_verb && !st.confirm_win) st.confirm_win = win;
-    return st.confirm_verb && win == st.confirm_win ? FORM_TRAY : FORM_PAGE;
+    if (theme()->painter[PAINT_CONFIRM] == CONFIRM_STOCK) return FORM_NONE;
+    return st.confirm_tray && win == st.confirm_win ? FORM_TRAY : FORM_PAGE;
+}
+/* The confirm's second cell names what it does, in every theme: the verb confirm_over gave,
+ * Shut Down?'s (the top window while g_poweroff_state is 1: a held power key opens it over any
+ * prompt, which keeps its own word) or a delete's (stock's context kind 3, the only one with
+ * msg_delcheckbutton: Local Music's album, all-songs and album-info deletes, Now Playing's). Any
+ * other keeps the asset's tr_text, OK as the pack has it, and a prompt that was top when the power
+ * key set the state gets it back.
+ * ponytail: stock's kind-1 prompts (its playlist Add and Delete, Remove from Playlist) and the
+ * Line Out warning open with nothing to tell them by but their translated text; a hook on their
+ * callers would name theirs. Runs in paints, so only if it differs. */
+static void confirm_verb(widget_t *w) {
+    widget_t *ok = widget_lookup(w, "img_enter", 0);
+    const char *down = "关机",
+               *verb =
+                   w == st.confirm_win ? st.confirm_verb
+                   : g_poweroff_state == 1 && w == window_manager_get_top_window(window_manager())
+                       ? down
+                   : widget_lookup(w, "msg_delcheckbutton", 0) ? "删除"
+                                                               : (const char *)0;
+    char now[64] = "";
+    if (!ok) return;
+    widget_get_text_utf8(ok, now, sizeof now);
+    if (verb && strncmp(now, verb, sizeof now - 1))
+        widget_set_text_utf8(ok, verb);
+    else if (!verb && !tk_strcmp(now, down))
+        widget_set_tr_text(ok, widget_get_prop_str(ok, "tr_text", "OK"));
 }
 /* An inset shadow from above (0, 2, blur 2): of its alpha a, what a gaussian leaves on each row. */
 void inset_top(canvas_t *canvas, const rect_t *r, int R, unsigned a) {
@@ -2198,10 +2228,6 @@ static void confirm_dress(widget_t *w, canvas_t *canvas, int form) {
     int flat = flat_dialogs(), cell_h = flat ? CONFIRM_FLAT_H : 30, gap = flat ? 8 : 0;
     if (!cell[0] || !cell[1] || I(cell[0], W_H) == cell_h) return;
     widget_set_prop_int(w, "style:normal:bg_color", 0);
-    if (form == FORM_TRAY) { /* stock's own label is the English Cancel */
-        widget_set_text_utf8(cell[0], "取消");
-        widget_set_text_utf8(cell[1], st.confirm_verb);
-    }
     int line = 0, width[2];
     for (unsigned i = 0, n = widget_count_children(w); i < n; ++i) {
         widget_t *c = widget_get_child(w, i);
@@ -3119,9 +3145,9 @@ int ringnav_keylock_rows(widget_t *win) {
 static int bt_vol_link __attribute__((section(".scratch")));
 /* Bluetooth's Receive Audio (BTRECEIVE), on unless the key is 0: headset.c headset_bt_service. */
 static int bt_receive __attribute__((section(".scratch")));
-/* Appearance's Hide Apps, Hide Games and Hide App Store (HIDEAPPS, HIDEGAMES, HIDESTORE): Library's
- * rows, gone at its next open (home.c ringnav_localmusic). */
-static int hide_lib[3] __attribute__((section(".scratch")));
+/* Appearance's Hide Apps, Hide Games, Hide App Store and Hide Hi-Res (HIDEAPPS, HIDEGAMES,
+ * HIDESTORE, HIDEHIRES): Library's rows, gone at its next open (home.c ringnav_localmusic). */
+static int hide_lib[4] __attribute__((section(".scratch")));
 /* Display's Log Failed Artwork (CFARTLOG): coverflow.c build_art. */
 static int cf_art_log __attribute__((section(".scratch")));
 /* Display's Hide Duplicate Albums and Hide Duplicate Songs (CFDUPALBUMS, CFDUPSONGS): coverflow.c
@@ -3158,6 +3184,7 @@ static int *const pod_values[] = { &st.charge_limit,
                                    &hide_lib[0],
                                    &hide_lib[1],
                                    &hide_lib[2],
+                                   &hide_lib[3],
                                    &bt_receive,
                                    &cf_art_log,
                                    &cf_dups[0],
@@ -3197,6 +3224,7 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         "HIDEAPPS",
                                         "HIDEGAMES",
                                         "HIDESTORE",
+                                        "HIDEHIRES",
                                         "BTRECEIVE",
                                         "CFARTLOG",
                                         "CFDUPALBUMS",
@@ -3280,6 +3308,7 @@ static void pod_text(int i) {
         { "隐藏应用" },
         { "隐藏游戏" },
         { "隐藏应用商店" },
+        { "隐藏 Hi-Res" },
         { "接收音频" },
         { "记录失败封面" },
         { "隐藏重复专辑" },
@@ -3413,6 +3442,7 @@ int ringnav_powermanager(widget_t *win, void *ctx) {
     pod_rows(win, "scroll_view_powermanager", POD_CHARGE, 1, icons);
     widget_t *view = win ? widget_lookup(win, "scroll_view_powermanager", 1) : (void *)0;
     usb_charge_row(win, view);
+    sleep_row(win); /* stock's Sleep Timer row, its time left */
     pod_rows(win, "scroll_view_powermanager", POD_SMART_WIFI, 1, icons + 3);
     pod_rows(win, "scroll_view_powermanager", POD_CARMODE, 1, icons + 2);
     if (view) /* battery.c's page */
@@ -3999,6 +4029,8 @@ static void bar_sync(widget_t *bar) {
     } else if (c && st.codec_step >= CODEC_STEPS)
         image_base_set_image(st.bar_bt, BT_GLYPH);
     accent(); /* reads the settings */
+    /* Now Playing's row on Home, as a song loads or the last goes */
+    coverflow_home_sync();
     if (st.home_rockbox != rockbox_available() ||
         (shortcut() == SHORTCUT_GROOVEBOX && st.home_groovebox != groovebox_available()))
         coverflow_home_layout();
@@ -4523,7 +4555,7 @@ static int np_gone(void *win, event_t *event) {
         st.np_pos = st.np_album = st.np_remain = st.np_slider = st.np_elapsed = st.np_cover =
             st.np_slide = st.np_lrc = st.np_title = (void *)0;
         st.scrub_moved = 0; /* the page is going: no seek */
-        st.np_off = st.np_full = st.lyric_held = 0;
+        st.np_off = st.np_full = st.lyric_held = st.np_stale = 0;
         stop_timer(&st.np_marquee);
         stop_timer(&st.np_remain_timer);
         stop_timer(&st.np_fit_timer);
@@ -4602,9 +4634,29 @@ static void np_update_poll(void) {
         return;
     np_sync(st.np_win);
     unsigned key = np_shown();
-    if (key == st.np_seen) return;
+    if (key == st.np_seen && !st.np_stale) return;
+    int force = key != st.np_seen;
     st.np_seen = key;
-    ((int (*)(widget_t *, int))0x53cf08)(st.np_win, 1);
+    ((int (*)(widget_t *, int))0x53cf08)(st.np_win, force);
+    st.np_stale = 0; /* after: the lyric follow inside it scrolls at once (ringnav_lyric_follow) */
+}
+
+/* The page's 250 ms timer (0x53d810) runs the update through here (NP_TICK in tools/build.py),
+ * lit or dark, as long as the page is open. With the screen off it is skipped unless it is forced
+ * or a flag it consumes is set (g_autochange_flag, g_forcerefresh_flag, g_playcover_finishflag),
+ * so what they drive (the flags' clearing, the heart and its SyncLink notice, the art) happens on
+ * the tick it did. What is skipped only draws: the times, the bar, the play state, the lyric line
+ * and the info page. A stream (play types 0xf1, 0xf2) is never skipped: its change shows the
+ * buffering spinner and starts its animation, which only a later tick stops. The timer's Enlarged
+ * Album Art countdown, after this call, runs as before. A skip leaves the page owed an update,
+ * which the first lit frame with it in front runs (np_update_poll). */
+int ringnav_np_tick(widget_t *win, int force) {
+    if (!g_backlight_status && !force && !g_autochange_flag && !g_forcerefresh_flag &&
+        !g_playcover_finishflag && (unsigned)mclGetPlayType() - 0xf1u > 1)
+        return st.np_stale = 1, 0; /* stock's update answers 0 */
+    int ret = ((int (*)(widget_t *, int))0x53cf08)(win, force);
+    st.np_stale = 0; /* after, as np_update_poll: the timer can run the owed update first */
+    return ret;
 }
 
 /* Classic's Spotify or Internet Radio Now Playing closing: its art's slanted frame goes with it.
@@ -4662,8 +4714,17 @@ int stream_ipod(widget_t *art, widget_t *const text[4], widget_t *elapsed, widge
 
 /* playing_page_init: stock builds the page and starts its 250 ms timer, then the iPod labels bind.
  * Require Output with none to play to: stock toasts, closes the window it was given and
- * returns STOP before it builds anything (0x53e4b4), so nothing binds. */
+ * returns STOP before it builds anything (0x53e4b4), so nothing binds. With no song loaded
+ * (queue_loaded) an open that only looks (no context, or class 0xff: Home's row and card, the
+ * Return hold, Quick Settings, the lock screen, a card app's "now") closes the window the same way,
+ * as an iPod has no Now Playing then; a play (another class) opens as before. ponytail: the window
+ * is made before its init, as for stock's refusal; an opener that checked first would skip making
+ * it. */
 int ringnav_playing(widget_t *win, void *ctx) {
+    if (win && !queue_loaded() && (!ctx || I(ctx, 8) == 0xff)) {
+        window_close(win);
+        return STOP;
+    }
     if (st.np_full)
         np_full(0); /* another Now Playing: the last one's lyrics back in their column */
     /* and their place: np_gone leaves a page this one replaces alone */
@@ -5173,16 +5234,30 @@ void paint_tray(canvas_t *canvas, int x, int y, int w, int h) {
 /* USB Storage's page, every theme: the computer's eject (SCSI START STOP UNIT, LoEj) closes the
  * card's LUN in the kernel's f_mass_storage, and its configfs file then reads empty. Once it has
  * read open, empty is the eject: the heading (own pages) or stock's line (scrlabel_info, which
- * stock's timer rewrites "USB Connected" every 500 ms, so a label of its style covers it) says OK
- * to Disconnect. No file (the gadget not built yet, or torn down) is no eject. The LUN stays closed
- * until stock rebuilds the gadget, so the poll ends there.
+ * stock's timer rewrites "USB Connected" every 500 ms, so a label of its style covers it, from the
+ * page's load, saying to eject) says OK to Disconnect. No file (the gadget not built yet, or torn
+ * down) is no eject. The LUN stays closed until stock rebuilds the gadget, so the poll ends there.
  * ponytail: only a host that sends LoEj counts (macOS, Linux, Explorer's Eject); Windows' Safely
  * Remove Hardware may only stop the device, leaving the page on Connected. The upgrade is
  * telling that apart from a cable still in (the gadget's suspend state, which configfs doesn't
  * show). */
 #define USB_LUN "/sys/kernel/config/usb_gadget/storage_demo/functions/mass_storage.msg/lun.0/file"
+/* Stock's page (no msg_heading): its line stays under a label of the same box and style, made as
+ * the page loads, which says to eject. */
+static widget_t *usb_cover(widget_t *win) {
+    widget_t *c, *ok = widget_lookup(win, "usb_ok", 1);
+    if (!ok && !widget_lookup(win, "msg_heading", 1) &&
+        (c = widget_lookup(win, "scrlabel_info", 1))) {
+        ok = hscroll_label_create(P(c, W_PARENT), I(c, W_X), I(c, W_Y), I(c, W_W), I(c, W_H));
+        widget_set_name(ok, "usb_ok");
+        widget_use_style(ok, "s_scrlabel_white24c");
+        widget_set_text_utf8(ok, "请先弹出再断开");
+        widget_set_visible(c, 0, 0);
+    }
+    return ok;
+}
 static int usb_poll(const void *info) {
-    widget_t *win = P(info, TIMER_CTX), *c;
+    widget_t *win = P(info, TIMER_CTX), *c, *ok = usb_cover(win);
     char path[2];
     void *f = fopen(USB_LUN, "rb");
     int n = f ? (int)fread(path, 1, sizeof path, f) : -1;
@@ -5192,12 +5267,8 @@ static int usb_poll(const void *info) {
     if ((c = widget_lookup(win, "msg_heading", 1))) {
         widget_set_text_utf8(c, "可以断开连接");
         widget_set_text_utf8(widget_lookup(win, "msg_line", 1), "");
-    } else if ((c = widget_lookup(win, "scrlabel_info", 1))) {
-        widget_t *ok =
-            hscroll_label_create(P(c, W_PARENT), I(c, W_X), I(c, W_Y), I(c, W_W), I(c, W_H));
-        widget_use_style(ok, "s_scrlabel_white24c");
+    } else if (ok) {
         widget_set_text_utf8(ok, "可以断开连接");
-        widget_set_visible(c, 0, 0);
     }
     widget_invalidate_force(win, (void *)0);
     return 7; /* RET_REMOVE */
@@ -5221,6 +5292,7 @@ widget_t *ringnav_ui_load(const char *name, widget_t *parent) {
          !tk_strcmp(widget_get_prop_str(root, "name", ""), "checkfw_dialog")))
         widget_set_prop_str(root, "highlight", "");
     if (root && slider_page(root)) slider_open(root); /* every theme's: no knob; Classic's page */
+    if (root) language_keyboard(root);
     if (root && own_pages()) { /* Search, T9 and the playlist's box Classic's alone */
         const char *loaded = widget_get_prop_str(root, "name", "");
         msg_open(root);
@@ -5232,7 +5304,7 @@ widget_t *ringnav_ui_load(const char *name, widget_t *parent) {
         if (time_form(root)) time_open(root);
     }
     if (root && g_usbmode != 1 && !tk_strcmp(widget_get_prop_str(root, "name", ""), "usbmode_page"))
-        st.usb_lun = 0, widget_add_timer(root, usb_poll, 500);
+        st.usb_lun = 0, usb_cover(root), widget_add_timer(root, usb_poll, 500);
     if (root) motion_load(root, np);
     return root;
 }
@@ -5313,6 +5385,7 @@ int bright_tone(unsigned tone) {
 static void confirm_prompt(widget_t *w, canvas_t *canvas) {
     if (tk_strcmp(widget_get_prop_str(w, "name", ""), "confirminfo_dialog")) return;
     int form = confirm_form(w);
+    confirm_verb(w); /* before the dressing, which measures the cells */
     if (form) {
         confirm_dress(w, canvas, form);
         return;
@@ -6441,7 +6514,7 @@ int restart_asked(void) {
         char text[0x400];
     } prompt = { 1, 0, "" };
     tk_snprintf(prompt.text, sizeof prompt.text, "%s", "重启以应用？");
-    return navigator_to_with_context("dialog/confirminfo_dialog", &prompt) == 10;
+    return confirm_over(&prompt, "重启", 0) == 10;
 }
 /* A choice that needs another geometry set: confirmed, the config takes value (a theme its presets
  * too, its own options' among them) and the Q2 restarts into it, ringnav_reboot saving the queue
@@ -6637,7 +6710,7 @@ int ringnav_display(widget_t *win, void *ctx) {
         for (int k = 0; k < T->n_opts; ++k) setting_row(view, T->opts[k].setting);
         pod_rows(win, "scroll_view_display", POD_HIDE_STREAM, 2, home_icons);
         pod_rows(win, "scroll_view_display", POD_HIDE_APPS, 2, home_icons);
-        pod_rows(win, "scroll_view_display", POD_HIDE_STORE, 1, home_icons);
+        pod_rows(win, "scroll_view_display", POD_HIDE_STORE, 2, home_icons);
         return result;
     }
     wheel_row(list_row_into(view, "system_display", xfade_open, (void *)1));
@@ -7298,7 +7371,7 @@ int compact_now_playing(void) {
                 if (classic) coverflow_home_top();
                 navigator_back_to_home();
             }
-        } else {
+        } else if (queue_loaded()) { /* nothing loaded: no Now Playing to look at */
             static const int context[4] = { 0, 0, 0xff, 2 };
             st.np_origin = top;
             navigator_switch_to_with_context("playing_page", context, 0);
@@ -7684,7 +7757,8 @@ int ringnav_art_header(char *buf, unsigned size, const char *fmt, const char *al
  * again and the toast says so over the list it came from. Stock opened a black page, and an empty
  * Albums grid's Return then did nothing until a restart (Hold Return: Home, back_to_home, still
  * left it); the cause was not found in the window manager's close path, so the page goes before a
- * Return can reach it, with the forced close that path uses. The page is its class's
+ * Return can reach it, with the forced close that path uses (its toast: "Update Library first" when
+ * the library holds no song at all, else the class's "No …"). The page is its class's
  * (g_class_type), on top, whichever of the two list pages shows it, polled every EMPTY_POLL_MS
  * until it opens or stops being on top. */
 static int empty_toast(const void *unused) {
@@ -7698,7 +7772,13 @@ static int empty_toast(const void *unused) {
         return 0;
     }
     if (mine) window_manager_close_window_force(wm, top);
-    toast(tr(none[st.empty_kind]));
+    /* Albums and Artists leave out audiobooks and podcasts, so only a library with no song of any
+     * kind (never scanned, or its table not there: -1) is told to update; one probe row, whatever
+     * the library's size.
+     * ponytail: a failed read (-1) counts as no songs, so a database busy under a scan says Update
+     * Library first; era_sql returning sqlite's code would tell busy from no table. */
+    toast(library_count("select 1 from songtable limit 1") > 0 ? tr(none[st.empty_kind])
+                                                               : "请先更新本地音乐库");
     return 0;
 }
 
@@ -7914,23 +7994,25 @@ static int page_closed(void *ctx, event_t *event) {
 #define RESUME_FILE "/mnt/data/ringnav-resume" /* coverflow.c's blob_io */
 #define PLAYS_FILE "/mnt/data/ringnav-plays"
 
+/* The saved places read in (blob_load; an earlier release's 32 read short), 0 while unread; fails
+ * counts a save's failed reads. */
+static int spots_load(unsigned *fails) {
+    return st.spots_read ||
+           (st.spots_read = blob_load(RESUME_FILE, st.spots, sizeof st.spots, fails));
+}
+
 /* key's saved place, 0 for none. */
 static int spot_at(unsigned key) {
-    if (!st.spots_read) {
-        st.spots_read = 1;
-        if (!BLOB_IO(RESUME_FILE, st.spots, 0)) /* earlier releases kept 32 */
-            blob_io(RESUME_FILE, RESUME_FILE, st.spots, 32 * sizeof *st.spots, 0);
-    }
+    if (!spots_load(0)) return 0;
     for (int i = 0; i < RESUME_SLOTS; i++)
         if (st.spots[i].key == key) return st.spots[i].sec;
     return 0;
 }
 
-void plays_load(void) {
-    if (!st.plays_read) {
-        st.plays_read = 1;
-        BLOB_IO(PLAYS_FILE, st.plays, 0);
-    }
+/* The play counts read in (blob_load), 0 while unread; fails counts a save's failed reads. */
+int plays_load(unsigned *fails) {
+    return st.plays_read ||
+           (st.plays_read = blob_load(PLAYS_FILE, st.plays, sizeof st.plays, fails));
 }
 
 /* A play count's key: the path's hash, with a CUE track's start mixed in, since a CUE image's
@@ -8582,6 +8664,7 @@ void ringnav_sort_key(char *s) {
 
 /* Moves key's place to the front of the ring at sec, or forgets it near either end. */
 static void spot_keep(unsigned key, int sec, int total) {
+    if (!spots_load(&st.spots_fails)) return; /* never written over a ring not read */
     int i = 0, keep = sec >= RESUME_EDGE_S && sec < total - RESUME_EDGE_S;
     while (i < RESUME_SLOTS - 1 && st.spots[i].key != key) i++;
     /* nothing to do: already first at sec, or nothing kept to forget */
@@ -8603,7 +8686,7 @@ static void spot_keep(unsigned key, int sec, int total) {
  * once keeps its count until a second play can come. */
 _Static_assert(PLAYS_FRESH < PLAYS_SLOTS, "a full table has a slot to replace");
 static void play_count(void *r, unsigned key) {
-    plays_load();
+    if (!plays_load(&st.plays_fails)) return; /* never written over counts not read */
     int i = PLAYS_FRESH;
     for (int j = 0; j < PLAYS_SLOTS && st.plays[i].key != key; j++)
         if (st.plays[j].key == key || (j >= PLAYS_FRESH && st.plays[j].n <= st.plays[i].n)) i = j;
@@ -8724,6 +8807,8 @@ static void resume_poll(void) {
         int book = st.rs_cue || st.rs_end; /* music CUE images are left alone */
         int min = resume_min();            /* Q2POD RESUMEMIN, 0 for Off */
         st.rs_long = book ? st.rs_spoken : (min && total >= min * 60) || st.rs_spoken;
+        if (st.rs_long && !spots_load(0))
+            st.rs_long = 0; /* ring unread: no jump, no save over it */
         int saved = st.rs_long ? spot_at(st.rs_file) : 0; /* reads the ring spot_keep writes */
         st.rs_pending = book ? 0 : saved;
         if (playback_resumed(r)) st.rs_pending = 0;
@@ -8822,7 +8907,7 @@ int rockbox_open(void *ctx, event_t *event) {
         (unsigned)btctl_transport_get_volume() <= 127)
         btctl_transport_set_volume(((g_maxvolume < 100 ? g_maxvolume : 100) * 127 + 50) / 100);
     ringnav_clean_end(); /* the watchdog would outlive demo's kill; nothing to report */
-    system("killall checkappprocess.sh; killall -9 hciplayer; " SPOT_KILL "; sync; kill -9 $PPID");
+    spot_kill("killall checkappprocess.sh; killall -9 hciplayer; ", "; sync; kill -9 $PPID");
     return 0;
 }
 
@@ -8846,15 +8931,50 @@ static int np_animating(void) {
                               (st.np_marquee && st.np_off > 0 && st.np_off < st.np_over)));
 }
 
-/* Keep stock VOLUME for wired/USB and boot; Bluetooth saves its own level. Smart Wi-Fi's own
- * toggles of the Wi-Fi switch save nothing (smart_config). */
+/* A volume's save waits until the level has been still for VOLUME_SAVE_MS (volume_save_poll, every
+ * UI pass): stock saves each step, and a save rewrites config.ini whole on the flash and runs a
+ * system("sync") shell on the UI thread (docs/internals.md#settings-writer), so a turn of the
+ * wheel was a save a tick, and a headset's held key one each bt_volume_poll. One is held, under
+ * the key it was routed to as it came; a save for another volume key writes the held one first, so
+ * each lands under its own key and in order. volume_save_flush writes it now: before a saved level
+ * is read back (ringnav_output, airplay.c), Standby's suspend and a clean end; with no config.ini
+ * (Reset Settings Only removed it before its reboot) it drops it, as stock's writer would make a
+ * file of that one key (the full factory reset removes it too). ponytail: the save is written on a
+ * UI pass about VOLUME_SAVE_MS after the last change, so a stall of the UI, a crash or the
+ * watchdog's restart right after a change leaves it unwritten, and an unclean end starts with the
+ * level from before (louder, if the volume was just turned down); writing the level without the
+ * whole settings file (a small file of its own) would lift it. */
+#define VOLUME_SAVE_MS 3000 /* over BT_VOLUME_SLOW_MS, so a key held dark is one save too */
+static struct {
+    int key, value; /* key: 0 none held, 1 PLAYSET VOLUME, 2 PLAYSET BT_VOLUME, 3 Q2POD AIRVOL */
+    unsigned at;
+} vsave __attribute__((section(".scratch")));
+void volume_save_flush(void) {
+    int key = vsave.key;
+    if (!key) return;
+    vsave.key = 0;
+    if (access("/mnt/data/config.ini", 0)) return;
+    const char *name = key == 1 ? "VOLUME" : key == 2 ? "BT_VOLUME" : "AIRVOL";
+    stock_write_config_trampoline(vsave.value, key == 3 ? "Q2POD" : "PLAYSET", name);
+}
+static void volume_save_poll(void) {
+    if (vsave.key && (unsigned)time_now_ms() - vsave.at >= VOLUME_SAVE_MS) volume_save_flush();
+}
+
+/* Keep stock VOLUME for wired/USB and boot; Bluetooth saves its own level, and an AirPlay speaker
+ * its own while it plays (airplay.c). Smart Wi-Fi's own toggles of the Wi-Fi switch save nothing
+ * (smart_config). */
 int ringnav_write_config(int value, const char *section, const char *key) {
     if (smart_config(section, key)) return 0;
-    if (!tk_strcmp(section, "PLAYSET") && !tk_strcmp(key, "VOLUME") && airplay_on())
-        section = "Q2POD", key = "AIRVOL"; /* an AirPlay speaker's, while it plays (airplay.c) */
-    else if (!tk_strcmp(section, "PLAYSET") && !tk_strcmp(key, "VOLUME") && mclGetOutputWay() == 1)
-        key = "BT_VOLUME";
-    return stock_write_config_trampoline(value, section, key);
+    int volume = 0; /* vsave's key */
+    if (!tk_strcmp(section, "PLAYSET") && !tk_strcmp(key, "VOLUME"))
+        volume = airplay_on() ? 3 : mclGetOutputWay() == 1 ? 2 : 1;
+    else if (!tk_strcmp(section, "Q2POD") && !tk_strcmp(key, "AIRVOL"))
+        volume = 3; /* airplay.c's own, as a speaker stops */
+    if (!volume) return stock_write_config_trampoline(value, section, key);
+    if (vsave.key != volume) volume_save_flush();
+    vsave.key = volume, vsave.value = value, vsave.at = (unsigned)time_now_ms();
+    return 0;
 }
 
 int ringnav_output(int way) {
@@ -8863,6 +8983,7 @@ int ringnav_output(int way) {
     if (changed &&
         !airplay_on()) { /* a speaker's level stays its own; airplay.c swaps back at its end */
         write_int_config(g_volume, "PLAYSET", "VOLUME");
+        volume_save_flush();
         int v = config_value("PLAYSET", way == 1 ? "BT_VOLUME" : "VOLUME", 101, g_volume);
         if (v > g_maxvolume) v = g_maxvolume;
         g_volume = (unsigned char)v;
@@ -9049,6 +9170,7 @@ int ringnav_sleep(void *loop) {
     headset_poll();
     headset_eq_poll();
     bt_volume_poll();
+    volume_save_poll();
     spot_poll();
     radio_poll();
     tidal_poll();
@@ -9423,9 +9545,14 @@ int ringnav_buzzer(int on) {
  * gates and latches still run, and the release clicks when the selection changes. The test reads
  * the tree only: nothing is loaded, selected or restored. Carousels, the pixel-scroll fallback,
  * scrub, the volume and every other key keep the stock click. */
+/* The keys a list takes: the wheel's ticks and Centre. */
+static int menu_key(unsigned key) {
+    return key == KEY_PREV || key == KEY_NEXT || key == KEY_CENTER;
+}
 int ringnav_keydown(void *ctx, event_t *event) {
     unsigned key = event ? (unsigned)I(event, EVENT_KEY) : 0;
     if (ple_key(key, 1) || side_seek(key, 1)) return STOP;
+    if (menu_key(key) && qm_blinking()) return STOP; /* the hold menu's blink owns its keys */
     widget_t *top = window_manager_get_top_window(window_manager());
     unsigned char tone = g_keytone_flag;
     widget_t *row = (void *)0;
@@ -9677,6 +9804,9 @@ int ringnav(void *ctx, event_t *event) {
         if (!usb_prompt()) stock_keyup_trampoline(ctx, event);
         return STOP;
     }
+    /* The hold menu's blink owns the menu's keys, the wheel and Centre; every other key, its
+     * release included, goes on to stock's filter. */
+    if (menu_key(key) && qm_blinking()) return STOP;
     /* This release's press was silenced by ringnav_keydown: a row change below clicks instead. */
     int owned = st.tone_key == key;
     st.tone_key = 0;
@@ -9782,7 +9912,8 @@ int ringnav(void *ctx, event_t *event) {
     if (key == KEY_RETURN && coverflow_home_back(window_manager_get_top_window(window_manager())))
         return STOP;
     /* Return on Home's main list selects Now Playing (its first row); on that row it opens Now
-     * Playing with the current queue untouched. The carousel keeps stock's Return. */
+     * Playing with the current queue untouched, and with nothing loaded (no such row) does nothing
+     * more. The carousel keeps stock's Return. */
     if (key == KEY_RETURN && usable()) {
         widget_t *wm = window_manager(), *top = window_manager_get_top_window(wm);
         widget_t *w = home_menu(top) && !window_manager_is_animating(wm)
@@ -9794,7 +9925,7 @@ int ringnav(void *ctx, event_t *event) {
                 select(&g_menu, 0);
                 reveal(&g_menu, 0, 1);
                 widget_invalidate_force(w, (void *)0);
-            } else
+            } else if (queue_loaded())
                 compact_now_playing();
             return STOP;
         }
@@ -9963,8 +10094,7 @@ int ringnav(void *ctx, event_t *event) {
                               id < 0 ? 0 : dir * step);
         if (next == 0 || next == g_menu.rows - 1) drop_wheel();
         if (next == id) {
-            int home = home_menu(top) && g_menu.rows >= 2;
-            if (!(home || ring_list(&g_menu)) || id < 0) {
+            if (!ring_list(&g_menu) || id < 0) {
                 stop_scroll(&g_menu);
                 widget_invalidate_force(w, (void *)0); /* a wheel wake still clears touch hiding */
                 return STOP;

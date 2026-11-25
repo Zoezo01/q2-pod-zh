@@ -323,7 +323,7 @@ def appearance_titles(t):
     """Appearance's rows under theme t: Theme, t's options in its theme.xml's order, then the Home switches every
     theme has."""
     return ['Theme'] + [o['label'] if o['setting'] == 'SETTING_OWN' else PAYLOAD[o['setting']][0] for o in t['opts']] + \
-        ['Hide Streaming', 'Hide Folder', 'Hide Apps', 'Hide Games', 'Hide App Store']
+        ['Hide Streaming', 'Hide Folder', 'Hide Apps', 'Hide Games', 'Hide App Store', 'Hide Hi-Res']
 
 
 def stored_key(t, o):
@@ -376,20 +376,20 @@ def test_appearance_lists_theme_then_minimals_options_in_its_order(fw):
     assert titles(page.view()) == appearance_titles(t)
     # no set_text: a row reads "Title: value", a switch its On or Off
     switches = [PAYLOAD[o['setting']][0] for o in t['opts'] if o['setting'] in PAYLOAD and PAYLOAD[o['setting']][2]] + \
-        ['Hide Streaming', 'Hide Folder', 'Hide Apps', 'Hide Games', 'Hide App Store']
+        ['Hide Streaming', 'Hide Folder', 'Hide Apps', 'Hide Games', 'Hide App Store', 'Hide Hi-Res']
     assert switches and [row[0] for row in rows(page.view()) if row[1] is not None] == switches
     read = readings(page.view())
     # the running theme's name, and Accent at Minimal's own default, under its own key
     assert read['Theme'] == t['name'] and read['Accent'] == accent_name(t, host.tools_theme.accent_default(t))
-    # nothing stored: the payload's own defaults (dark, Minimal round, Split, the clock in the title); no Rockbox: Favorites
+    # nothing stored: the payload's own defaults (dark, Minimal round, Split, the clock in the title); no Rockbox: Favourites
     assert (read['Light Mode'], read['Rounded Corners'], read['Home'], read['Shortcut'], read['Time in Title']) == \
-        ('Off', 'On' if t['name'] == 'Minimal' else 'Off', 'Split', 'Favorites', 'On')
+        ('Off', 'On' if t['name'] == 'Minimal' else 'Off', 'Split', 'Favourites', 'On')
     assert (read['Show Wordmark'], read['Hide Streaming'], read['Hide Folder']) == ('On', 'Off', 'Off')
-    assert (read['Hide Apps'], read['Hide Games'], read['Hide App Store']) == ('Off', 'Off', 'Off')
+    assert (read['Hide Apps'], read['Hide Games'], read['Hide App Store'], read['Hide Hi-Res']) == ('Off',) * 4
 
 
 @pytest.mark.parametrize('title, key', [('Hide Apps', 'HIDEAPPS'), ('Hide Games', 'HIDEGAMES'),
-                                        ('Hide App Store', 'HIDESTORE')])
+                                        ('Hide App Store', 'HIDESTORE'), ('Hide Hi-Res', 'HIDEHIRES')])
 def test_a_library_hide_switch_saves_its_key(fw, title, key):
     ui = Ui(fw)
     page = appearance(fw, ui)
@@ -410,7 +410,7 @@ def test_classic_appearance_rows_read_title_and_value_and_its_own_options(fw):
     assert own and [read[o['label']] for o in own] == [o['names'][o['def']] for o in own]  # each at its default
     # nothing stored: the payload's own defaults, Battery's Icon one of Classic's two
     assert (read['Light Mode'], read['Home'], read['Shortcut'], read['Battery'], read['Time in Title']) == \
-        ('Off', 'Split', 'Favorites', 'Icon', 'On')
+        ('Off', 'Split', 'Favourites', 'Icon', 'On')
 
 
 def clicks_of(fw, ui, page, title, n):
@@ -454,8 +454,8 @@ def test_shortcut_cycles_in_its_menu_order(fw):
     ui = Ui(fw)
     page = appearance(fw, ui, SHORTCUT=b'0')
     seen = clicks_of(fw, ui, page, 'Shortcut', 11)
-    # Rockbox, Favorites, Shuffle, Rated Albums, Playlists, Artists, Albums, Games, Podcasts, Audiobooks, None, Rockbox
-    assert [v for v, _ in seen] == ['Favorites', 'Shuffle', 'Rated Albums', 'Playlists', 'Artists', 'Albums', 'Games',
+    # Rockbox, Favourites, Shuffle, Rated Albums, Playlists, Artists, Albums, Games, Podcasts, Audiobooks, None, Rockbox
+    assert [v for v, _ in seen] == ['Favourites', 'Shuffle', 'Rated Albums', 'Playlists', 'Artists', 'Albums', 'Games',
                                     'Podcasts', 'Audiobooks', 'None', 'Rockbox']
     assert [w for _, w in seen] == [[('SHORTCUT', v)] for v in (3, 5, 4, 7, 1, 2, 6, 8, 9, 11, 0)]
 
@@ -551,14 +551,18 @@ def test_status_bar_steps_its_looks_and_repaints_the_bar_without_a_restart(fw, s
 
 
 class Prompts:
-    """navigator_to_with_context's dialogs: (page, kind, ms, text); answer is what the confirm returns (10 OK)."""
-    def __init__(self, fw, answer=0):
-        self.seen, self.answer = [], answer
+    """navigator_to_with_context's dialogs: (page, kind, ms, text); answer is what the confirm returns (10 OK). Given
+    st, verbs holds each one's second cell's word (confirm_over's), None for OK."""
+    def __init__(self, fw, answer=0, st=None):
+        self.seen, self.answer, self.st, self.verbs = [], answer, st, []
         fw.mock('navigator_to_with_context', self.show)
 
     def show(self, name, info, *_):
         kind, ms = struct.unpack('<ii', C.string_at(info, 8))
         self.seen.append((C.string_at(name).decode(), kind, ms, C.string_at(info + 8).decode()))
+        if self.st:
+            verb = self.st('confirm_verb', C.c_char_p).value
+            self.verbs.append(verb and verb.decode())
         return self.answer
 
 
@@ -568,10 +572,11 @@ def test_row_art_needs_a_restart_into_its_other_set(fw, st, geometry, answer):
     st('geom').value = names['GEOM_CLASSIC_LIGHT']  # Row Art On's set, as booted
     ui = Ui(fw)
     page = appearance(fw, ui, THEME=b'1')
-    prompts = Prompts(fw, answer)
+    prompts = Prompts(fw, answer, st)
     label = button_of(page.view(), 'Row Art').labels()[0]
     ui.click(label.parent)
     assert prompts.seen == [('dialog/confirminfo_dialog', 1, 0, 'Restart to apply?')]
+    assert prompts.verbs == ['Restart']  # its second cell says what it does
     # the running state keeps the booted set's value either way; confirmed, the config takes Off and the Q2 restarts
     assert row_of(label) == ('Row Art', 'On') and st('own', i=KEYS.index('ROWART')).value == 1
     assert writes(fw) == ([('ROWART', 0)] if answer else [])
@@ -651,9 +656,9 @@ def test_picking_classic_asks_to_restart_and_saves_its_preset_alone(fw, st, answ
     ui = Ui(fw)
     page = appearance(fw, ui, **{k: b'%d' % v for k, v in stored.items()})
     themes_page(fw, ui, page)
-    prompts = Prompts(fw, answer)
+    prompts = Prompts(fw, answer, st)
     pick(ui, page, classic)
-    assert [p[3] for p in prompts.seen] == ['Restart to apply?']
+    assert [p[3] for p in prompts.seen] == ['Restart to apply?'] and prompts.verbs == ['Restart']
     # confirmed, THEME and what Classic's preset changes are saved; Light Mode's Auto is kept
     saved = writes(fw)
     assert saved == ([('THEME', CLASSIC)] + preset_writes(classic, stored) if answer else [])
@@ -2109,8 +2114,10 @@ LATCH = O['RETURN_RELEASE_LATCH']
 
 class Hold:
     """Hold Return on top of ui's windows: navigator calls move the window stack as stock's do."""
-    def __init__(self, fw, ui, stand_in, hold_home=b'0', theme=b'0'):
+    def __init__(self, fw, ui, stand_in, hold_home=b'0', theme=b'0', loaded=True):
         self.fw, self.ui = fw, ui
+        C.c_uint.from_address(O['MCL_POS']).value = 0
+        fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = Deques(fw).new([1]) if loaded else 0  # a song, or none
         Config(fw, HOLDRETURN=hold_home, THEME=theme)
         fw.var('g_backlight_status', C.c_ubyte).value = 1
         stand_in(LATCH, b'\1')  # stock's long Return armed it
@@ -2144,6 +2151,14 @@ def test_hold_return_opens_now_playing_over_the_page_and_leaves_the_latch_to_swa
     assert hold.opened == [('playing_page', (0, 0, 0xff, 2))]  # stock's car-mode context: the queue as it is
     assert st('np_origin', C.c_void_p).value == songs.addr
     assert hold.latch() == 1  # stock's filter swallows the hold's release; cleared, it went back from Now Playing
+
+
+@pytest.mark.parametrize('hold_home', [b'0', b'1'])
+def test_hold_return_with_nothing_loaded_opens_no_now_playing(fw, st, stand_in, hold_home):
+    ui = Ui(fw)
+    ui.window('home_page')
+    hold = Hold(fw, ui, stand_in, hold_home=hold_home, loaded=False)
+    assert hold() == ['home_page'] and not hold.opened and not st('np_origin', C.c_void_p).value
 
 
 def test_hold_return_on_now_playing_goes_back_to_the_page_it_opened_over(fw, st, stand_in):
@@ -2809,9 +2824,22 @@ def test_artists_follow_the_artist_pages_own_setting(fw, records, artist_type):
     assert fw.var('navigation__library_music', C.c_int).value == 0  # put back
 
 
+def songs_in_library(fw, n):
+    """The library database as the empty list's song probe sees it: n songs of any kind, asked for as one row."""
+    def run(db, sql, callback, ctx, *_):
+        cells = (C.c_char_p * 1)(b'1')
+        call = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_int, C.POINTER(C.c_char_p), C.c_void_p)(callback)
+        return call(ctx, 1, cells, None) if n and callback else 0
+    fw.mock('sqlite3_open', lambda path, db, *_: C.c_void_p.from_address(db).__setattr__('value', 0xdb) or 0)
+    fw.mock('sqlite3_exec', run)
+
+
 @pytest.mark.parametrize('cls, words', [(CLASS_ALBUMS, 'No albums'), (0xf004, 'No artists'), (0xf005, 'No composers'),
                                         (0xf006, 'No genres')])
-def test_an_empty_class_list_closes_its_page_once_open_and_says_so(fw, st, records, cls, words):
+@pytest.mark.parametrize('songs', [0, 1])
+def test_an_empty_class_list_closes_its_page_once_open_and_says_so(fw, st, records, cls, words, songs):
+    """No song of any kind: Update Library first. Songs but none for this list (a card of audiobooks): its word."""
+    songs_in_library(fw, songs)
     ui = Ui(fw)
     lib = Library(fw)
     prompts = Prompts(fw)
@@ -2825,10 +2853,11 @@ def test_an_empty_class_list_closes_its_page_once_open_and_says_so(fw, st, recor
     page.props['stage'] = O['WINDOW_STAGE_OPENED']
     run(load.timers[-1][0])
     assert [a[1] for _, a in fw.calls('window_manager_close_window_force')] == [page.addr]
-    assert [p[3] for p in prompts.seen] == [words]
+    assert [p[3] for p in prompts.seen] == [words if songs else 'Update Library first']
 
 
 def test_an_empty_list_whose_page_never_showed_only_says_so(fw, st, records):
+    songs_in_library(fw, 1)
     ui = Ui(fw)
     lib = Library(fw)
     prompts = Prompts(fw)
@@ -2842,6 +2871,7 @@ def test_an_empty_list_whose_page_never_showed_only_says_so(fw, st, records):
 
 @pytest.mark.parametrize('page, shows', [('album_page', CLASS_ALBUMS), ('localclass_page', 0xf004)])
 def test_an_empty_list_leaves_a_list_page_showing_another_class(fw, st, records, page, shows):
+    songs_in_library(fw, 1)
     ui = Ui(fw)
     lib = Library(fw)
     prompts = Prompts(fw)
@@ -2853,6 +2883,18 @@ def test_an_empty_list_leaves_a_list_page_showing_another_class(fw, st, records,
     # the page on top lists another class: it stays, unpolled, and the toast says what was empty
     assert not fw.calls('window_manager_close_window_force') and len(load.timers) == 1
     assert [p[3] for p in prompts.seen] == ['No composers']
+
+
+def test_an_empty_list_in_an_unscanned_library_says_to_update(fw, st, records):
+    """A library whose table can't be read (never scanned) holds no song: the failed probe says Update Library first."""
+    fw.mock('sqlite3_open', lambda *_: 14)
+    ui = Ui(fw)
+    prompts = Prompts(fw)
+    load = Localclass(fw, Library(fw), [])
+    load(0xf005)
+    ui.window('localmusic_page')
+    run(load.timers[-1][0])
+    assert [p[3] for p in prompts.seen] == ['Update Library first']
 
 
 def test_songs_load_straight_into_the_showlist(fw, records):

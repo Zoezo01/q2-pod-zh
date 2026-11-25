@@ -527,6 +527,7 @@ class Wake:
         fw.mock('fw_socket', lambda *_: 5)
         fw.mock('fw_fcntl', lambda *_: 0)
         fw.mock('fw_connect', self.connect)
+        fw.mock('fw_clock_gettime', lambda which, ts, *_: C.memset(ts, 0, 16) and 0)  # now_ms reads 0: no wait
         fw.mock('fw_usleep', self.usleep)
         self.later = None  # what happens while the job waits, once
         for k in range(len(WAKE)):
@@ -766,6 +767,30 @@ def test_a_failed_remux_keeps_the_copy_as_downloaded_and_nothing_beside_it(fw, q
     t.play(URL, '123')
     t.run()
     assert card.listing() == ['123-0 Artist - Song.flac'] and card.files[cached('123-0 Artist - Song.flac')] == b'fLaC'
+
+
+@pytest.mark.parametrize('ends_at, tagged', [(300000 - 20, True), (None, False)])  # TIDAL_TAG_MS
+def test_a_hung_remux_is_killed_at_the_limit_and_the_copy_kept_as_downloaded(fw, queue, ends_at, tagged):
+    card = Card(fw)
+    Cdn(fw, {URL: b'fLaC'})
+    queue.row('123', 'Song', 'Artist', 'Album', '')
+    ffmpeg, now, killed = Ffmpeg(fw, card, out=b'TAGGED' if tagged else b'partial'), [0], []
+    fw.mock('time_now_ms', lambda *_: now[0])
+    fw.mock('sleep_ms', lambda ms, *_: now.__setitem__(0, now[0] + ms))
+    fw.mock('chapter_kill', lambda pid, sig, *_: killed.append((pid, sig)))
+
+    def wait(pid, status, options, *_):
+        if not killed and (ends_at is None or now[0] < ends_at):
+            return 0  # still running (a blocking wait too: answered, so an endless one fails rather than hangs)
+        ffmpeg.status = 9 if killed else 0
+        return ffmpeg.wait(pid, status, options)
+    fw.mock('fw_waitpid', wait)
+    t = Tidal(fw, card)
+    t.play(URL, '123')
+    t.run()
+    assert killed == ([] if tagged else [(4242, 9)]) and now[0] <= 300000 + 20
+    assert card.listing() == ['123-0 Artist - Song.flac']
+    assert card.files[cached('123-0 Artist - Song.flac')] == (b'TAGGED' if tagged else b'fLaC')
 
 
 @pytest.mark.parametrize('errno, tagged', [(EINTR, True), (10, False)])  # ECHILD: no child to wait for

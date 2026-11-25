@@ -578,8 +578,8 @@ def test_no_home_rule_lays_home_out_as_with_no_rule(fw, home, card, t, file):
         assert len(fw.calls()) < 8192
         return [(name, arguments(name, a)) for name, a in fw.calls() if name != 'timer_remove']  # the last timer's id
     alone = layout()
-    assert {C.string_at(a[1]) for name, a in alone if name == 'widget_lookup'} == {b'btn_folder', b'btn_rockbox', b'btn_stream',
-                                                                                     b'label_rockbox'}
+    assert {C.string_at(a[1]) for name, a in alone if name == 'widget_lookup'} == {b'btn_playing', b'btn_folder', b'btn_rockbox',
+                                                                                     b'btn_stream', b'label_rockbox'}
     card.files[DST] = file
     fw.fn('card_theme_load', None)()
     assert fw.var('card_home', C.c_int).value == 0 and layout() == alone

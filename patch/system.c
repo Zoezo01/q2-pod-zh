@@ -245,7 +245,7 @@ static void wdt_poll(void) {
     if (pw.wdt > 0 && !pthread_create(&tid, 0, stall_watch, 0)) pthread_detach(tid);
 }
 /* The state record (docs/internals.md#watchdog): /mnt/data/q2-state says what the Q2 is doing, one
- * line rewritten and synced whenever it changes: the screen, Standby's suspend, the cable, the
+ * line rewritten whole (blob_io) whenever it changes: the screen, Standby's suspend, the cable, the
  * battery, playback and its output. A clean end removes it; one still there at boot means a
  * forced restart (or the battery), and S90play puts it in q2-crash.log (docs/boot.md). */
 #define STATE_FILE "/mnt/data/q2-state"
@@ -261,17 +261,16 @@ static void state_poll(void) {
                      g_usbdet_value ? "in" : "out", pct > 100 ? 100 : pct, play[ps < 4 ? ps : 0],
                      out[ow < 3 ? ow : 0]);
     if (!tk_strcmp(s, pw.state)) return;
-    void *f = fopen(STATE_FILE, "w");
-    if (!f) return;
-    fwrite(s, 1, n, f);
-    fflush(f);
-    fsync(fileno(f));
-    fclose(f);
+    blob_io(STATE_FILE, STATE_FILE ".tmp", s, (unsigned)n, 1); /* once a change: not each pass */
     memcpy(pw.state, s, n + 1);
 }
 /* A clean end: power-off, Restart, a firmware update, Rockbox. Nothing to report at the next boot.
  */
 void ringnav_clean_end(void) {
+    /* every call's: an update's dialog is a clean end as it opens, and its reboot one more */
+    volume_save_flush();
+    playback_flush(); /* a skip's place still held: a stopped Restart saves no queue of its own */
+    xfade_save();     /* the slider page's, open as Power is held */
     if (pw.ended) return;
     pw.ended = 1;
     wdt_set(0);
@@ -401,6 +400,9 @@ int ringnav_standby(void) {
     unsigned start = st.standby_limit ? rtc_now() : 0;
     unsigned alarm = start + standby_hours[st.standby_limit] * 3600;
     int armed = start && rtc_alarm(0) && rtc_alarm(alarm);
+    volume_save_flush(); /* the battery may not last the suspend */
+    playback_flush();
+    xfade_save();
     pw.suspended = 1;
     state_poll(); /* the record a resume that never comes leaves behind */
     wdt_set(0);   /* it would count through the suspend */
@@ -502,12 +504,14 @@ static void *logo_sync(void *unused) {
     unsigned n = 0;
     unsigned char *b = 0;
     const char *err = logo_refused;
-    if (access(LOGO_SRC, 0))
-        unlink(LOGO_DST), err = 0;
-    else if ((b = read_all(LOGO_SRC, LOGO_MAX, &n)) && jpeg_size(b, n) == (375u << 16 | 320)) {
+    if (access(LOGO_SRC, 0)) {
+        /* ENOENT on a mounted card only: another error, or a card gone since the mount, keeps it */
+        err = 0;
+        if (*__errno_location() == 2 && card_mounted()) unlink(LOGO_DST);
+    } else if ((b = read_all(LOGO_SRC, LOGO_MAX, &n)) && jpeg_size(b, n) == (375u << 16 | 320)) {
         free(b),
             b = 0; /* landscape: ffmpeg turns it a quarter clockwise (coverflow.c's ff_thumb) */
-        int status, pid = fork();
+        int pid = fork();
         if (!pid) {
             child_oom_first();
             execl("/usr/bin/ffmpeg", "/usr/bin/ffmpeg", "-nostdin", "-v", "quiet", "-i", LOGO_SRC,
@@ -515,8 +519,11 @@ static void *logo_sync(void *unused) {
                   LOGO_ROT, (char *)0);
             child_exit(127);
         }
-        if (pid > 0 && waitpid(pid, &status, 0) == pid && !status)
-            b = read_all(LOGO_ROT, LOGO_MAX, &n);
+        unsigned left = FF_WAIT_MS;
+        int status = ff_reap(pid, &left); /* -1: a refused fork */
+        if (!status) b = read_all(LOGO_ROT, LOGO_MAX, &n);
+        if (status == 9)
+            err = 0; /* killed (hung, or memory short): the file's no fault, the old stays */
         unlink(LOGO_ROT);
     }
     if (b && jpeg_size(b, n) == (320u << 16 | 375)) {

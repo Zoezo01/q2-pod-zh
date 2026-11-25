@@ -11,7 +11,7 @@ ZIP_SHA = '4e298cab6c12d86cfc55565645f7e3ae11d3fb44677a93ca13991e7184ecec4e'
 # 钉住（重新打的 ZIP 永远对不上官方那个）。
 TAR_SHA = '7f57884420e324ac3263571d96a35f04bbef79f35dac34162655c5822bdaa684'
 DEMO_SHA = 'e65d638d6e70332b4c3193af8ac2044941ec0157d20e41e40233aac5b0c2c59f'
-VERSION = '1.9.1'  # major.minor.patch, single digits, shown as is (About and release tag)
+VERSION = '1.9.2'  # major.minor.patch, single digits, shown as is (About and release tag)
 BETA = 0  # a pre-release's beta number (1-9), 0 for the release itself
 # 本分支的 Release 由自己发：网络更新读这个仓库的 releases/latest，release_zh.py 也往这里传。
 # 所以 Release 的 tag 必须正好等于 RELEASE_TAG（A 线是裸 VERSION，之后是 VERSION 点位），
@@ -56,7 +56,7 @@ REPO = 'Zoezo01/q2-pod-zh'  # whose releases Network Update fetches (--update-re
 # 1.8.7 这条线字母重新从 A 起：A 并入上游 1.8.5（语言/状态栏/USB/About）、1.8.6（性能）与 1.8.7（文件拆分），
 # 中文版不打 LANGUAGE_EN，语言保持简体中文；经典百分比对齐暂用上游实现，我们 V182C 的版本备份在
 # tag zh/batt-ours-v184b 与 .workbuddy/backup/statusbar-ours-v184b.txt，实机对比后再决定。
-LETTER = 'A'  # 1.9.1 线首个包：卡主题、语言应用、隐藏重复专辑/歌曲、EQ 曲线拖动、熄屏快进快退合并
+LETTER = 'A'  # 1.9.2 线首个包：爱心即时更新、队列/随机播放修复、隐藏 Hi-Res、提示框按钮
 TAG = 'V' + VERSION.replace('.', '') + LETTER
 RELEASE_TAG = VERSION if LETTER == 'A' else f'{VERSION}.{ord(LETTER) - 64}'  # 1.8.3, 1.8.3.2, 1.8.3.3…
 
@@ -526,6 +526,9 @@ WIFI_LPS = (b'rtwpriv wlan0 pm_set lps=0\0', b'rtwpriv wlan0 pm_set lps=2\0')
 LOCK_CLOCK_12H = (b'hh:mm\0\0\0HH:TT\0', b'hh:mm\0\0\0H:mm\0\0')
 # Now Playing's info page: its one fill (0x53bc78), a bal, becomes jal ringnav_np_info, which tidies the lines.
 NP_INFO_CALL = 0x53d308
+# Now Playing's 250 ms timer (0x53d810): its call of the page update (0x53cf08), a bal, becomes jal ringnav_np_tick,
+# which skips it while the screen is off unless a flag the update consumes is set (navigation.c).
+NP_TICK = 0x53d840
 # Now Playing's A-B markers (0x53baa4): its three calls of their x (0x53b9d8), each a bal, become jal ringnav_ab_x,
 # which puts them on Classic's bar as ipod_times fitted it to the track.
 AB_X_CALLS = (0x53bb78, 0x53bbf4, 0x53bc04)
@@ -842,6 +845,11 @@ LABELS = tuple((k.encode(), o.encode(), n.encode()) for k, o, n in (
     ('screenlock_info3', '3.Maximum of 5 images in folder.', '3. Up to 5 pictures.'),
     ('about_sn', 'Serial number', 'Serial Number'), ('about_version', 'FW. Version', 'Version'),
     ('list_baidu', 'Baidu Netdisk(BETA)', 'Baidu Netdisk'), ('msg_poweroff', 'Confirm Shutdown?', 'Shut Down?'),
+    ('msg_lowarn', 'Line Out sets max volume,continue?', 'Line Out sets max volume, continue?'),
+    ('msg_noheadset', 'Playback is disabled without headphones.Please insert headphones.',
+     'Playback is disabled without headphones. Please insert headphones.'),
+    ('msg_no_storage', "Storage is full.Some songs couldn't be added.", "Storage is full. Some songs couldn't be added."),
+    ('msg_actionnotsupport', 'Non-local songs,not currently supported', 'Non-local songs, not currently supported'),
     ('system_prove', '技术证明', 'Certification'),  # About's regulatory row, Chinese in stock's English
     ('genre', 'Genres', 'Genre'), ('player_era', 'Era', 'Year'), ('batch_addplaylist', 'Add to playlist', 'Add to Playlist'),
     ('msg_importplaylist', 'Import Playlist?', 'Import Playlists?'),  # it imports the whole folder
@@ -985,7 +993,7 @@ def patch_web(path, data):
 # title, Quick Settings' row names, the test-mode pages). Every Chinese text in them is given in English
 # (english_ui); a per-asset entry wins over the shared one. The T9 keyboard's EN key opened its Chinese
 # pinyin page: it toggles case instead (ABC on the lowercase page, abc on the capitals), so that page is
-# never reached, and its 《》 key types «».
+# reached only with a Chinese pack (language.c), and its 《》 key types «».
 CJK = re.compile('[\u3000-\u9fff\uff00-\uffef]')
 ENGLISH = {
     '文件夹': 'Folder', '正在播放': 'Now Playing', '本地音乐': 'Library', '更多': 'More', 'AB复读': 'A-B Repeat',
@@ -1025,7 +1033,7 @@ def ui_round_trip(rel, data):
     check(encode(root) == data, f'{rel}: UI round trip differs')
 
 def english_ui(rel, data):
-    """rel's widgets' Chinese text in English, and the T9 keyboard's Chinese page out of reach."""
+    """rel's widgets' Chinese text in English, and the T9 keyboard's EN key a case key."""
     from ipod import decode, encode, walk
     root = decode(data)
     check(encode(root) == data, f'{rel}: UI round trip differs')
@@ -1510,6 +1518,7 @@ FUNCTIONS = {
  'widget_set_focused': ('int', 'widget_t *, int'),
  'input_method': ('input_method_t *', 'void'),
  'input_method_request': ('int', 'input_method_t *, widget_t *'),
+ 'input_method_set_lang': ('int', 'input_method_t *, const char *'),
  'widget_animator_pause': ('int', 'widget_animator_t *'),
  'widget_animator_destroy': ('int', 'widget_animator_t *'),
  'easing_get': ('void *', 'int'),  # Coverflow's glides set a reused animator's easing
@@ -1825,7 +1834,10 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'g_bluetoothflag', 'bt_linkstatus', 'g_guideflag', 'g_poweroff_state', 'g_usblink_status', 'bt__recv_pageflag',
            'g_power_longkey', 'g_ingore_bootkey_flag', 'g_equalizer_flag', 'g_navbar_status', 'g_playcover_type',
            'g_keytone_flag', 'g_folder_layer', 'g_otg_status', 'g_delete_flag', 'g_volume', 'g_maxvolume',
+           'g_sleepflag',  # the Sleep Timer's switch: 1 while its count (g_sleep_time) runs (sleep_row.c)
            'g_po_status', 'g_bal_status',  # 3.5 mm and 4.4 mm jacks: 1 plugged (check_headset_status)
+           # one-shot flags Now Playing's update consumes: a track change, a forced refresh, the cover parsed (ringnav_np_tick)
+           'g_autochange_flag', 'g_forcerefresh_flag', 'g_playcover_finishflag',
            'g_usbvol_mode',  # USB DAC volume: 0 fixed, else the volume (config_usbvolmode, device_set_volume)
            'g_usbdac_chargeflag',  # USB mode's charge choice, which switch_charge_enable gets there
            'g_memory_play', 'g_carmode', 'g_carmode_state',  # In-Vehicle Mode (pod_click)
@@ -1866,7 +1878,8 @@ CONTEXT_DATA = {'bt_showcoding': 4, 'g_memory_info': 3476, 'g_folder_path': 1024
                 # the lock screen's picture (SYSSET SCREENSAVERPATH) and the picker's list
                 'g_screensaver_picture': 256, 'p_deque_screensaverlist': 4,
                 'bt_connectstatus': 4,  # a link thread runs (1), ended (2), checked (3)
-                'bt_initstatus': 4}  # Bluetooth's start-up status: -102 is stock's "Bluetooth abnormal" (system.c reboot_record)
+                'bt_initstatus': 4,  # Bluetooth's start-up status: -102 is stock's "Bluetooth abnormal" (system.c reboot_record)
+                'g_sleep_time': 4}  # the Sleep Timer's seconds left: OK sets it, check_to_poweroption counts it down
 # Windows the payload creates at runtime (window_create), so no rootfs asset names them.
 PAYLOAD_WINDOWS = {'playlistedit_page', 'chapters_page', 'coverflow_page', 'photos_page', 'games_page', 'cardapps_page', 'mostplayed_page', 'shuffle_page', 'upnext_page', 'ratings_page', 'era_page', 'era_albums_page', 'rated_page', 'longsongs_page', 'spotify_page',
                    'spotbrowse_page', 'radio_page', 'radionp_page', 'streamconf_page', 'tidal_downloads', 'apps_page',
@@ -1905,7 +1918,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-Wshadow','-Wimplicit-int-conversion','-Wconditional-uninitialized','-Wmissing-variable-declarations',
          '-Wvla','-Wundef']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'flat.c', 'clock.c', 'queue_menu.c', 'np_marks.c', 'rotate.c', 'netservice.c', 'addon_bar.c', 'side_seek.c', 'language.c', 'bidi_text.c', 'card_theme.c', 'card_rules.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'flat.c', 'clock.c', 'queue_menu.c', 'np_marks.c', 'rotate.c', 'netservice.c', 'addon_bar.c', 'side_seek.c', 'language.c', 'bidi_text.c', 'card_theme.c', 'card_rules.c', 'sleep_row.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""
@@ -2341,6 +2354,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
               f"{name}: the GOT load written for it names another slot")
     patch_word(patched, NP_INFO_CALL, branch(0x04110000, NP_INFO_CALL, PRIVATE_FUNCTIONS['np_info']),
                jal(ps['ringnav_np_info']), "Now Playing's info lines")
+    patch_word(patched, NP_TICK, branch(0x04110000, NP_TICK, 0x53cf08), jal(ps['ringnav_np_tick']),
+               "Now Playing's update rests while dark")
     for site in AB_X_CALLS:
         patch_word(patched, site, branch(0x04110000, site, PRIVATE_FUNCTIONS['ab_x']),
                    jal(ps['ringnav_ab_x']), "A-B markers on Classic's fitted bar")

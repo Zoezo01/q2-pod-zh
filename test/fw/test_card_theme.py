@@ -11,7 +11,7 @@ import pytest
 import fuzz
 import host
 from conftest import O, Config, block, rgba
-from test_coverflow import ART, decoded, tex_rig
+from test_coverflow import ART, bgra, decoded, tex_rig
 from test_coverflow import bitmap as cover
 from test_coverflow import rgba as cover_pixels
 from test_nav_display_library import Ui, appearance, button_of, row_of, writes
@@ -239,12 +239,27 @@ def test_a_bom_is_kept_in_the_copy(fw, card):
 @pytest.mark.parametrize('there', [(DST, BAD, TRY, SEEN), (DST,), (BAD,)])
 def test_no_file_on_a_mounted_card_removes_the_copy_and_its_marks(fw, card, there):
     seen = toasts(fw)
+    Mounts(fw, card)
     card.files.update({f: AUBERGINE for f in there})
     sync(fw)
     assert not {DST, BAD, TRY, SEEN} & set(card.files)
     assert said(fw, seen) == 'Card theme removed. Restart to finish'
+    opened = len(fw.calls('fw_fopen'))
     sync(fw)
-    assert said(fw, seen) is None and not fw.calls('fw_fopen')  # nothing there: nothing to say, nothing read
+    assert said(fw, seen) is None
+    assert [C.string_at(c[1][0]) for c in fw.calls('fw_fopen')[opened:]] == [b'/proc/mounts']  # nothing else read
+
+
+@pytest.mark.parametrize('mounted, eio', [(True, True), (False, False), (False, True)])
+def test_a_card_theme_not_seen_keeps_the_copy(fw, card, mounted, eio):
+    """Only a mounted card whose file answers ENOENT takes the copy away: not another error, nor a card gone since the
+    mount."""
+    seen = toasts(fw)
+    Mounts(fw, card, mounted)
+    card.files.update({DST: AUBERGINE, BAD: AUBERGINE})
+    card.fail_open = 5 if eio else 0
+    sync(fw)
+    assert card.files[DST] == card.files[BAD] == AUBERGINE and said(fw, seen) is None
 
 
 def test_with_no_card_mounted_nothing_is_touched(fw, card):
@@ -831,11 +846,12 @@ def test_modern_s_light_bar_takes_the_card_page(fw, card, world):
 
 
 def test_cover_flow_and_home_art_lie_on_the_page(fw, card):
-    """A clear cover over the page's colour, each channel its own (texels red low)."""
+    """A clear cover over the page's colour, each channel its own (Cover Flow's texels the screen's
+    BGRA8888, Home's red low)."""
     page_start(fw, card, MIDNIGHT)
     texel = 0xff000000 | 0x10 | 0x18 << 8 | 0x20 << 16
     cover(fw, ART, ART, cover_pixels(ART, ART, lambda x, y: (0, 0, 0, 0)))
-    assert decoded(fw)[1][0] == texel
+    assert decoded(fw)[1][0] == bgra(texel)
     tex, home, _ = tex_rig(fw, 300, 300, cover_pixels(300, 300, lambda x, y: (0, 0, 0, 0)))
     tex(b'x')
     assert (C.c_uint * 8).from_address(home.tex)[5] == texel

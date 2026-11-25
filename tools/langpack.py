@@ -23,8 +23,26 @@ import sys
 
 USAGE = 'usage: langpack.py template BUILD > en.tsv\n       langpack.py check en.tsv de.tsv [default.ttf]'
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-# A conversion, which a translation keeps: %d, %02x, %s; %% is a literal percent, none.
-CONVERSION = re.compile(r'%[-+ #0]*[0-9*]*(?:\.[0-9*]+)?(?:hh|h|ll|l|L|q|j|z|t)?[diouxXeEfFgGaAcspn]')
+# One printf spec as glibc reads it, over bytes, left to right: "%", a positional n$, flags, width, precision (a
+# lone "." too), length, then any one byte as its letter. Known letters are conversions (%m takes no argument, but
+# must match); %% (and %5%) and an unknown letter are none, unless a * or n$ in the spec takes an argument. A spec the
+# string's end cuts short makes glibc 2.28 fail the whole call: it counts as one conversion of its own kind (b'').
+POSITION = rb'0*[1-9][0-9]*\$'
+SPEC = re.compile(rb"%%(?:%s)?[-+ #0'I]*(?:\*(?:%s)?|[0-9]*)(?:\.(?:\*(?:%s)?|[0-9]*))?(?:hh|h|ll|l|L|q|j|z|Z|t)?(.|\Z)"
+                  % (POSITION, POSITION, POSITION), re.S)
+
+
+def conversions(text):
+    """The conversions text holds, each as written (bytes): %d, %02x, %s, %1$s; b'' for a spec the string's end cuts short."""
+    found = []
+    for m in SPEC.finditer(text.encode()):
+        if not m[1]:
+            found.append(b'')
+        elif set(b'*$') & set(m[0][:len(m[0]) - 1]) or m[1] in b'diouxXeEfFgGaAcspnCSm':
+            found.append(m[0])
+    return found
+
+
 # tr("...") or N_("..."), the literal maybe in pieces C joins
 MARKED = re.compile(r'\b(?:tr|N_)\(\s*((?:"(?:[^"\\\n]|\\.)*"\s*)+)\)')
 PIECE = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
@@ -121,7 +139,7 @@ def check(english, translation, font=None):
             problems.append(f'{key}: en.tsv has no {en!r} (a changed English, or a typo)')
         elif not text:
             problems.append(f'{key}: no text')
-        elif CONVERSION.findall(en.replace('%%', '')) != CONVERSION.findall(text.replace('%%', '')):
+        elif conversions(en) != conversions(text):
             problems.append(f'{key}: {text!r} does not keep the conversions of {en!r}')
         lacking = sorted({c for c in text if font is not None and ord(c) not in font and c != '\\'})
         if lacking:

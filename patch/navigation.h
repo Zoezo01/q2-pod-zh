@@ -72,7 +72,7 @@ typedef struct {
         unsigned key;
         int sec;
     } spots[RESUME_SLOTS];
-    unsigned spots_read, rs_at, rs_key, rs_file, rs_go_key, rs_go_at;
+    unsigned spots_read, spots_fails, rs_at, rs_key, rs_file, rs_go_key, rs_go_at;
     int rs_long, rs_settle, rs_sec, rs_saved, rs_still, rs_pending, rs_cue, rs_end, rs_total, rs_go,
         rs_stopped;
     int rs_spoken; /* under Podcasts or Audiobooks: resumed at any length, never counted */
@@ -82,7 +82,7 @@ typedef struct {
     struct {
         unsigned key, n;
     } plays[PLAYS_SLOTS];
-    unsigned plays_read, ls_key;
+    unsigned plays_read, plays_fails, ls_key;
     int ls_sec, ls_heard, ls_done, ls_sent, ls_pct;
     /* Most Played's page and its tracks: the last ranking plus the songs counted since, kept across
      * opens while the library is at library_lists.c's mp_gen; the hold menu reads them too
@@ -169,8 +169,10 @@ typedef struct {
     widget_t *bar_bt, *bar_wifi, *bar_pct, *bar_slot, *bar_icon, *bar_idle, *bar_state, *bar_eq,
         *bar_title, *title_win, *title_lbl, *play_word,
         *action_view; /* Songs' action bar on title_win, under a set with action_row */
-    /* The row action's confirm on show (confirm_over): its second cell's verb, and its window */
+    /* The confirm on show that confirm_over opened: its second cell's verb, whether it is the
+     * tray, and its window */
     const char *confirm_verb;
+    int confirm_tray;
     widget_t *confirm_win;
     int codec, codec_step, batt_mode, word_key, word, bar_own;
     unsigned codec_timer, batt_key, bar_timer;
@@ -204,7 +206,9 @@ typedef struct {
     unsigned char slider_kind;
     unsigned np_hash; /* of the album text, position and queue length shown, 0 to refresh */
     unsigned np_art;  /* the track and player cover img_cover last took (np_art_poll) */
-    unsigned np_seen; /* the track and tags the page's update last drew (np_update_poll) */
+    unsigned np_seen; /* the track and tags the page's update last drew (np_update_poll), 0 forces
+                         the next one */
+    unsigned char np_stale; /* a dark tick skipped the update (ringnav_np_tick) */
     int np_left;
     /* Minimal's album marquee: np_off px scrolled of the np_over px the album overflows its label.
      */
@@ -329,6 +333,7 @@ extern int scrobble_ready(void), scrobble_start(void), scrobble_poll(int *sent),
     scrobble_flag(const char *key), scrobble_value(const char *key);
 extern const char *now_tag(void *r, int field);
 extern void *queue_now(unsigned *pos, unsigned *n);
+extern int queue_loaded(void);
 extern void *coverflow_tracks(widget_t *page);
 extern void *coverflow_album(widget_t *page);
 extern int coverflow_goto_album(void *r), coverflow_shows_album(void *r);
@@ -404,7 +409,7 @@ int usable(void);
 int all_songs(void *music);
 void text_inks(widget_t *w);
 unsigned listen_key(void *r) __attribute__((pure));
-void plays_load(void);
+int plays_load(unsigned *fails);
 int songs_unsorted(void *music);
 void drop_input(void);
 int pointer_down(void);
@@ -619,6 +624,8 @@ int upload_scrobbles(void *ctx, event_t *event);
 
 /* volume.c */
 void vol_paint(widget_t *top, canvas_t *canvas);
+void vol_mark(canvas_t *canvas, unsigned color, int x, int y);
+void limit_mark(canvas_t *canvas, unsigned color, int x, int w, int y, int max);
 
 /* netservice.c: System settings → Network's card app rows */
 int ringnav_netservice(void *win, void *ctx);
@@ -651,6 +658,7 @@ int side_seek(unsigned key, int phase);
 /* usb_charge.c: wrappers for charging, configuration loading and USB gadget dispatch. */
 int ringnav_usb_charge(int on), usb_charge_held(void), usb_charge_wanted(void);
 void usb_charge_row(widget_t *win, widget_t *view); /* Power's USB DAC Charging */
+void sleep_row(widget_t *win); /* sleep_row.c: Power's Sleep Timer row, its time left */
 void row_label(widget_t *label,
                const char *text); /* navigation.c: a settings row's "Title: value" */
 int ringnav_usb_config(void), ringnav_usb_detect(void), ringnav_usb_status(void);
@@ -713,6 +721,8 @@ int search_del(widget_t *w);
 void search_over(widget_t *w, canvas_t *canvas);
 void slider_scrub(widget_t *w, canvas_t *canvas);
 int restart_asked(void); /* navigation.c: the Restart to apply? confirm, yes or no */
+/* playlists.c: a confirm whose second cell says verb; tray 1 the row action's tray, 0 the page */
+int confirm_over(void *prompt, const char *verb, int tray);
 
 /* playlists.c */
 /* Classic's Playlists (pl_dress): a page's add mode (ringnav_playlist), the button of a row that

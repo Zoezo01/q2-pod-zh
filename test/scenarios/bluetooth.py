@@ -55,8 +55,8 @@ for links,paired,want in (([],True,1),([],False,0),([(b_mac,3)],True,0),([(b_mac
     passed()
 
 ov=OutputVolumeMachine(); assert ov.output(1)==20  # first connection inherits the current level
-ov.save(65); assert ov.config=={'VOLUME':'20','BT_VOLUME':'65'}
-assert ov.output(0)==20; ov.save(13)
+ov.save(65)
+assert ov.output(0)==20 and ov.config=={'VOLUME':'20','BT_VOLUME':'65'}; ov.save(13)  # the held 65 is written as it goes
 assert ov.output(1)==65 and ov.output(1)==65 and ov.output(2)==13
 assert ov.output(0)==13 and ov.output(1)==65; passed()
 # A fresh boot uses wired VOLUME; reconnect restores Bluetooth, including muted and capped levels.

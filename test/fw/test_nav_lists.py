@@ -408,22 +408,33 @@ def test_turning_back_from_the_end_makes_the_next_end_bump_again(fw, ui):
     assert page.selected == 29  # bumped afresh, not wrapped
 
 
-def test_a_list_that_is_not_a_ring_stops_at_its_end(fw, ui):
-    page = Page(ui, titles(30), name='about_page')
+# One rule: every list carries over, but a confirm's buttons and a list that loads more at its end.
+@pytest.mark.parametrize('name, wraps', [
+    ('about_page', True), ('display_page', True), ('playerqueue_page', True), ('equalizer_page', True),
+    ('mostplayed_page', True), ('radio_page', True), ('spotbrowse_page', True), ('search_dialog', True),
+    ('tidal_mycollection_page', False), ('tidal_music_class_page', False), ('netdiskfolder_page', False),
+    ('tidal_albuminfo_page', False), ('tidal_viewall_page', False), ('tidal_search_dialog', False),
+])
+def test_every_list_but_one_that_loads_more_carries_over(fw, ui, name, wraps):
+    page = Page(ui, titles(30), name=name)
     to_end(fw, ui, page)
-    for _ in range(3):
-        key(fw, ui, KEY_NEXT, ui.now + O['EDGE_PAUSE_MS'] + 1)
-    assert page.selected == 29 and not ui.due('fx_expire')
+    key(fw, ui, KEY_NEXT, ui.now + SLOW)
+    key(fw, ui, KEY_NEXT, ui.now + O['EDGE_PAUSE_MS'] + 1)
+    assert page.selected == (0 if wraps else 29)
+    if not wraps:
+        for _ in range(3):
+            key(fw, ui, KEY_NEXT, ui.now + O['EDGE_PAUSE_MS'] + 1)
+        assert page.selected == 29 and not ui.due('fx_expire')
 
 
-@pytest.mark.parametrize('cls, ring', [(O['CLASS_ALBUMS'], True), (0xff10, False)])
-def test_album_page_wraps_only_as_the_albums_list(fw, ui, cls, ring):
+@pytest.mark.parametrize('cls', [O['CLASS_ALBUMS'], 0xff10])  # Albums, and an album's songs
+def test_album_page_carries_over_whatever_it_lists(fw, ui, cls):
     fw.var('fw_ctx_g_class_type', C.c_int).value = cls
     page = Page(ui, titles(30), name='album_page')
     to_end(fw, ui, page)
     key(fw, ui, KEY_NEXT, ui.now + SLOW)
     key(fw, ui, KEY_NEXT, ui.now + O['EDGE_PAUSE_MS'] + 1)
-    assert page.selected == (0 if ring else 29)
+    assert page.selected == 0
 
 
 def test_the_bump_repaints_its_list_when_it_lapses(fw, ui):
@@ -668,6 +679,28 @@ def test_a_picker_opens_on_its_current_option(fw, ui):
     assert again.selected == 2
 
 
+@pytest.mark.parametrize('name', ['sysset_page', 'display_page', 'localmusic_page', 'rated_page', 'longsongs_page'])
+def test_a_fixed_menu_opened_forward_starts_at_its_top(fw, ui, name):
+    """The iPod's rule: a settings menu (and Library, Most Played, Ratings' lists, Long Songs) opened again starts on
+    its first row, so Loved never opens on a row left in Top Rated (both rated_page); the page a Return shows keeps its
+    row, as it keeps its view."""
+    page = chosen(fw, ui, Page(ui, titles(20), name=name), 5)
+    again = Page(ui, titles(20), name=name)
+    paint(fw, again)
+    assert again.selected == 0
+    chosen(fw, ui, again, 3)
+    ui.top = page.win  # Return: the window under it, its view as it was
+    paint(fw, page)
+    assert page.selected == 5
+    if name == 'longsongs_page':  # its measured list replaces "Measuring songs…" in the same window
+        later = Page(ui, ['Cancel'], name=name)
+        paint(fw, later)
+        later.win.children.remove(later.view)
+        later.view = scroll_list(ui, later.win, titles(20))
+        paint(fw, later)
+        assert later.selected == 0
+
+
 def test_a_sliding_page_arrives_on_its_row_without_a_glide(fw, ui):
     chosen(fw, ui, Page(ui, titles(40)), 25)
     ui.glides.clear()
@@ -757,6 +790,14 @@ def test_a_confirm_dialogs_buttons_take_the_wheel_and_centre(fw, ui):
     key(fw, ui, KEY_CENTER, ui.now + SLOW)
     ui.fire(ui.due('confirm_center')[0])
     assert clicks.seen == [(buttons[1].at, EVT_CLICK)]
+
+
+def test_a_confirm_dialogs_buttons_stop_at_their_ends(fw, ui):
+    win, _ = dialog(ui)
+    key(fw, ui, KEY_NEXT)
+    for _ in range(3):
+        key(fw, ui, KEY_NEXT, ui.now + O['EDGE_PAUSE_MS'] + 1)
+    assert win.props[SEL] == 1 and not ui.due('fx_expire')
 
 
 def test_a_held_power_key_leaves_only_its_shutdown_prompt_the_wheel(fw, ui):

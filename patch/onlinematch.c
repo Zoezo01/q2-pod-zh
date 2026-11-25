@@ -495,7 +495,7 @@ int ringnav_cover_copy(char *cmd, unsigned n, const char *fmt, const char *from,
  * album, found as that search finds them, on a thread of its own that outlives the page. */
 extern widget_t *list_row(widget_t *view, const char *icon, int (*click)(void *, event_t *),
                           void *ctx);
-static const char AL_TITLE[] = N_("Download Album Lyrics");
+static const char AL_TITLE[] = "下载专辑歌词";
 static struct {
     lyr_job job;
     lyr_track *tracks;

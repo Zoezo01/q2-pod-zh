@@ -130,6 +130,7 @@ static struct {
     char art_track[64],
         art_tried[64]; /* art_tried: the track whose cover failed, tried art_tries times */
     int art_tries;
+    unsigned art_left; /* ms of ffmpeg its cover has left (UI_FF_WAIT_MS a track) */
 } ui __attribute__((section(".scratch")));
 
 /* c to the datagram socket at path, *sock opened on first use. Shared with radio.c. */
@@ -170,6 +171,21 @@ unsigned state_read(const char *path, char *raw, unsigned size) {
     raw[0] = '\n';
     raw[n + 1] = 0;
     return n;
+}
+
+/* A pid file's pid: its one decimal number, spaces, tabs and newlines around it allowed, above 1;
+ * else 0 (no file, a sign, a second word, 0, 1, 10,000,000 or more). The file is an app's, a
+ * non-root user's, and root's kill takes this int, never its words. */
+int pid_of(const char *path) {
+    char raw[24];
+    int p = 0;
+    state_read(path, raw, sizeof raw);
+    const char *c = raw;
+    while (*c == ' ' || *c == '\t' || *c == '\n') ++c;
+    const char *d = c;
+    for (; *c >= '0' && *c <= '9' && p < 10000000; ++c) p = p * 10 + *c - '0';
+    while (*c == ' ' || *c == '\t' || *c == '\n') ++c;
+    return c == d || *c || p < 2 || p >= 10000000 ? 0 : p;
 }
 
 /* The state file into raw; 1 when it changed. Gone (librespot not up yet) reads as no session. */
@@ -277,12 +293,22 @@ static int spot_refused(void) {
     return strstr(buf, SPOT_REFUSED) != 0;
 }
 
+/* before, then librespot and its loop killed (the loop's pid file names a pid above 1, else only
+ * killall), its files removed, then after: one shell command, as the callers ran it. */
+void spot_kill(const char *before, const char *after) {
+    char cmd[320], head[24] = "";
+    int p = pid_of("/tmp/q2-librespot");
+    if (p) tk_snprintf(head, sizeof head, "kill -9 %d; ", p);
+    tk_snprintf(cmd, sizeof cmd, "%s%s" SPOT_KILL_REST "%s", before, head, after);
+    system(cmd);
+}
+
 /* SPOT_IDLE_MS after playback ended with the browser shut, or Streaming's Stop Streaming Services
  * row: librespot and its restart loop killed, as Home's Rockbox row does, and the keys local
  * music's. Streaming's Spotify row starts it again. */
 void spot_stop(void) {
     int sock = sp.sock;
-    system(SPOT_KILL);
+    spot_kill("", "");
     memset(&sp, 0, sizeof sp);
     sp.sock = sock;
 }
@@ -454,10 +480,11 @@ static void spot_refresh(void) {
     /* ponytail: the cover is sized on the UI thread, one decode a track; a worker if it stutters */
     /* A cover that fails (written after its state line, or bad) is tried again on the next 3 ticks.
      */
-    if (tk_strcmp(ui.art_tried, sp.track)) ui.art_tries = 0;
+    if (tk_strcmp(ui.art_tried, sp.track)) ui.art_tries = 0, ui.art_left = UI_FF_WAIT_MS;
     if (sp.cover && tk_strcmp(ui.art_track, sp.track) && ui.art_tries < 4) {
         int px = I(ui.art, W_W); /* Classic's slanted art is wider */
-        if (thumb(SPOT_COVER, SPOT_ART, px, px) && image_show(ui.art, "file://" SPOT_ART, 0))
+        if (thumb_within(SPOT_COVER, SPOT_ART, px, px, &ui.art_left) &&
+            image_show(ui.art, "file://" SPOT_ART, 0))
             tk_snprintf(ui.art_track, sizeof ui.art_track, "%s", sp.track);
         else {
             tk_snprintf(ui.art_tried, sizeof ui.art_tried, "%s", sp.track);
@@ -902,6 +929,7 @@ static void push(int kind, const char *op, const char *args, const char *cursor,
     /* The arguments may point into the top level, including the slot reused at the depth limit. */
     level_t next = { 0 };
     next.kind = kind;
+    next.sel = kind == L_REMOVE; /* Remove Downloads? on its Cancel, under the count */
     next.state = (kind == L_LIST || kind == L_SELECT) ? S_LOAD : S_READY;
     tk_snprintf(next.op, sizeof next.op, "%s", op);
     tk_snprintf(next.args, sizeof next.args, "%s", args);

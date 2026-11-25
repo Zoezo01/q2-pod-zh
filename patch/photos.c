@@ -109,6 +109,7 @@ static void cache_path(char *out, unsigned key, const char *suffix) {
 static int build(int i) {
     char shot[64], tmp[64], small[64];
     unsigned char head[PH_HEAD];
+    unsigned left = PH_FF_WAIT_MS; /* both its ffmpeg runs, the copy's and the thumbnail's */
     /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound): next_job's i < ph.n <= PHOTOS_MAX */
     void *f = fopen(ph.path[i], "rb");
     if (!f) return PH_BAD; /* storage gone: no marker, the next open retries */
@@ -122,7 +123,8 @@ static int build(int i) {
     if (access(shot, 0)) {
         if (!ph.space) return PH_BAD;
         unsigned kills = ff_kills;
-        if (!thumb(ph.path[i], tmp, turn ? PH_SHOT_H : PH_SHOT_W, turn ? PH_SHOT_W : PH_SHOT_H) ||
+        if (!thumb_within(ph.path[i], tmp, turn ? PH_SHOT_H : PH_SHOT_W,
+                          turn ? PH_SHOT_W : PH_SHOT_H, &left) ||
             rename(tmp, shot)) {
             unlink(tmp);
             /* a killed ffmpeg (memory short; a big picture's only decoder) isn't the photo's fault
@@ -135,7 +137,8 @@ static int build(int i) {
     }
     cache_path(small, ph.key[i], "t.jpg");
     if (ph.space && access(small, 0) &&
-        (!thumb(shot, tmp, turn ? PH_THUMB_H : PH_THUMB_W, turn ? PH_THUMB_W : PH_THUMB_H) ||
+        (!thumb_within(shot, tmp, turn ? PH_THUMB_H : PH_THUMB_W, turn ? PH_THUMB_W : PH_THUMB_H,
+                       &left) ||
          rename(tmp, small)))
         unlink(tmp); /* no thumbnail: the tile stays grey, the photo still opens */
     return o;

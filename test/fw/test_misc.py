@@ -361,7 +361,8 @@ def test_utf8_char_hostile_sweep(fw):
 
 class Xf(C.Structure):
     _fields_ = [*((k, C.c_int) for k in 'read on seconds done'.split()), ('key', C.c_int * 8),
-                *((k, C.c_int) for k in 'stops counted ctx sliding unsaved setting rs_read rs_min'.split()),
+                *((k, C.c_int) for k in 'stops counted ctx'.split()), ('was', C.c_int * 2),
+                *((k, C.c_int) for k in 'setting rs_read rs_min'.split()),
                 ('opt_read', C.c_int * 2), ('opt', C.c_int * 2),
                 ('flag', C.c_void_p), ('opt_flag', C.c_void_p * 2), ('press_file', C.c_void_p), ('mute_file', C.c_void_p),
                 ('opt_label', C.c_void_p * 2),
@@ -417,47 +418,46 @@ def page(fw, ctx, values=None):
     fw.fn('crossfade__settings', None)()
     x = xf(fw)
     x.ctx = ctx
-    return x, written, fw.fn('crossfade__set_value', None, C.c_int, C.c_int)
+    fw.fn('crossfade__page_values', None, C.c_void_p)(C.addressof(x) + Xf.was.offset)  # as the page opens
+    take = fw.fn('crossfade__take', None, C.c_int)
+    return x, written, lambda n: take(n)
+
+
+def closed(fw, x):
+    """The page's close (gone): its change written, the keys that changed."""
+    x.page = 0x7000
+    assert fw.fn('crossfade__gone', C.c_int, C.c_void_p, C.c_void_p)(0x7000, None) == 0
+    assert x.page is None and x.ctx == 0
 
 
 def test_the_crossfade_slider_runs_off_then_1_to_15(fw):
     x, written, set_value = page(fw, 0, {'XFADE': 1, 'XFADESEC': 5})
-    set_value(0, 0)
-    assert (x.on, x.seconds) == (0, 5) and written == [('XFADE', 0), ('XFADESEC', 5)]  # Off keeps the length
-    set_value(9, 0)
+    set_value(0)
+    assert (x.on, x.seconds) == (0, 5) and not written  # Off keeps the length
+    set_value(9)
     assert (x.on, x.seconds) == (1, 9)
-    set_value(-3, 0)
+    set_value(-3)
     assert x.on == 0
-    set_value(99, 0)
+    set_value(99)
     assert (x.on, x.seconds) == (1, 15)
+    closed(fw, x)
+    assert written == [('XFADESEC', 15)]
 
 
 def test_a_value_it_already_has_saves_nothing(fw):
     x, written, set_value = page(fw, 0, {'XFADE': 1, 'XFADESEC': 5})
-    set_value(5, 0)
-    assert written == []
-    x.on = 0
-    set_value(0, 0)
+    set_value(5)
+    closed(fw, x)
     assert written == []
 
 
-def test_a_drag_saves_at_its_release(fw):
+def test_a_drag_s_values_are_written_once_as_the_page_closes(fw):
     x, written, set_value = page(fw, 0, {'XFADE': 1, 'XFADESEC': 5})
-    set_value(7, 1)
-    set_value(8, 1)
-    assert x.seconds == 8 and written == [] and x.unsaved == 1
-    set_value(8, 0)  # the release, on a value it has
-    assert written == [('XFADE', 1), ('XFADESEC', 8)] and x.unsaved == 0
-
-
-def test_a_drag_never_released_saves_as_the_page_closes(fw):
-    x, written, set_value = page(fw, 0, {'XFADE': 1, 'XFADESEC': 5})
-    x.page = 0x7000
-    x.sw = x.slider = x.label = 0x7100
-    set_value(7, 1)
-    assert written == []
-    assert fw.fn('crossfade__gone', C.c_int, C.c_void_p, C.c_void_p)(0x7000, None) == 0
-    assert written == [('XFADE', 1), ('XFADESEC', 7)] and x.page is None and x.ctx == 0
+    set_value(7)
+    set_value(8)
+    assert x.seconds == 8 and written == []
+    closed(fw, x)
+    assert written == [('XFADESEC', 8)]
 
 
 def test_another_page_s_close_changes_nothing(fw):
@@ -470,13 +470,16 @@ def test_another_page_s_close_changes_nothing(fw):
 @pytest.mark.parametrize('n, want', ((0, 0), (15, 0), (19, 0), (20, 20), (22, 20), (23, 25), (118, 120), (120, 120), (125, 120), (999, 120)))
 def test_the_resume_slider_runs_off_then_fives(fw, n, want):
     x, written, set_value = page(fw, 2, {'RESUMEMIN': '60'})
-    set_value(n, 0)
-    assert x.rs_min == want and written == [('RESUMEMIN', want)]
+    set_value(n)
+    assert x.rs_min == want and not written
+    closed(fw, x)
+    assert written == [('RESUMEMIN', want)]
 
 
 def test_the_resume_slider_on_its_value_is_nothing(fw):
-    _, written, set_value = page(fw, 2, {'RESUMEMIN': '60'})
-    set_value(60, 0)
+    x, written, set_value = page(fw, 2, {'RESUMEMIN': '60'})
+    set_value(60)
+    closed(fw, x)
     assert written == []
 
 
@@ -494,40 +497,44 @@ def night_page(fw, on=0, kelvin='3400'):
 
 
 def test_night_shift_a_move_turns_it_on_and_auto_stays(fw):
-    _, written, set_value, on, kelvin = night_page(fw, 0)
-    set_value(10, 0)
-    assert (on(), kelvin()) == (1, 4000)
+    x, written, set_value, on, kelvin = night_page(fw, 0)
+    set_value(10)
+    assert (on(), kelvin()) == (1, 4000) and not written
+    closed(fw, x)
     assert written == [('NIGHTSHIFT', 1), ('NIGHTK', 4000)]
 
 
 def test_night_shift_keeps_auto_through_a_move(fw):
     _, _, set_value, on, kelvin = night_page(fw, 2)
-    set_value(5, 0)
+    set_value(5)
     assert (on(), kelvin()) == (2, 4500)
 
 
 def test_night_shift_the_slider_s_ends(fw):
     _, _, set_value, _, kelvin = night_page(fw, 1)
-    set_value(-5, 0)
+    set_value(-5)
     assert kelvin() == 5000
-    set_value(99, 0)
+    set_value(99)
     assert kelvin() == 2000
 
 
 def test_the_switch_cycles_night_shift_off_on_auto(fw):
-    _, written, _, on, _ = night_page(fw, 0)
+    x, written, _, on, _ = night_page(fw, 0)
     toggle = fw.fn('crossfade__toggle', C.c_int, C.c_void_p, C.c_void_p)
     seen = []
     for _ in range(3):
         toggle(None, None)
         seen.append(on())
-    assert seen == [1, 2, 0] and [v for k, v in written] == [1, 2, 0]
+    closed(fw, x)
+    assert seen == [1, 2, 0] and not written  # Off again: nothing to save
 
 
 def test_the_switch_turns_crossfade_on_and_off(fw):
     x, written, _ = page(fw, 0, {'XFADE': 0, 'XFADESEC': 9})
     fw.fn('crossfade__toggle', C.c_int, C.c_void_p, C.c_void_p)(None, None)
-    assert x.on == 1 and written == [('XFADE', 1), ('XFADESEC', 9)]
+    assert x.on == 1 and not written
+    closed(fw, x)
+    assert written == [('XFADE', 1)]
 
 
 def test_a_page_with_no_switch_ignores_it(fw):
@@ -1156,6 +1163,8 @@ def test_reset_is_the_default_draft_keeping_the_switch(fw):
     u.draft = peak_preset(6)
     u.draft.bypass, u.name = 0, b'Rock'
     act(fw, ACT_RESET)
+    assert u.draft.bands[0].gain != 0 and u.dirty == 0 and u.name == b'Rock'  # it asks first
+    act(fw, ACT_YES)
     assert u.draft.count == 10 and u.draft.bands[0].gain == 0 and u.draft.bypass == 0
     assert u.name == b'' and u.dirty == 1 and u.draft.preamp == 0 and u.draft.automatic == 1
 

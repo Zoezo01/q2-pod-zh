@@ -454,48 +454,57 @@ def test_an_open_page_is_not_opened_again(fw):
     assert page.open(2) == 0 and len(fw.calls('navigator_to')) == 1 and xf(fw).ctx == 0
 
 
-def test_plus_and_minus_save_each_step(fw):
+def test_plus_and_minus_play_each_step_and_the_close_saves_the_last(fw):
     page = opened(fw, 0, {'XFADE': 1, 'XFADESEC': 5})
     page.fire('img_add', CLICK)
-    assert xf(fw).seconds == 6 and page.config.written == [('XFADE', 1), ('XFADESEC', 6)] and '6' in page.label()
+    assert xf(fw).seconds == 6 and not page.config.written and '6' in page.label()
     page.fire('img_dec', CLICK), page.fire('img_dec', CLICK)
-    assert xf(fw).seconds == 4 and page.config.written[-1] == ('XFADESEC', 4) and '4' in page.label()
+    assert xf(fw).seconds == 4 and not page.config.written and '4' in page.label()
+    page.fire('page', DESTROY)
+    assert page.config.written == [('XFADESEC', 4)]  # XFADE didn't change: not written
 
 
 def test_the_switch_turns_it_on_and_off_and_keeps_the_length(fw):
     page = opened(fw, 0, {'XFADE': 0, 'XFADESEC': 8})
     off, off_switch = page.label(), page.switch()
     page.fire('img_bootswitch', CLICK)
-    assert xf(fw).on == 1 and page.config.written == [('XFADE', 1), ('XFADESEC', 8)]
-    assert '8' in page.label() and page.switch() != off_switch
+    assert xf(fw).on == 1 and '8' in page.label() and page.switch() != off_switch
     page.fire('img_bootswitch', CLICK)
-    assert (page.label(), page.switch()) == (off, off_switch) and page.config.written[-2:] == [('XFADE', 0), ('XFADESEC', 8)]
+    assert (page.label(), page.switch()) == (off, off_switch)
+    page.fire('page', DESTROY)
+    assert not page.config.written  # back where it began: nothing to save
 
 
-def test_a_drag_plays_each_value_and_saves_once_at_its_release(fw):
+def test_a_drag_plays_each_value_and_saves_once_the_page_closes(fw):
     page = opened(fw, 0, {'XFADE': 1, 'XFADESEC': 5})
     for value in (9, 11):
         page.shows = value
         page.fire('slider_bootvol', CHANGING)
-        assert xf(fw).seconds == value and str(value) in page.label() and not page.config.written
+        assert xf(fw).seconds == value and str(value) in page.label()
     page.fire('slider_bootvol', CHANGED)
-    assert page.config.written == [('XFADE', 1), ('XFADESEC', 11)]
+    assert not page.config.written
+    page.fire('page', DESTROY)
+    assert page.config.written == [('XFADESEC', 11)]
 
 
 def test_a_drag_to_off_keeps_the_length_for_the_switch(fw):
     page = opened(fw, 0, {'XFADE': 1, 'XFADESEC': 6})
     page.shows = 0
     page.fire('slider_bootvol', CHANGING), page.fire('slider_bootvol', CHANGED)
-    assert page.config.written == [('XFADE', 0), ('XFADESEC', 6)]
+    assert xf(fw).on == 0
     page.fire('img_bootswitch', CLICK)
     assert (xf(fw).on, xf(fw).seconds) == (1, 6)
+    page.fire('page', DESTROY)
+    assert not page.config.written
 
 
-def test_a_drag_whose_release_never_came_saves_with_the_switch(fw):
+def test_a_drag_whose_release_never_came_saves_as_the_page_closes(fw):
     page = opened(fw, 0, {'XFADE': 1, 'XFADESEC': 5})
     page.shows = 9
     page.fire('slider_bootvol', CHANGING)
     page.fire('img_bootswitch', CLICK)
+    assert not page.config.written
+    page.fire('page', DESTROY)
     assert page.config.written == [('XFADE', 0), ('XFADESEC', 9)]
 
 
@@ -504,10 +513,81 @@ def test_closing_the_page_mid_drag_saves_and_lets_it_go(fw):
     page.shows = 12
     page.fire('slider_bootvol', CHANGING)
     page.fire('page', DESTROY)
-    assert page.config.written == [('XFADE', 1), ('XFADESEC', 12)]
+    assert page.config.written == [('XFADESEC', 12)]
     assert fw.fn('xfade_page', C.c_int, C.c_void_p)(PAGE) == 0 and page.key(NEXT) == 0
     page.top = BELOW  # the page gone, Playback is on top again
     assert page.open(1) == 0 and xf(fw).ctx == 1  # opens again, for another row
+
+
+# Each guise: its row, its values in config.ini, where 30 ticks start (each one a change: up 10, down 10, up 10)
+# and the keys a close then writes, only those that changed.
+GUISES = [(0, {'XFADE': 1, 'XFADESEC': 5}, [('XFADESEC', 15)]),
+          (1, {'WHEELSENSITIVITY': '100'}, [('WHEELSENSITIVITY', 200)]),
+          (2, {'RESUMEMIN': '30'}, [('RESUMEMIN', 80)]),
+          (3, {'NIGHTSHIFT': 1, 'NIGHTK': 4000}, [('NIGHTK', 3000)])]
+
+
+def thirty_ticks(page, mode):
+    """Up 10, down 10, up 10, by the wheel: each tick a new value, played or shown at once."""
+    live = []
+    for key in [NEXT] * 10 + [PREV] * 10 + [NEXT] * 10:
+        assert page.key(key) == 1
+        live.append(page.label())
+    assert len(set(live[:10])) == 10  # each tick shown, and played: the page's value is the one in use
+    return live
+
+
+@pytest.mark.parametrize('mode, values, saved', GUISES)
+def test_thirty_ticks_write_nothing_until_the_page_closes_then_only_what_changed(fw, mode, values, saved):
+    page = opened(fw, mode, values)
+    thirty_ticks(page, mode)
+    assert not page.config.written and not fw.calls('write_int_config')
+    page.fire('page', DESTROY)
+    assert page.config.written == saved
+
+
+@pytest.mark.parametrize('mode, values, saved', GUISES)
+def test_a_turn_that_ends_where_it_began_writes_nothing(fw, mode, values, saved):
+    page = opened(fw, mode, values)
+    for key in [NEXT] * 10 + [PREV] * 10:
+        page.key(key)
+    page.fire('page', DESTROY)
+    assert not page.config.written
+
+
+@pytest.mark.parametrize('end', ['clean_end', 'standby'])
+@pytest.mark.parametrize('mode, values, saved', GUISES)
+def test_a_value_set_with_the_page_open_is_saved_at_an_end_and_before_standby(fw, mode, values, saved, end):
+    """Power held with the page open (power-off, Restart, a firmware update: ringnav_clean_end), or Standby."""
+    page = opened(fw, mode, values)
+    thirty_ticks(page, mode)
+    if end == 'standby':
+        fw.mock('stock_standby_trampoline', lambda *_: page.config.written.append('suspend') and 0)
+        fw.fn('ringnav_standby', C.c_int)()
+        assert page.config.written == saved + ['suspend']
+    else:
+        fw.fn('ringnav_clean_end', None)()
+        assert page.config.written == saved
+    page.fire('page', DESTROY)  # closed later: saved already
+    assert page.config.written[-1] in ('suspend', saved[-1]) and len(page.config.written) == len(saved) + (end == 'standby')
+
+
+def test_a_change_left_on_the_page_after_reset_settings_removed_config_ini_is_dropped(fw):
+    """Reset Settings Only removes config.ini before its reboot: stock's writer would make a file of that one key,
+    every other setting at its default from the next start."""
+    page = opened(fw, 0, {'XFADE': 1, 'XFADESEC': 5})
+    page.key(NEXT)
+    fw.mock('fw_access', lambda path, *_: -(C.string_at(path) == b'/mnt/data/config.ini'))
+    fw.fn('ringnav_clean_end', None)()  # the reboot's
+    assert not page.config.written
+
+
+def test_with_no_page_open_an_end_writes_nothing_of_it(fw):
+    page = opened(fw, 0, {'XFADE': 1, 'XFADESEC': 5})
+    page.key(NEXT)
+    page.fire('page', DESTROY)
+    fw.fn('ringnav_clean_end', None)()
+    assert page.config.written == [('XFADESEC', 6)]
 
 
 def test_the_slider_moves_only_to_a_new_value_and_its_own_move_is_no_release(fw):
@@ -522,7 +602,7 @@ def test_the_slider_moves_only_to_a_new_value_and_its_own_move_is_no_release(fw)
     fw.mock('slider_set_value', set_value)
     page.fire('img_add', CLICK)
     # moved once, to the new length; its own value-changed (the stale 2) taken for no release
-    assert len(page.moved) == 1 and xf(fw).seconds == 6 and page.config.written == [('XFADE', 1), ('XFADESEC', 6)]
+    assert len(page.moved) == 1 and xf(fw).seconds == 6 and not page.config.written
 
 
 def test_the_rows_follow_the_page(fw):
@@ -540,20 +620,24 @@ def test_the_rows_follow_the_page(fw):
 def test_the_wheel_sets_the_sensitivity_a_ten_a_tick(fw):
     page = opened(fw, 1, {'WHEELSENSITIVITY': '190'})
     pct = fw.fn('wheel_pct', C.c_int)
-    assert page.key(NEXT) == 1 and pct() == 200 and page.config.written == [('WHEELSENSITIVITY', 200)] and '200' in page.label()
-    assert page.key(NEXT) == 1 and pct() == 200 and len(page.config.written) == 1  # its top: nothing to save
-    assert page.key(PREV) == 1 and page.key(PREV) == 1 and pct() == 180 and page.config.written[-1] == ('WHEELSENSITIVITY', 180)
+    assert page.key(NEXT) == 1 and pct() == 200 and '200' in page.label()
+    assert page.key(NEXT) == 1 and pct() == 200  # its top
+    assert page.key(PREV) == 1 and page.key(PREV) == 1 and pct() == 180 and not page.config.written
     assert page.key(CENTER) == 0  # no switch: Centre is stock's, which goes back
+    page.fire('page', DESTROY)
+    assert page.config.written == [('WHEELSENSITIVITY', 180)]
 
 
 def test_resume_songs_steps_in_fives_down_to_off(fw):
     page = opened(fw, 2, {'RESUMEMIN': '25'})
     page.fire('img_add', CLICK)
-    assert xf(fw).rs_min == 30 and page.config.written == [('RESUMEMIN', 30)] and '30' in page.label()
+    assert xf(fw).rs_min == 30 and '30' in page.label()
     page.key(PREV), page.key(PREV)
     assert xf(fw).rs_min == 20
     page.key(PREV)
-    assert xf(fw).rs_min == 0 and page.config.written[-1] == ('RESUMEMIN', 0) and not any(c.isdigit() for c in page.label())
+    assert xf(fw).rs_min == 0 and not any(c.isdigit() for c in page.label()) and not page.config.written
+    page.fire('page', DESTROY)
+    assert page.config.written == [('RESUMEMIN', 0)]
 
 
 def test_night_shifts_switch_cycles_off_on_and_auto(fw):
@@ -562,7 +646,8 @@ def test_night_shifts_switch_cycles_off_on_and_auto(fw):
     for _ in range(3):
         page.fire('img_bootswitch', CLICK)
         seen.append((page.label(), page.switch()))
-    assert [v for k, v in page.config.written if k == 'NIGHTSHIFT'] == [1, 2, 0]
+    page.fire('page', DESTROY)
+    assert not page.config.written  # Off again, as it opened: nothing to save
     assert seen[3] == seen[0] and len({label for label, _ in seen[:3]}) == 3 and '3000' in seen[1][0]
     assert seen[1][1] == seen[2][1] != seen[0][1]  # On and Auto both light the switch
 
@@ -596,7 +681,7 @@ def turned_on(page, fw, route):
         page.fire('img_add', CLICK)
     elif route == 'wheel':
         assert page.key(NEXT) == 1
-    elif route == 'drag':  # held: the fade plays at once, its value saved at the release
+    elif route == 'drag':  # held: the fade plays at once, its value saved as the page closes
         page.shows = 4
         page.fire('slider_bootvol', CHANGING)
     else:
@@ -705,7 +790,9 @@ def test_centre_switches_once_a_double_press_can_no_longer_come(fw):
     centre = Centre(fw)
     assert page.key(CENTER) == 1 and xf(fw).on == 0 and [ms for _, ms in centre.timers.values()] == [O['DOUBLE_CLICK_MS']]
     centre.fire()
-    assert xf(fw).on == 1 and page.config.written == [('XFADE', 1), ('XFADESEC', 5)]
+    assert xf(fw).on == 1 and not page.config.written
+    page.fire('page', DESTROY)
+    assert page.config.written == [('XFADE', 1)]
 
 
 def test_a_centre_press_on_night_shift_closed_at_once_switches_no_crossfade(fw):

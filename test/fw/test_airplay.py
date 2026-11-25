@@ -42,7 +42,7 @@ class Tap:
         self.mem = C.create_string_buffer(C.sizeof(Cast) + RING)
         self.t = Cast.from_buffer(self.mem)
         self.t.magic, self.t.size, self.t.want = MAGIC, len(self.mem), NOW
-        self.files = {PID} if running else set()
+        self.files = {PID, b'/mnt/data/config.ini'} if running else {b'/mnt/data/config.ini'}
         fw.mock('fw_access', lambda path, *_: 0 if C.string_at(path) in self.files else -1)
         fw.mock('fw_open', self.open)
         fw.mock('fw_read', lambda fd, out, n, *_: C.memmove(out, self.mem, n) and n)
@@ -73,6 +73,11 @@ class Tap:
         """A UI pass, ms on."""
         self.ms += ms
         self.fw.fn('airplay_poll', None)()
+
+    def settle(self):
+        """The volume left alone until its held save is written (navigation.c's VOLUME_SAVE_MS)."""
+        self.ms += 60000
+        self.fw.fn('navigation__volume_save_poll', None)()
 
     def saved(self):
         """What reached config.ini through the hook: (value, section, key)."""
@@ -173,6 +178,7 @@ def test_a_speaker_takes_its_own_volume_and_the_earphones_level_and_limit_come_b
     tap.poll()
     assert tap.t.volume == 20  # published before the swap: the filter stays muted this pass
     assert (tap.volume.value, tap.limit.value) == (60, 80) and tap.set() == [(60, 1)]
+    tap.settle()
     assert tap.saved()[1:] == [(20, b'Q2POD', b'AIRVOL'), (60, b'PLAYSET', b'VOLUME')]  # the speaker's, for its next time
     tap.poll()
     assert tap.t.volume == -1
@@ -243,11 +249,42 @@ def test_a_volume_saved_while_a_speaker_plays_is_the_speaker_s_never_the_earphon
     tap.app(state=CAST_ON, spk=20)
     tap.poll()
     tap.save(25, b'PLAYSET', b'VOLUME')  # the wheel
+    tap.settle()
     tap.app(state=CAST_OFF)
     tap.poll()
+    tap.settle()
     tap.save(61, b'PLAYSET', b'VOLUME')
+    tap.settle()
     assert tap.saved() == [(60, b'PLAYSET', key), (25, b'Q2POD', b'AIRVOL'),  # the speaker's even on Bluetooth
                            (20, b'Q2POD', b'AIRVOL'), (60, b'PLAYSET', key), (61, b'PLAYSET', key)]
+
+
+@pytest.mark.parametrize('way, key', [(0, b'VOLUME'), (1, b'BT_VOLUME')])
+def test_a_speaker_s_volume_still_to_save_as_it_stops_lands_under_its_own_key(fw, way, key):
+    tap = Tap(fw)
+    tap.way = way
+    tap.app(state=CAST_ON, spk=20)
+    tap.poll()
+    for v in (21, 22, 23):  # the wheel, a tick a pass
+        tap.volume.value = v
+        tap.save(v, b'PLAYSET', b'VOLUME')
+        tap.poll(40)
+    tap.app(state=CAST_OFF)
+    tap.poll(40)
+    tap.settle()
+    assert tap.saved() == [(60, b'PLAYSET', key), (23, b'Q2POD', b'AIRVOL'), (60, b'PLAYSET', key)]
+
+
+def test_an_app_back_with_no_volume_of_its_own_finds_the_wheel_s_last_level_not_the_one_before(fw):
+    tap, config = Tap(fw), Config(fw, AIRVOL=b'40')
+    fw.mock('stock_write_config_trampoline', lambda v, s, k, *_: config.values.__setitem__(C.string_at(k), b'%d' % v))
+    tap.app(state=CAST_ON, spk=20)
+    tap.poll()
+    tap.volume.value = 25  # the wheel, its save still held
+    tap.save(25, b'PLAYSET', b'VOLUME')
+    tap.t.spk, tap.t.spk_seq = -1, tap.t.spk_seq + 1  # the app reconnected and names no level
+    tap.poll(40)
+    assert tap.volume.value == 25
 
 
 @pytest.mark.parametrize('began, became, key', [(0, 1, 'BT_VOLUME'), (1, 0, 'VOLUME')])

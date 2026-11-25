@@ -34,7 +34,7 @@ class State(C.Structure):
                 fields('saved_elapsed save_failed resume_pending resume_elapsed resume_wait') +
                 fields('saved_pos saved_sum saved_queue', C.c_uint) + fields('next_valid next_value') +
                 fields('next_pos resume_key resume_pos', C.c_uint) + fields('order cycle', C.POINTER(Entry)) +
-                fields('groups seen history', C.POINTER(C.c_uint)) + [('poll_stamp', C.c_uint)])
+                fields('groups seen history', C.POINTER(C.c_uint)) + fields('poll_stamp snap_at', C.c_uint))
 
 
 class Player:
@@ -414,6 +414,26 @@ def test_an_ordered_queue_plays_album_by_album_in_track_order(player):
     assert keys == sorted(keys)
 
 
+def test_shuffle_off_sorts_its_order_once(fw, player):
+    """The next pass's order is this pass's, copied: a load reads the queue for one order sort, not two."""
+    player.load(player.albums(4, 4, 4))
+    read = []
+    fw.mock('fw_deque_at', lambda q, i, *_: read.append(i) or player.deques[q][i])
+    assert player.set(1, ONE_PASS) == 1
+    load = list(read)
+    del read[:]
+    fw.fn('playback__make_order', None, C.POINTER(Entry))(player.s.cycle)  # one order sort's reads
+    assert len(read) > 8 and sum(load[i:i + len(read)] == read for i in range(len(load))) == 1
+    assert player.cycle() == player.order()
+
+
+def test_a_shuffles_next_pass_is_drawn_anew(player):
+    player.load(player.albums(12))
+    player.rng(7)
+    assert player.set(0, 1) == 1 and player.set(1, REPEAT_ALL) == 1
+    assert sorted(player.cycle()) == list(range(12)) and player.cycle() != player.order()
+
+
 def test_folders_group_as_album_tags_do_not(player):
     rows = [player.song(b'/m/a/1.flac', b'X'), player.song(b'/m/b/1.flac', b'X'), player.song(b'/m/a/2.flac', b'Y')]
     player.load(rows)
@@ -545,6 +565,27 @@ def test_repeat_song_repeats_automatically_and_next_moves_on(player):
     assert player.next(0) >= 0 and player.mcl.pos == player.order()[player.s.cursor] != at
 
 
+def test_repeat_song_next_at_a_rounds_end_moves_on(player):
+    """Shuffle Songs and Repeat Song, the round played out and the next one drawn to start with the playing song:
+    Next starts that round, so the song plays once more, and the Next after it moves on, as under Repeat All."""
+    plan(player, [0, 1, 2], cursor=2, seen=(0, 1, 2), cycle=[2, 0, 1], repeat=REPEAT_SONG, shuffle=1)
+    player.s.history[0], player.s.hn = 2, 1
+    played = []
+    for _ in range(3):
+        assert player.next(0) >= 0
+        played.append(player.mcl.pos)
+    assert played == [2, 0, 1]
+
+
+def test_repeat_songs_own_replays_keep_their_round(player):
+    """Repeat Song's replay of the song at its end stays in its round: the round's order isn't drawn again."""
+    player.load(player.albums(6))
+    player.rng(7)
+    assert player.set(0, 1) == 1 and player.set(1, REPEAT_SONG) == 1
+    order, at = player.order(), player.mcl.pos
+    assert player.run(3) == [at] * 3 and player.order() == order
+
+
 def test_play_one_song_stops_after_it(player):
     player.load(player.albums(2, 2))
     assert player.set(1, ONE_SONG) == 1
@@ -654,6 +695,71 @@ def test_previous_goes_back_and_next_returns_to_what_it_left(player):
     assert player.prev() == 0 and player.mcl.pos == played[0] and player.history() == [first, played[0]]
     assert player.up_next()[0] == played[1]
     assert player.run(1) == [played[1]]
+
+
+def left_behind(player):
+    """Unplayed this round but behind the cursor, where neither Next nor a song's end reaches them."""
+    seen = player.seen()
+    return [x for x in player.order()[:player.s.cursor] if x not in seen and x != player.mcl.pos]
+
+
+def test_previous_after_a_shuffle_change_then_next_comes_back(player):
+    """An album's last track, Shuffle All Songs plays another, Shuffle Off redraws the order around it: Previous goes
+    back to the last track, and Next comes back to the track it left instead of stopping the queue."""
+    player.load([player.song(b'/m/A/%02d.flac' % t, b'A', track=t) for t in (1, 2, 3)], 2)
+    assert player.set(0, 1) == 1
+    left = player.run(1)[0]
+    assert player.set(0, 0) == 1 and player.prev() == 0 and player.mcl.pos == 2 and not left_behind(player)
+    assert player.next(0) >= 0 and player.mcl.pos == left
+
+
+def test_previous_at_a_rounds_start_leaves_no_song_behind(player):
+    """Shuffle Songs and Repeat All draw each round's order at its first song. Previous there goes back to the last
+    round's last song; Next comes back to the new round's first, and the rest of the round still follows."""
+    rows, tried = player.albums(5), 0
+    for seed in range(1, 9):
+        player.clear(), player.load(rows), player.rng(seed)
+        assert player.set(0, 1) == 1 and player.set(1, REPEAT_ALL) == 1
+        played = [player.mcl.pos] + player.run(5)
+        if played[5] == played[4]:
+            continue  # the new round begins with the song the last one ended on
+        tried += 1
+        assert player.prev() == 0 and player.mcl.pos == played[4] and not left_behind(player)
+        assert player.next(0) >= 0 and player.mcl.pos == played[5] and not left_behind(player)
+    assert tried >= 4
+
+
+def test_previous_at_an_ordered_rounds_start_keeps_the_last_song_for_the_loop(player):
+    """Shuffle Off and Repeat All: Previous at the new round's first song goes back to the last, and Next then plays
+    the round through, the last song included: last, 0, 1, ..., last."""
+    player.load(player.albums(4), 1)  # index 1 is the album's first song in the order
+    assert player.set(0, 0) == 1 and player.set(1, REPEAT_ALL) == 1
+    round_ = [player.mcl.pos] + player.run(3)
+    assert len(set(round_)) == 4 and player.run(1) == round_[:1]
+    assert player.prev() == 0 and player.mcl.pos == round_[-1]
+    heard = [player.mcl.pos]
+    for _ in range(4):
+        assert player.next(0) >= 0
+        heard.append(player.mcl.pos)
+    assert heard == round_[-1:] + round_
+
+
+def test_a_group_skip_back_at_an_ordered_rounds_start_keeps_the_last_album_for_the_loop(fw, player):
+    """Shuffle Off and Repeat All, as Previous: the group skip leaves the round's order as it was."""
+    skip = fw.fn('playback_group_skip', C.c_int, C.c_int)
+    player.load(player.albums(2, 2), 0)
+    assert player.set(0, 0) == 1 and player.set(1, REPEAT_ALL) == 1
+    round_ = player.order()
+    player.mcl.pos = round_[0]
+    player.clear()
+    assert player.set(0, 0) == 1 and player.set(1, REPEAT_ALL) == 1
+    assert player.run(4) == round_[1:] + round_[:1]
+    assert skip(0) == 1 and player.mcl.pos == round_[2]
+    heard = []
+    for _ in range(5):
+        assert player.next(0) >= 0
+        heard.append(player.mcl.pos)
+    assert heard == round_[3:] + round_
 
 
 def test_previous_at_the_start_stays(player):
@@ -805,6 +911,41 @@ def test_stocks_delete_of_the_last_row_while_it_plays(fw, player, key):
         assert player.next(0) == -1 and fw.calls('mclStop')
 
 
+def test_a_pick_after_deleting_the_playing_last_row_plays_on(fw, player):
+    """The cursor stays inside the order after the playing last row is deleted: Next ends the queue, and a pick
+    plays the rows after it."""
+    start = fw.fn('ringnav_start_queue', C.c_int, C.c_int)
+    album(player, 4)
+    start(3)
+    player.mcl.pos = 3
+    delete(player, 3)
+    fw.fn('playback_poll', None)()
+    assert player.s.cursor < player.s.n and player.next(0) == -1
+    start(1)
+    player.mcl.pos = 1
+    assert tracks(player, player.run(4)) == [3]
+
+
+def test_deletes_after_the_playing_last_row_keep_the_cursor_inside_the_order(fw, player):
+    """Play Next X, then the last row picked and deleted while it plays, then two rows more: the cursor stays
+    inside the shrinking order, where a pick of X makes play_now shift its entries (it shifted them up to a cursor
+    past the order's end, writing past its allocation)."""
+    start = fw.fn('ringnav_start_queue', C.c_int, C.c_int)
+    album(player, 4)
+    queue_insert(fw, player, [player.song(b'/m/X/01.flac', b'X', track=1)], 1)
+    start(4)
+    player.mcl.pos = 4
+    for row in (4, 3, 2):
+        delete(player, row)
+        fw.fn('playback_poll', None)()
+        assert player.s.cursor < player.s.n
+    assert player.pending() == [1]
+    start(1)
+    player.mcl.pos = 1
+    assert player.run(4) == []
+    assert player.pending() == [] and player.s.cursor == 1
+
+
 def test_stocks_delete_off_the_ui_thread_waits_for_its_pass(fw, player):
     poll = fw.fn('playback_poll', None)
     album(player, 5)
@@ -896,6 +1037,112 @@ def queue_insert(fw, player, add, next_):
 
 def paths(records):
     return [C.string_at(struct.unpack_from('<Q', C.string_at(r, O['REC_SIZE']), O['REC_PATH'])[0]) for r in records]
+
+
+def album_songs(player, album, tracks):
+    return [player.song(b'/m/%s/%02d.flac' % (album, t), album, track=t) for t in tracks]
+
+
+@pytest.mark.parametrize('shuffle', [0, 3])  # Off, Albums
+def test_add_to_queue_of_a_played_albums_song_plays_it(fw, player, shuffle):
+    """An album's last song playing in an ordered mode, Add to Queue of its first: the new order sorts the copy
+    before the song playing, where only played songs stand, and it plays after it."""
+    player.load(album_songs(player, b'A', (1, 2)))
+    assert player.set(0, shuffle) == 1 and player.run(1) == [1]
+    queue_insert(fw, player, album_songs(player, b'A', (1,)), 0)
+    assert player.run(4) == [2]
+
+
+@pytest.mark.parametrize('second', ['add', 'play next', 'delete'])
+@pytest.mark.parametrize('shuffle', [0, 2])  # Off, Songs in Album
+def test_an_edit_while_a_play_next_song_plays_keeps_the_album_it_came_into(fw, player, shuffle, second):
+    """Album A's first song playing, Play Next of another album's: it plays, then the rest of A. Another edit while
+    it plays (Add to Queue, Play Next, View Queue's delete of A3) draws the order again, the rest of A sorted before
+    it, and A's rest still plays."""
+    player.load(album_songs(player, b'A', (1, 2, 3)))
+    assert player.set(0, shuffle) == 1
+    queue_insert(fw, player, album_songs(player, b'X', (1,)), 1)
+    assert player.run(1) == [1]
+    want = {b'/m/A/02.flac', b'/m/A/03.flac'}
+    if second == 'delete':
+        delete(player, 3)
+        fw.fn('playback_poll', None)()
+        want.discard(b'/m/A/03.flac')
+    else:
+        queue_insert(fw, player, album_songs(player, b'Y', (1,)), second == 'play next')
+    assert want <= set(paths([player.deques[player.handle][i] for i in player.run(8)]))
+
+
+@pytest.mark.parametrize('shuffle', [0, 2])  # Off, Songs in Album
+def test_an_edit_after_a_queue_jump_leaves_the_songs_it_jumped_over_skipped(fw, player, shuffle):
+    """A jump to a later queue row skips the entries between; an edit draws the order again and they stay skipped."""
+    start = fw.fn('ringnav_start_queue', C.c_int, C.c_int)
+    fw.mock('stock_start_queue_trampoline', lambda at, *_: 20 + at)
+    player.load(album_songs(player, b'A', (1, 2)) + album_songs(player, b'B', (1, 2)) + album_songs(player, b'C', (1, 2)))
+    assert player.set(0, shuffle) == 1
+    start(4)
+    player.mcl.pos = 4
+    queue_insert(fw, player, album_songs(player, b'Z', (1,)), 0)
+    assert not {1, 2, 3} & set(player.up_next())
+
+
+@pytest.mark.parametrize('shuffle', [0, 2])  # Off, Songs in Album
+def test_an_edit_after_a_queue_jump_back_does_not_replay_the_songs_before_the_target(fw, player, shuffle):
+    """A jump back to an earlier row starts a new round; what the new order draws ahead of the pick stays skipped."""
+    start = fw.fn('ringnav_start_queue', C.c_int, C.c_int)
+    fw.mock('stock_start_queue_trampoline', lambda at, *_: 20 + at)
+    player.load(album_songs(player, b'A', (1, 2)) + album_songs(player, b'B', (1, 2)) + album_songs(player, b'C', (1, 2)), 4)
+    assert player.set(0, shuffle) == 1
+    start(1)
+    player.mcl.pos = 1
+    queue_insert(fw, player, album_songs(player, b'Z', (1,)), 6)
+    up = player.up_next()
+    assert 0 not in up and {2, 3, 4, 5, 6} <= set(up)
+
+
+def test_an_edit_in_shuffle_off_leaves_the_next_pass_sorted(fw, player):
+    """Repeat All, album B's first song playing, Add to Queue of a third song of album A: this pass plays it after
+    the song playing, where the edit's pin puts it; the next pass is the sort again, A whole and then B."""
+    player.load(album_songs(player, b'A', (1, 2)) + album_songs(player, b'B', (1, 2)), 2)
+    assert player.set(0, 0) == 1 and player.set(1, REPEAT_ALL) == 1
+    queue_insert(fw, player, album_songs(player, b'A', (3,)), 0)
+    assert player.order() == [0, 1, 2, 4, 3] and player.cycle() == [0, 1, 4, 2, 3]
+    assert player.run(7) == [4, 3, 0, 1, 4, 2, 3]
+
+
+def test_shuffle_songs_with_repeat_album_leaves_the_other_albums_songs_owed(fw, player):
+    """A natural next inside the playing album walks past other albums' songs without playing them; a later Play All
+    still has them in Up Next."""
+    player.load(player.albums(10, 10))
+    player.rng(7)
+    assert player.set(0, 1) == 1 and player.set(1, REPEAT_GROUP) == 1  # Shuffle Songs, Repeat Album
+    played = {player.mcl.pos} | set(player.run(4))
+    album = player.album(player.mcl.pos)
+    assert {player.album(i) for i in played} == {album}
+    assert player.set(1, ONE_PASS) == 1
+    assert {i for i in range(20) if player.album(i) != album} <= set(player.up_next())
+
+
+def test_an_added_song_of_an_album_already_played_plays_right_after_the_song_playing(fw, player):
+    """Off: album B's first song playing, Add to Queue of A's: A sorts before, it plays next, B's rest after it."""
+    player.load(album_songs(player, b'A', (1, 2)) + album_songs(player, b'B', (1, 2)), 2)
+    assert player.set(0, 0) == 1
+    queue_insert(fw, player, album_songs(player, b'A', (3,)), 0)
+    assert paths([player.deques[player.handle][i] for i in player.up_next()]) == [b'/m/A/03.flac', b'/m/B/02.flac']
+
+
+def test_an_edit_under_shuffle_albums_still_plays_the_album_out_first(fw, player):
+    """Shuffle Albums draws the albums again at an edit; the rest of the album playing still comes first."""
+    rows, tried = player.albums(3, 3, 3), 0
+    for seed in range(1, 9):
+        player.clear(), player.load(rows), player.rng(seed)
+        assert player.set(0, 3) == 1
+        before, album = player.up_next(), player.album(player.mcl.pos)
+        rest = next((k for k, i in enumerate(before) if player.album(i) != album), len(before))
+        tried += rest > 0
+        queue_insert(fw, player, album_songs(player, b'Z', (1,)), 0)
+        assert player.up_next()[:rest] == before[:rest]
+    assert tried >= 4
 
 
 def test_queue_insert_shifts_the_shuffle_pool_and_last_index(fw, player, mcl):
@@ -1047,6 +1294,21 @@ def test_a_group_skip_back_plays_where_it_lands(fw, player):
     assert skip(0) == 1 and player.mcl.pos == order[0]
     assert len(fw.calls('mclStartPlayer')) == started + 1 and player.mcl.preload == 0
     assert player.pending() == [] and player.history() == before[:before.index(order[3])] + [order[0]]
+
+
+def test_a_group_skip_back_at_a_rounds_start_leaves_no_album_behind(fw, player):
+    """Shuffle Albums and Repeat All: Previous Album at a new round's first album goes back to the last round's last
+    album, which plays on, and the new round's other albums still play after it."""
+    skip = fw.fn('playback_group_skip', C.c_int, C.c_int)
+    rows = player.load(player.albums(2, 2, 2))
+    start = next(i for i in range(6) if player.track(i) == 1)
+    for seed in range(1, 9):
+        player.clear(), player.load(rows, start), player.rng(seed)
+        assert player.set(0, 3) == 1 and player.set(1, REPEAT_ALL) == 1
+        player.run(6)
+        assert skip(0) == 1 and not left_behind(player)
+        landed = player.mcl.pos
+        assert player.album(player.run(1)[0]) == player.album(landed)
 
 
 # A load.
@@ -1784,9 +2046,9 @@ def saved(fw, mcl):
     return Saved(fw, mcl)
 
 
-def full_queue(saved, shuffle=1, repeat=REPEAT_ALL):
+def full_queue(saved, shuffle=1, repeat=REPEAT_ALL, n=9):
     rows = saved.load([saved.song(b'/m/%c/%02d.flac' % (65 + i % 3, i), b'%c' % (65 + i % 3), track=i, cue=(i, i * 2))
-                       for i in range(9)], 4)
+                       for i in range(n)], 4)
     saved.mcl.type = LIBRARY
     saved.deques[saved.library][:] = rows
     saved.rng(0xbeef)
@@ -1960,6 +2222,95 @@ def test_a_plain_queue_restores_without_advanced_play(saved):
     saved.save()
     assert restore(saved) == 1
     assert saved.s.active == 0 and saved.deques[saved.handle] == rows and saved.deques[saved.out] == rows
+
+
+def test_a_plain_queues_track_change_writes_only_the_checkpoint(saved):
+    """The snapshot holds the queue and is written when that changes; a new track is the checkpoint's 16 bytes,
+    which the restore takes for the track, while it names one of the queue's, and the second."""
+    plain_queue(saved)
+    saved.sec = 10
+    saved.save()
+    body = saved.queue_file()
+    saved.mcl.pos, saved.sec = 2, 40
+    saved.save()
+    check = saved.disk.files[CHECKPOINT]
+    assert saved.queue_file() == body and struct.unpack('<4I', check)[2:] == (2, 40)
+    assert restore(saved) == 2 and saved.fw.calls('mclSetStartSeekTime')[-1][1][0] == 40
+    past = struct.pack('<3I', struct.unpack('<4I', check)[1], 3, 40)  # a track past the queue: the snapshot's own
+    saved.disk.files.update({QUEUE_FILE: body, CHECKPOINT: struct.pack('<I', fnv1a(past)) + past})
+    assert restore(saved) == 1 and saved.fw.calls('mclSetStartSeekTime')[-1][1][0] == 10
+
+
+def test_advanced_plays_track_change_writes_the_snapshot(saved):
+    """Its order's cursor, played marks and history move with the track: the checkpoint's track alone is not enough."""
+    full_queue(saved)
+    saved.sec, saved.s.dirty = 10, 1
+    saved.save()
+    body, pos = saved.queue_file(), saved.mcl.pos
+    assert saved.next(0) >= 0 and saved.mcl.pos != pos
+    saved.save()
+    now = saved.mcl.pos
+    assert saved.queue_file() != body and snapshot(saved.queue_file())['pos'] == now
+    check = bytearray(saved.disk.files[CHECKPOINT])
+    check[8:12] = struct.pack('<I', pos)  # the checkpoint of another track
+    check[0:4] = struct.pack('<I', fnv1a(bytes(check[4:])))
+    saved.disk.files[CHECKPOINT] = bytes(check)
+    assert restore(saved) == now
+
+
+def test_a_snapshot_dropped_while_memory_playback_was_off_is_written_again(saved):
+    """Memory Playback off, the queue picked again (a load drops the snapshot), on: the snapshot is written whole,
+    not its checkpoint alone."""
+    plain_queue(saved)
+    saved.save()
+    saved.fw.var('g_memory_play', C.c_ubyte).value = 0
+    saved.clear()  # as ringnav_load's release()
+    saved.save()
+    assert QUEUE_FILE not in saved.disk.files
+    saved.fw.var('g_memory_play', C.c_ubyte).value = 2
+    saved.mcl.pos = 2
+    saved.save()
+    assert snapshot(saved.queue_file())['pos'] == 2
+
+
+def test_a_dropped_snapshot_takes_its_checkpoint_with_it(saved):
+    """The same queue picked again at the same row saves the same bytes, which a checkpoint of its last play, at a
+    later track, would fit."""
+    plain_queue(saved)
+    saved.save()
+    saved.mcl.pos, saved.sec = 2, 40
+    saved.save()
+    assert CHECKPOINT in saved.disk.files
+    saved.clear()  # as ringnav_load's release()
+    assert CHECKPOINT not in saved.disk.files and QUEUE_FILE not in saved.disk.files
+
+
+def test_a_plain_track_change_is_one_checkpoint_then_every_30_s(fw, mcl):
+    polled = Polled(fw, mcl)
+    polled.clear()
+    plain_queue(polled)
+    polled.after(1, sec=0)
+    body = polled.queue_file()
+    writes = []
+    rename = polled.disk.rename
+    fw.mock('fw_rename', lambda old, new, *_: writes.append(C.string_at(new)) or rename(old, new))
+    polled.mcl.pos = 2
+    wrote = [polled.after(1000, sec=s) for s in range(1, 13)]  # the new track's first 12 s
+    assert polled.queue_file() == body and writes == [CHECKPOINT.encode()], (wrote, writes)
+    assert struct.unpack('<4I', polled.disk.files[CHECKPOINT])[2] == 2
+    del writes[:]
+    wrote = [polled.after(6000) for _ in range(5)]
+    assert writes == [CHECKPOINT.encode()], (wrote, writes)
+
+
+def test_advanced_plays_checkpoint_of_another_track_gives_no_second(saved):
+    full_queue(saved)
+    saved.sec, saved.s.dirty = 10, 1
+    saved.save()
+    pos = saved.mcl.pos
+    other = struct.pack('<3I', struct.unpack_from('<I', saved.queue_file(), 12)[0], (pos + 1) % 9, 77)
+    saved.disk.files[CHECKPOINT] = struct.pack('<I', fnv1a(other)) + other
+    assert restore(saved) == pos and saved.fw.calls('mclSetStartSeekTime')[-1][1][0] == 10
 
 
 def test_a_plain_queue_is_kept_only_for_memory_playback(saved):
@@ -2288,13 +2639,13 @@ def test_a_mangled_checkpoint_never_breaks_the_restore(saved):
 
 # The save's schedule, once a UI pass.
 class Polled(Saved):
-    def __init__(self, fw, mcl):
+    def __init__(self, fw, mcl, n=9):
         super().__init__(fw, mcl)
         self.now, self.status = 100000, 2
         fw.mock('time_now_ms', lambda *_: self.now)
         fw.mock('mclGetPlayStatus', lambda *_: self.status)
         self.poll = fw.fn('playback_poll', None)
-        full_queue(self)
+        full_queue(self, n=n)
         self.sec, self.s.dirty = 10, 1
         self.poll()
         self.wrote()
@@ -2347,6 +2698,140 @@ def test_a_failed_write_retries_after_30_s(polled):
     polled.disk.fail_rename = False
     assert not polled.after(29000) and polled.s.save_failed == 1
     assert polled.after(1100) and polled.s.save_failed == 0
+
+
+
+class Skips(Polled):
+    """Advanced play over 40 songs, nothing pending, quiet for a while; writes: each file a save renamed into
+    place, with its size, and each fsync (blob_io's, one a write)."""
+    def __init__(self, fw, mcl):
+        super().__init__(fw, mcl, n=40)
+        self.s.npend = 0
+        self.after(6000)
+        self.writes, self.syncs = [], []
+        rename = self.disk.rename
+        fw.mock('fw_rename', lambda old, new, *_: self.writes.append(
+            (C.string_at(new).decode(), len(self.disk.files.get(C.string_at(old).decode(), b'')))) or rename(old, new))
+        fw.mock('fw_fsync', lambda *_: self.syncs.append(1) and 0)
+
+    def snapshots(self):
+        return [w for w in self.writes if w[0] == QUEUE_FILE]
+
+    def skip(self, ms=1):
+        assert self.next(0) >= 0
+        self.after(ms, sec=0)
+
+
+@pytest.fixture
+def skips(fw, mcl):
+    return Skips(fw, mcl)
+
+
+def test_ten_quick_skips_are_a_save_at_once_and_one_when_the_5_s_are_up(skips):
+    """The first track change after a quiet time saves on the next pass, as ever; the ones within 5 s of that
+    save wait for the 5 s and go as one, the place the last reached."""
+    skips.skip()
+    assert len(skips.snapshots()) == 1 and snapshot(skips.queue_file())['pos'] == skips.mcl.pos
+    for _ in range(9):
+        skips.skip(400)  # a Next every 400 ms
+    assert len(skips.snapshots()) == 1
+    skips.after(5000 - 9 * 400 - 1, sec=0)  # 1 ms short of 5 s since the save
+    assert len(skips.snapshots()) == 1
+    skips.after(1, sec=0)
+    assert len(skips.snapshots()) == 2 and snapshot(skips.queue_file())['pos'] == skips.mcl.pos
+    assert [skips.after(1000) for _ in range(4)] == [False] * 4  # nothing more to save
+
+
+def test_a_lone_skip_after_a_checkpoint_still_saves_at_once(skips):
+    """The 5 s count from the last snapshot, not from the elapsed second's checkpoint a moment before."""
+    skips.status = 3  # a pause: its checkpoint
+    assert skips.after(6000) and not skips.snapshots()
+    skips.status = 2
+    skips.skip()
+    assert len(skips.snapshots()) == 1
+
+
+@pytest.mark.parametrize('end', ['clean_end', 'standby', 'stopped_reboot'])
+def test_a_skip_still_held_is_saved_at_each_clean_end_and_before_standby(fw, skips, end):
+    skips.skip()
+    skips.skip(400)  # held
+    assert len(skips.snapshots()) == 1
+    if end == 'standby':
+        seen = []
+        fw.mock('stock_standby_trampoline', lambda *_: seen.append(len(skips.snapshots())) or 0)
+        fw.fn('ringnav_standby', C.c_int)()
+        assert seen == [2]  # on the flash before the suspend
+    elif end == 'stopped_reboot':  # Restart with the player stopped: stock's save skips it
+        skips.status = 1
+        fw.fn('ringnav_reboot', C.c_int)()
+    else:  # power-off's, Rockbox's, a firmware update's
+        fw.fn('ringnav_clean_end', None)()
+    assert len(skips.snapshots()) == 2 and snapshot(skips.queue_file())['pos'] == skips.mcl.pos
+
+
+@pytest.mark.parametrize('change', ['play_next', 'new_round', 'previous_moves_back'])
+def test_a_change_of_order_inside_the_5_s_saves_at_once(skips, change):
+    """Only the place moving along an order that stays is held: a Play Next pick reaches into the order, a new
+    round draws one, a Previous to a song played before that order was drawn moves it back in it."""
+    skips.skip()
+    if change == 'play_next':
+        skips.s.pend[0], skips.s.npend = skips.up_next()[5], 1
+    else:
+        while skips.s.cursor < skips.s.n - 1:
+            skips.skip(50)
+        skips.after(1)
+    if change == 'previous_moves_back':
+        skips.skip()  # the new round, saved at once
+        skips.after(1000)
+        order, saved = skips.order(), len(skips.snapshots())
+        assert skips.prev() >= 0
+        skips.after(1)
+        assert skips.order() != order and len(skips.snapshots()) == saved + 1  # moved back: at once
+        assert snapshot(skips.queue_file())['pos'] == skips.mcl.pos
+        return
+    held = len(skips.snapshots())
+    assert held == 1
+    skips.skip()
+    assert len(skips.snapshots()) == 2 and snapshot(skips.queue_file())['pos'] == skips.mcl.pos
+
+
+def test_nothing_is_written_while_a_skip_is_held_however_the_second_moves(skips):
+    """No checkpoint either, the second playing on or paused inside the hold: at its end one snapshot at the new
+    place with the paused second, and its checkpoint naming that snapshot."""
+    skips.skip()
+    skips.skip(400)  # held
+    writes = len(skips.writes)
+    skips.after(1000, sec=3)
+    skips.status = 3  # a pause inside the hold
+    for _ in range(3):
+        assert not skips.after(1000, sec=7) and len(skips.writes) == writes
+    skips.after(1000, sec=7)
+    shot = snapshot(skips.queue_file())
+    assert [w[0] for w in skips.writes[writes:]] == [QUEUE_FILE, CHECKPOINT]
+    assert (shot['pos'], shot['elapsed']) == (skips.mcl.pos, 7)
+    check = struct.unpack('<4I', skips.disk.files[CHECKPOINT])
+    assert check[1:] == (shot['checksum'], skips.mcl.pos, 7)
+
+
+def test_a_quick_previous_is_held_with_the_skips(skips):
+    """Back along the order, nothing moved in it: the place alone, held as a Next is."""
+    skips.skip()
+    skips.skip(400)
+    order = skips.order()
+    assert skips.prev() >= 0
+    skips.after(400)
+    assert skips.order() == order and len(skips.snapshots()) == 1
+    skips.after(5000)
+    assert len(skips.snapshots()) == 2 and snapshot(skips.queue_file())['pos'] == skips.mcl.pos
+
+
+def test_ten_quick_skips_write_counts(skips):
+    """The numbers the commit gives: bytes and fsyncs for ten Nexts 400 ms apart, until all is saved."""
+    for _ in range(10):
+        skips.skip(400)
+    skips.after(6000, sec=0)
+    # each snapshot is followed by its checkpoint, 16 bytes; before the hold, ten of each (20 fsyncs)
+    assert len(skips.snapshots()) == 2 and len(skips.writes) == len(skips.syncs) == 4
 
 
 # Odds and ends of the player's day.

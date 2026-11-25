@@ -577,6 +577,8 @@ static int shim_page_row = 48;
 void shim_theme_rows(int h) { shim_page_row = h; }
 int page_h(int h) { return h == 48 ? shim_page_row : h; }
 int page_x(void) { return shim_page_row == 48 ? 36 : 20; }
+int card_room(const char *dir, unsigned mb, unsigned pct) { return 1; }
+void ringnav_wdt_long(void) {}
 int theme_font(void *x, int role, int was) { if (shim_page_row != 48) w[(long)x].px = 27; return 0; }
 /* The label starting with text on a row, or index i of the row reading it: x, px (0: the style's), height. */
 int shim_label(const char *text, int i, int what) {
@@ -978,7 +980,7 @@ def editor_check(lib, tmp):
     # Reset replaces the draft with peq_default's ten flat bands and leaves what plays alone until
     # Apply changes; Advanced's On/Off is live state and stays as it was.
     before = active.read_bytes()
-    click('Reset to defaults')
+    click('Reset to defaults'); click('Reset all bands? Confirm')
     assert title() == 'Reset; choose Apply to activate' and active.read_bytes() == before
     assert ui.shim_click(b'Preamp Auto (44.1: 0.0 / 48: 0.0)', 2) and ui.shim_click(b'Balance Centre', 2)
     assert not ui.shim_click(b'Presets ', 2)  # the draft is no longer a named preset
@@ -990,7 +992,7 @@ def editor_check(lib, tmp):
     # Off stays Off.
     click('Enabled On')  # turns PEQ off
     before = active.read_bytes()
-    click('Reset to defaults')
+    click('Reset to defaults'); click('Reset all bands? Confirm')
     assert active.read_bytes() == before
     click('Apply changes')
     r = read()
@@ -1055,7 +1057,7 @@ def editor_check(lib, tmp):
         assert ui.shim_click(f'Headphone {min(start + 127, 8849):04}.txt'.encode(), 2)
         assert not ui.shim_click(f'Headphone {start + 128:04}.txt'.encode(), 2)
         assert title() == f'Presets {start // 128 + 1}/70'
-        assert ui.shim_selection() == ui.shim_offset() == 0
+        assert ui.shim_selection() == 1 and ui.shim_offset() == 0  # the first file: Import all is a tick up
         if start < 8832: click('Next page')
     assert not ui.shim_click(b'Next page', 2)
     click('Headphone 8849.txt')
@@ -2238,6 +2240,12 @@ int main(void) {
     assert(mp3_toc(h, sizeof h, length / 4, &frac, &length) && fabs(frac - 0.125) < 1e-9);
     assert(mp3_toc(h, sizeof h, length * 0.995, &frac, &length) && frac > 0.98 && frac < 1);
     assert(mp3_toc(h, sizeof h, length, &frac, &length) && frac == 1);
+    h[1] = 0xfa;                                          /* a CRC frame: LAME keeps the header where it was */
+    assert(mp3_toc(h, sizeof h, length / 2, &frac, &length) && fabs(frac - 0.25) < 1e-9);
+    memmove(h + 38, h + 36, 120);                         /* and other encoders put it past the CRC */
+    assert(mp3_toc(h, sizeof h, length / 2, &frac, &length) && fabs(frac - 0.25) < 1e-9);
+    assert(!mp3_toc(h, 38 + 115, 10, &frac, &length));    /* cut short there too */
+    memmove(h + 36, h + 38, 120); h[1] = 0xfb;
     assert(!mp3_toc(h, 100, 10, &frac, &length));        /* cut short */
     h[43] = 3;                                            /* no table */
     assert(!mp3_toc(h, sizeof h, 10, &frac, &length));
@@ -2985,6 +2993,7 @@ static void deque_destroy(void *q) {}
 static void play_folder(void *q, int i, int cls) {}
 static int card_path(const char *s) { return 1; }
 static long file_size(const char *p) { return -1; }
+static int ff_reap(int pid, unsigned *left) { return -1; }
 static int quality = 27; static void *queue;
 #define tidalStreamingLevelNow (&quality)
 #define tidalStreamingLevelNext (&quality)
@@ -3128,6 +3137,7 @@ int main(void) {
 SHELF_SHIM = r"""
 #include <stdio.h>
 #include <stdlib.h>
+int card_path(const char *path) { return 1; } /* addon.c's */
 void *read_all(const char *path, unsigned max, unsigned *size) { /* scrobble.c's */
     FILE *f = fopen(path, "rb");
     char *p = 0;

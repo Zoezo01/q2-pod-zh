@@ -438,6 +438,9 @@ def validate_assets(directory):
                if l.startswith('squashfs-root/'+ui) and l.endswith('.bin') and l.removeprefix('squashfs-root/') not in STOCK_EQ + STOCK_PAGES}
     chinese = {rel for rel in chinese if CJK.search(read('stock.squashfs', ui+rel).decode('utf-8', 'replace'))}
     assert chinese and {'testmode/test_key.bin', 'kb_default_t9.bin', 'dialog/search_dialog.bin'} <= chinese
+    # language.c renames the capitals' first page:lower, which must be the case key abc (the unlabelled shift key after it)
+    upper = next(n for n in walk(decode(read('rootfs.squashfs', ui+'kb_default_t9.bin'))) if n[2].get('name') == 'upper')
+    assert next(n for n in walk(upper) if n[2].get('name') == 'page:lower')[2].get('text') == 'abc'
     patched_ui = set(UI_ASSETS)
     assert set(changed) == {ui+p for p in patched_ui | chinese} | {
         'release/assets/default/raw/styles/'+p for p in AUDIT['styles']} | {

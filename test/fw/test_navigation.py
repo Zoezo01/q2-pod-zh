@@ -383,11 +383,11 @@ def test_display_settings(fw, clock, st, values, theme, home, light):
 
 
 @pytest.mark.parametrize('value, rockbox, name', [
-    (b'', 1, b'Rockbox'), (b'', 0, b'Favorites'), (b'0', 0, b'Rockbox'), (b'1', 0, b'Artists'), (b'2', 0, b'Albums'),
-    (b'3', 0, b'Favorites'),
+    (b'', 1, b'Rockbox'), (b'', 0, b'Favourites'), (b'0', 0, b'Rockbox'), (b'1', 0, b'Artists'), (b'2', 0, b'Albums'),
+    (b'3', 0, b'Favourites'),
     (b'4', 0, b'Rated Albums'), (b'5', 0, b'Shuffle'), (b'6', 0, b'Games'), (b'7', 0, b'Playlists'), (b'8', 0, b'Podcasts'),
-    (b'9', 0, b'Audiobooks'), (b'10', 0, b'Groovebox'), (b'11', 1, b'Rockbox'), (b'11', 0, b'Favorites'),  # None: the carousel's card takes the default
-    (b'12', 1, b'Rockbox'), (b'12', 0, b'Favorites'), (b'1x', 0, b'Favorites'),
+    (b'9', 0, b'Audiobooks'), (b'10', 0, b'Groovebox'), (b'11', 1, b'Rockbox'), (b'11', 0, b'Favourites'),  # None: the carousel's card takes the default
+    (b'12', 1, b'Rockbox'), (b'12', 0, b'Favourites'), (b'1x', 0, b'Favourites'),
 ])
 def test_shortcut(fw, clock, value, rockbox, name):
     Config(fw, **({'SHORTCUT': value} if value else {}))
@@ -484,6 +484,7 @@ def test_bluetooth_keeps_its_own_volume(fw, way, section, key, saved):
     fw.mock('mclGetOutputWay', lambda *_: way)
     fw.mock('stock_write_config_trampoline', lambda value, s, k, *_: seen.append(C.string_at(k)) and 0)
     fw.fn('ringnav_write_config', C.c_int, C.c_int, C.c_char_p, C.c_char_p)(5, section, key)
+    fw.fn('volume_save_flush', None)()  # a volume's save is held until it settles
     assert seen == [saved]
 
 
@@ -2008,6 +2009,26 @@ def test_a_rating_not_saved_goes_back(ratings):
     keep(0, 0x100, 2)
     files.fail_rename = True
     assert keep(0, 0x100, 4) == -1 and kept(0, 0x100) == 2
+
+
+def test_a_rating_table_that_could_not_be_read_is_never_written_over(ratings):
+    files, keep, kept = ratings
+    old = struct.pack('<I', 0x100 | 2).ljust(O['RATE_SLOTS'] * 4, b'\0')
+    files.files['/mnt/data/ringnav-ratings'], files.fail_open = old, 5  # EIO
+    assert keep(0, 0x200, 3) == -1 and kept(0, 0x100) == 0 and files.files['/mnt/data/ringnav-ratings'] == old
+    files.fail_open = 0  # read again at the next use
+    assert keep(0, 0x200, 3) == 1 and kept(0, 0x100) == 2 and kept(0, 0x200) == 3
+
+
+def test_a_rating_lookups_failed_read_doesnt_count_toward_a_set_aside(fw, ratings):
+    files, keep, kept = ratings
+    fw.mock('fw_access', lambda path, *_: 0 if C.string_at(path).decode() in files.files else -1)
+    old = struct.pack('<I', 0x100 | 2).ljust(O['RATE_SLOTS'] * 4, b'\0')
+    files.files['/mnt/data/ringnav-ratings'], files.fail_open = old, 5
+    for _ in range(5):
+        assert kept(0, 0x100) == 0
+    assert keep(0, 0x200, 3) == -1 and keep(0, 0x200, 3) == -1
+    assert keep(0, 0x200, 3) == 1 and files.files['/mnt/data/ringnav-ratings.bad'] == old
 
 
 def test_a_malformed_slot_reads_as_no_rating(fw):

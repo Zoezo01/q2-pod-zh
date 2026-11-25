@@ -75,7 +75,10 @@ def test_fuzz_lrc(fw):
     for data in fuzz.cases('lrc', LRC):
         buf, lp, mp = block(fw, data), C.c_void_p(), C.c_void_p()
         n = parse(buf, C.byref(lp), C.byref(mp))
-        read = data.split(b'\0')[0][:TAG_MAX]  # the text ends at a NUL, and lines start in its first TAG_MAX bytes
+        read = data.split(b'\0')[0]  # the text ends at a NUL; one past TAG_MAX bytes, at its last line end in them, else there
+        if len(read) > TAG_MAX:
+            end = max(read.rfind(b'\n', 0, TAG_MAX + 1), read.rfind(b'\r', 0, TAG_MAX + 1))
+            read = read[:end] if end > 0 else read[:TAG_MAX]
         room = read.count(b'<')
         assert 0 <= n <= 1 + sum(read.count(c) for c in (b'\n', b'\r', b'['))
         cut = C.string_at(buf, len(data) + 1)

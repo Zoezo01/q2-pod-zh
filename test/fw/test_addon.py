@@ -386,6 +386,7 @@ def test_an_app_answers_when_its_socket_takes_a_connection(fw, connect, up):
     fw.mock('fw_select', lambda *a: log.append(('select',)) or 1)
     fw.mock('fw_send', lambda *a: log.append(('send',)) or 0)
     fw.mock('fw_close', lambda fd, *_: log.append(('close', fd)))
+    fw.mock('fw_clock_gettime', lambda which, ts, *_: C.memset(ts, 0, 16) and 0)  # now_ms reads 0: no wait
     assert fw.fn('addon_answers', C.c_int, C.c_char_p)(b'a') == up
     assert log == [('socket', (1, 2, 0)), ('fcntl', (5, 4, 0x80)), ('connect', b'/tmp/q2-a.browse.sock'), ('close', 5)]
 
@@ -574,7 +575,7 @@ def test_the_follower_stop_leaves_wifi_off_clear(fw):
     for i in range(2):
         if ap(fw).a[i].id == b'foo':
             ap(fw).a[i].launched = 1
-    world.files[b'/tmp/q2-vpn'] = b'1'
+    world.files[b'/tmp/q2-vpn'] = b'1234'
     fw.fn('addon_wifi_stop', None)()
     vpn, foo = sorted((ap(fw).a[i] for i in range(2)), key=lambda a: a.id != b'vpn')
     assert (vpn.launched, vpn.wifi_off, foo.launched) == (0, 0, 1)  # a plain app is not the follower's
@@ -822,23 +823,35 @@ def test_no_name_is_no_icon(fw):
     assert fw.fn('addon_is_icon', C.c_int, C.c_char_p)(None) == 0
 
 
+def stop(fw, raw, size=96):
+    world = World(fw, {} if raw is None else {b'/tmp/q2-foo': raw})
+    out = block(fw, size=size)
+    fw.fn('addon__stop_cmd', None, C.c_char_p, C.c_void_p, C.c_uint)(b'/tmp/q2-foo', out, size)
+    return C.string_at(out)
+
+
 def test_stopping_an_app_asks_its_loop_or_clears_a_stale_pid(fw):
-    out = block(fw, size=96)
-    fw.fn('addon__stop_cmd', None, C.c_char_p, C.c_void_p, C.c_uint)(b'/tmp/q2-foo', out, 96)
-    assert C.string_at(out) == b'kill $(cat /tmp/q2-foo) 2>/dev/null || rm -f /tmp/q2-foo'
+    assert stop(fw, b'1234\n') == b'kill 1234 2>/dev/null || rm -f /tmp/q2-foo'
+    assert stop(fw, b'1234') == b'kill 1234 2>/dev/null || rm -f /tmp/q2-foo'
+    for raw in (b' 1234', b'1234 ', b'1234\n\n', b'\t1234 \n'):
+        assert stop(fw, raw) == b'kill 1234 2>/dev/null || rm -f /tmp/q2-foo'
+
+
+@pytest.mark.parametrize('raw', [None, b'', b'\n', b'-9 -1', b'1234 -9 -1\n', b'1234\n-1', b'123 456', b'+5', b'0x10', b'10000000', b'4294967297', b'1', b'0', b'-5', b'x', b'99999999999'])
+def test_a_pid_file_that_is_not_one_pid_kills_nothing(fw, raw):
+    assert stop(fw, raw) == b'rm -f /tmp/q2-foo'
 
 
 def test_the_longest_stop_command_fits_its_buffer(fw):
     pid = b'/tmp/q2-' + b'a' * 15
+    World(fw, {pid: b'1234567'})
     out = block(fw, size=96)
     fw.fn('addon__stop_cmd', None, C.c_char_p, C.c_void_p, C.c_uint)(pid, out, 96)
-    assert C.string_at(out).endswith(b'rm -f ' + pid)
+    assert C.string_at(out).endswith(b'rm -f ' + pid) and len(C.string_at(out)) < 96
 
 
 def test_a_stop_command_is_cut_to_its_buffer(fw):
-    out = block(fw, size=8)
-    fw.fn('addon__stop_cmd', None, C.c_char_p, C.c_void_p, C.c_uint)(b'/tmp/q2-foo', out, 8)
-    assert C.string_at(out) == b'kill $('
+    assert stop(fw, b'1234', 8) == b'kill 12'
 
 
 def test_the_apps_page_forgets_only_the_app_in_its_folder(fw):
@@ -856,7 +869,7 @@ def test_the_apps_page_forgets_only_the_app_in_its_folder(fw):
 
 
 def test_quit_asks_and_waits_for_the_loop_to_go(fw):
-    world = World(fw, {b'/tmp/q2-foo': b'1'})
+    world = World(fw, {b'/tmp/q2-foo': b'1234'})
     sleeps = []
     def usleep(us, *_):
         sleeps.append(us)
@@ -864,11 +877,11 @@ def test_quit_asks_and_waits_for_the_loop_to_go(fw):
             del world.files[b'/tmp/q2-foo']
     fw.mock('fw_usleep', usleep)
     fw.fn('addon_quit', None, C.c_char_p)(b'.foo')
-    assert world.of('system') == [(b'kill $(cat /tmp/q2-foo) 2>/dev/null || rm -f /tmp/q2-foo',)] and sleeps == [50000] * 3
+    assert world.of('system') == [(b'kill 1234 2>/dev/null || rm -f /tmp/q2-foo',)] and sleeps == [50000] * 3
 
 
 def test_quit_gives_up_after_its_wait(fw):
-    world = World(fw, {b'/tmp/q2-foo': b'1'})
+    world = World(fw, {b'/tmp/q2-foo': b'1234'})
     fw.mock('fw_usleep', lambda *_: setattr(world, 'now', world.now + 1))
     fw.fn('addon_quit', None, C.c_char_p)(b'.foo')
     assert world.now == 1020  # QUIT_MS, 20 s
@@ -1730,7 +1743,7 @@ def test_end_needs_the_local_player_playing_or_paused(fw, mcl, status, radio, en
 
 
 def test_a_restart_waits_for_the_loop_to_go(fw):
-    world = World(fw, {b'/tmp/q2-foo': b'1'})
+    world = World(fw, {b'/tmp/q2-foo': b'1234'})
     a = ap(fw).a[0]
     a.pid, a.run, a.id, a.restart, a.restart_at = b'/tmp/q2-foo', b'run', b'foo', 1, 1000
     poll = fw.fn('addon__poll_one', None, C.POINTER(App))
@@ -1744,7 +1757,7 @@ def test_a_restart_waits_for_the_loop_to_go(fw):
 
 
 def test_a_restart_gives_up_on_the_old_loop(fw):
-    world = World(fw, {b'/tmp/q2-foo': b'1'})
+    world = World(fw, {b'/tmp/q2-foo': b'1234'})
     a = ap(fw).a[0]
     a.pid, a.run, a.restart, a.restart_at = b'/tmp/q2-foo', b'run', 1, 1000
     world.ms = 21001
@@ -1797,7 +1810,7 @@ def running(fw, state=None):
     scan(fw)
     a = ap(fw).a[0]
     a.launched, a.launch_at = 1, world.ms
-    world.files[b'/tmp/q2-foo'] = b'1'
+    world.files[b'/tmp/q2-foo'] = b'1234'
     if state is not None:
         world.files[b'/tmp/q2-foo.state'] = state
     return world, a
@@ -1872,7 +1885,7 @@ def test_launch_waits_for_the_apps_page(fw):
 
 
 def test_stop_all_asks_each_running_app(fw):
-    world = World(fw, {b'/tmp/q2-b': b'1'})
+    world = World(fw, {b'/tmp/q2-b': b'1234'})
     a = ap(fw)
     a.n = 3
     a.a[0].pid, a.a[0].launched, a.a[0].hold = b'/tmp/q2-a', 1, 1
@@ -1883,7 +1896,7 @@ def test_stop_all_asks_each_running_app(fw):
 
 
 def test_the_card_going_away_stops_apps_and_marks_them_to_start_again(fw):
-    world = World(fw, {b'/tmp/q2-b': b'1'})
+    world = World(fw, {b'/tmp/q2-b': b'1234'})
     a = ap(fw)
     a.n = 3
     a.a[0].pid, a.a[0].launched = b'/tmp/q2-a', 1
@@ -1896,7 +1909,7 @@ def test_the_card_going_away_stops_apps_and_marks_them_to_start_again(fw):
 
 
 def test_the_card_going_away_waits_three_seconds_at_most(fw):
-    world = World(fw, {b'/tmp/q2-a': b'1'})
+    world = World(fw, {b'/tmp/q2-a': b'1234'})
     a = ap(fw)
     a.n, a.a[0].pid = 1, b'/tmp/q2-a'
     fw.mock('sleep_ms', lambda ms, *_: setattr(world, 'ms', world.ms + ms))
@@ -2833,7 +2846,7 @@ class Page:
         self.aborts: list = []  # sections()' swipe aborts
         self.tips: list = []  # field()'s box hints
         self.world = card(fw, foo=manifest)
-        self.world.files[b'/tmp/q2-foo'] = b'1'
+        self.world.files[b'/tmp/q2-foo'] = b'1234'
         self.page, self.view = block(fw, size=4096), block(fw, size=4096)  # widgets' bytes, all zero
         self.ap, self.pg, self.req = ap(fw), fw.var('addon__pg', Pg), fw.var('addon__req', Req)
         def timer(*_):
@@ -3190,7 +3203,7 @@ def test_no_socket_long_after_says_so_and_retry_restarts_it(fw):
     assert p.top.state == K_ERROR and p.top.nosock == 1 and p.top.note == b"Foo isn't running"
     p.click(0)
     assert p.ap.a[0].restart == 1 and p.top.state == K_LOAD
-    assert p.world.of('system')[-1] == (b'kill $(cat /tmp/q2-foo) 2>/dev/null || rm -f /tmp/q2-foo',)
+    assert p.world.of('system')[-1] == (b'kill 1234 2>/dev/null || rm -f /tmp/q2-foo',)
 
 
 def test_a_slow_start_offers_to_stop_it(fw):
@@ -4431,6 +4444,27 @@ def test_a_field_row_sends_its_text_and_takes_the_reply_in_the_levels_place(fw):
     assert b'Username:' in texts and not [t for t in texts if SECRET in t]  # nothing on screen holds it
 
 
+
+def letters(fw):
+    """The boxes marked to keep the letters with a Chinese pack (language.c reads the mark)."""
+    return [a[0] for _, a in fw.calls('widget_set_prop_int') if C.string_at(a[1]) == b'_ringnav_letters' and a[2] == 1]
+
+
+def test_a_field_box_keeps_the_letters(fw):
+    """A sign-in's name, password or address: letters with a Chinese pack too (q2app has no password mark)."""
+    p = Page(fw)
+    p.answer(rows=[USER, PASSWORD])
+    box = edit_box(fw)
+    p.click(1)
+    assert p.pg.edit == box and letters(fw) == [box]
+
+
+def test_a_search_box_takes_a_chinese_packs_pinyin(fw):
+    p = Page(fw)
+    p.answer(rows=[SEARCH, item(0, b'list')])
+    tap_find(p)
+    assert p.pg.field == 0 and letters(fw) == []
+
 def test_a_field_text_of_63_bytes_is_sent_whole(fw):
     p = Page(fw)
     p.answer(rows=[USER])
@@ -4458,7 +4492,7 @@ def test_a_search_text_too_long_to_send_whole_is_dropped_and_says_so(fw):
     for _ in range(2):
         fw.fn('addon__searched', C.c_int, C.c_void_p, C.c_void_p)(None, None)
     fw.fn('addon__go', C.c_int, C.c_void_p)(None)
-    assert len(fw.calls('fw_pthread_create')) == calls and p.toasts == [b'Too long']
+    assert len(fw.calls('fw_pthread_create')) == calls and p.toasts == [b'Search is too long']
     assert p.pg.depth == 1 and p.top.op != b'search' and text[:63] not in p.top.title
 
 

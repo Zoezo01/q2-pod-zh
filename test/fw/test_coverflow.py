@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 import host
+import test_playlist_art
 from conftest import O, Card as BaseCard, Config, Deques, Dirent, Externpic, Files, ask_cover, block, claim, fnv1a, high_halves, in_fork
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -46,7 +47,7 @@ class Home(C.Structure):
                 *((k, C.c_void_p) for k in 'row row_image row_label svc'.split()), ('svc_name', C.c_char * 72),
                 *((k, C.c_int) for k in 'kind songs albums services games free_tenths counted counting got_songs got_albums'.split()),
                 ('count_thread', C.c_ulong), *((k, C.c_uint) for k in 'asked pane_read count_timer pane_timer'.split()),
-                ('ring', (C.c_uint * HOME_PW) * 4), ('clip', C.c_int * 4), ('clipped', C.c_int)]
+                ('ring', (C.c_uint * HOME_PW) * 4), ('clip', C.c_int * 4), ('clipped', C.c_int), ('playing', C.c_int)]
 
 
 class Row(C.Structure):
@@ -78,7 +79,7 @@ def api(fw):
            'coverflow__stamp': (u, ptr), 'coverflow__lift': (None, i, u), 'coverflow__sort_saved': (i,),
            'coverflow_sort_name': (C.c_char_p,), 'coverflow_sort_step': (None,), 'coverflow__sort_next': (i, i),
            'blob_io': (i, C.c_char_p, C.c_char_p, ptr, u, i), 'file_size': (C.c_long, C.c_char_p),
-           'coverflow__ff_run': (i, C.c_char_p, C.c_char_p, i, i, ptr), 'coverflow__build_art': (None, ptr),
+           'coverflow__ff_run': (i, C.c_char_p, C.c_char_p, i, i, ptr, ptr), 'coverflow__build_art': (None, ptr),
            'coverflow__worker': (ptr, ptr), 'art_strike': (None, C.c_char_p), 'coverflow_clean_end': (None,),
            'thumb': (i, C.c_char_p, C.c_char_p, i, i),
            'coverflow__grid_cover': (i, C.c_char_p, C.c_char_p, i, i, i), 'coverflow_album_cover': (i, C.c_char_p, C.c_char_p, i, i),
@@ -488,14 +489,15 @@ def test_hit_mirrors_about_the_centre_line(fw):
 
 
 def texture(j):
-    """A flat cover whose green over red says which: brightness scales both."""
+    """A flat cover whose green over red says which: brightness scales both. The screen's BGRA8888."""
     t = exact(C.c_uint, ART * ART)
-    t[:] = [0xff0000f0 | (30 + 30 * j) << 8] * (ART * ART)
+    t[:] = [0xfff00000 | (30 + 30 * j) << 8] * (ART * ART)
     return t
 
 
 def bgra(p):
-    """A texel (RGBA8888, red low) as the frame holds it: the screen's BGRA8888, red at bit 16."""
+    """A colour red low (RGBA8888) as a texture and the frame hold it: the screen's BGRA8888, red at
+    bit 16."""
     return p & 0xff00ff00 | (p & 255) << 16 | p >> 16 & 255
 
 
@@ -534,14 +536,14 @@ def test_hit_names_the_cover_drawn_there(fw):
 def test_the_centre_cover_comes_out_texel_for_texel(fw):
     g = api(fw)
     tex = exact(C.c_uint, ART * ART)
-    tex[:] = [0xff000000 | x | y << 8 | 0x55 << 16 for y in range(ART) for x in range(ART)]
+    tex[:] = [0xff000000 | x | y << 8 | 0x55 << 16 for x in range(ART) for y in range(ART)]  # a texture: by columns
     d = exact(C.c_uint, VIEW_W * VIEW_H)
     ring = Ring()
     ring[3] = C.addressof(tex)
     g.coverflow_render(d, VIEW_W, 0, ring.at)
     for y in range(12, ART - 12):
         for x in range(ART):
-            assert d[(TOP + y) * VIEW_W + CX - 80 + x] == bgra(tex[y * ART + x]), (x, y)
+            assert d[(TOP + y) * VIEW_W + CX - 80 + x] == tex[x * ART + y], (x, y)
     for t in (tex, d):
         libc.free(C.addressof(t))
 
@@ -549,7 +551,7 @@ def test_the_centre_cover_comes_out_texel_for_texel(fw):
 def test_the_reflection_mirrors_the_cover_and_fades_out_in_46_px(fw):
     g = api(fw)
     tex = exact(C.c_uint, ART * ART)
-    tex[:] = [0xff000000 | (y + 60) for y in range(ART) for x in range(ART)]
+    tex[:] = [0xff000000 | (y + 60) << 16 for x in range(ART) for y in range(ART)]  # red
     d = exact(C.c_uint, VIEW_W * VIEW_H)
     ring = Ring()
     ring[3] = C.addressof(tex)
@@ -580,9 +582,9 @@ def test_every_pixel_of_a_frame_is_opaque_and_stays_in_the_frame(fw):
 def test_covers_mirror_when_the_frame_does(fw):
     g = api(fw)
     tex = exact(C.c_uint, ART * ART)
-    tex[:] = [0xff000000 | (x + 40) | (y + 40) << 8 for y in range(ART) for x in range(ART)]
+    tex[:] = [0xff000000 | (x + 40) | (y + 40) << 8 for x in range(ART) for y in range(ART)]
     flip = exact(C.c_uint, ART * ART)
-    flip[:] = [0xff000000 | (ART - 1 - x + 40) | (y + 40) << 8 for y in range(ART) for x in range(ART)]
+    flip[:] = [0xff000000 | (ART - 1 - x + 40) | (y + 40) << 8 for x in range(ART) for y in range(ART)]
     a, b = exact(C.c_uint, VIEW_W * VIEW_H), exact(C.c_uint, VIEW_W * VIEW_H)
     ring = Ring()
     ring[2] = C.addressof(tex)
@@ -626,7 +628,7 @@ def test_decode_a_square_cover_is_copied(fw):
     pixels = rgba(ART, ART, lambda x, y: (x, y, 7, 255))
     bitmap(fw, ART, ART, pixels)
     ok, out = decoded(fw)
-    assert ok == 1 and all(out[y * ART + x] == 0xff070000 | y << 8 | x for y in range(ART) for x in range(ART))
+    assert ok == 1 and all(out[x * ART + y] == bgra(0xff070000 | y << 8 | x) for y in range(ART) for x in range(ART))  # by columns
     assert fw.calls('widget_unload_image')
 
 
@@ -634,31 +636,31 @@ def test_decode_a_wide_cover_sits_between_black_bars(fw):
     pixels = rgba(320, 160, lambda x, y: (200, 0, 0, 255))
     bitmap(fw, 320, 160, pixels)
     _, out = decoded(fw)
-    column = [out[y * ART + 80] for y in range(ART)]
-    assert column == [0xff000000] * 40 + [0xff0000c8] * 80 + [0xff000000] * 40
+    column = [out[80 * ART + y] for y in range(ART)]
+    assert column == [0xff000000] * 40 + [0xffc80000] * 80 + [0xff000000] * 40
     _, out = decoded(fw, bar=0xf4)  # the landing's: Now Playing's paper
-    assert [out[y * ART + 80] for y in range(ART)] == [0xfff4f4f4] * 40 + [0xff0000c8] * 80 + [0xfff4f4f4] * 40
+    assert [out[80 * ART + y] for y in range(ART)] == [0xfff4f4f4] * 40 + [0xffc80000] * 80 + [0xfff4f4f4] * 40
 
 
 def test_decode_a_tall_cover_too(fw):
     pixels = rgba(80, 160, lambda x, y: (0, 200, 0, 255))
     bitmap(fw, 80, 160, pixels)
     _, out = decoded(fw)
-    assert list(out[80 * ART:81 * ART]) == [0xff000000] * 40 + [0xff00c800] * 80 + [0xff000000] * 40
+    assert [out[x * ART + 80] for x in range(ART)] == [0xff000000] * 40 + [0xff00c800] * 80 + [0xff000000] * 40
 
 
 def test_decode_scales_by_the_nearest_texel_from_a_larger_one(fw):
     pixels = rgba(320, 320, lambda x, y: (x // 2, y // 2, 0, 255))
     bitmap(fw, 320, 320, pixels)
     _, out = decoded(fw)
-    assert all(out[y * ART + x] == 0xff000000 | y << 8 | x for y in (0, 80, 159) for x in (0, 80, 159))
+    assert all(out[x * ART + y] == 0xff000000 | y << 8 | x << 16 for y in (0, 80, 159) for x in (0, 80, 159))
 
 
 def test_decode_blends_a_transparent_pixel_over_the_black_page(fw):
     pixels = rgba(ART, ART, lambda x, y: (200, 100, 50, 128))
     bitmap(fw, ART, ART, pixels)
     _, out = decoded(fw)
-    assert out[0] == 0xff000000 | 200 * 128 // 255 | (100 * 128 // 255) << 8 | (50 * 128 // 255) << 16
+    assert out[0] == 0xff000000 | (200 * 128 // 255) << 16 | (100 * 128 // 255) << 8 | 50 * 128 // 255
 
 
 @pytest.mark.parametrize('format, order', ((1, (0, 1, 2, 3)), (2, (3, 2, 1, 0)), (3, (2, 1, 0, 3)), (4, (1, 2, 3, 0))))
@@ -668,7 +670,7 @@ def test_decode_reads_each_32_bit_format(fw, format, order):
     colour[order[0]], colour[order[1]], colour[order[2]], colour[order[3]] = r_, g_, b_, 255
     pixels = rgba(ART, ART, lambda x, y: colour)
     bitmap(fw, ART, ART, pixels, format)
-    assert decoded(fw)[1][0] == 0xff000000 | r_ | g_ << 8 | b_ << 16
+    assert decoded(fw)[1][0] == 0xff000000 | r_ << 16 | g_ << 8 | b_
 
 
 def test_decode_honours_the_stride(fw):
@@ -677,7 +679,7 @@ def test_decode_honours_the_stride(fw):
         data[y * (ART * 4 + 8):y * (ART * 4 + 8) + ART * 4] = bytes((1, y, 3, 255)) * ART
     pixels = (C.c_ubyte * len(data)).from_buffer(data)
     bitmap(fw, ART, ART, pixels, stride=ART * 4 + 8)
-    assert decoded(fw)[1][159 * ART] == 0xff030001 | 159 << 8
+    assert decoded(fw)[1][159] == 0xff010003 | 159 << 8  # texel 0, 159
 
 
 @pytest.mark.parametrize('w, h, format', ((0, 160, 1), (160, 0, 1), (4097, 160, 1), (160, 4097, 1), (160, 160, 0), (160, 160, 5)))
@@ -1400,6 +1402,9 @@ def test_blob_io_a_failed_flush_or_close_is_a_failed_write_too(fw, step):
     assert g.blob_io(b'/a', b'/a.tmp', buf, 4, 1) == 0 and card.files['/a'] == b'old!'
 
 
+FF_WAIT_MS = 10000
+
+
 def statuses(fw, status):
     fw.mock('fw_fork', lambda *_: 1234)
 
@@ -1415,7 +1420,7 @@ def test_ff_run_a_run_that_reached_ffmpeg_s_own_exit(fw, status, exited):
     Card(fw, {'/d.ff': b'jpg'})
     statuses(fw, status)
     got = C.c_int(-1)
-    ok = g.ff_run(b'/s', b'/d', 160, 160, r(got))
+    ok = g.ff_run(b'/s', b'/d', 160, 160, r(got), budget())
     assert got.value == exited and ok == (status == 0)
     assert fw.var('ff_kills', C.c_uint).value == (0 if exited else 1)
 
@@ -1424,17 +1429,17 @@ def test_ff_run_success_renames_the_picture_into_place(fw):
     g = api(fw)
     card = Card(fw, {'/d.ff': b'jpg'})
     statuses(fw, 0)
-    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int())) == 1 and card.files == {'/d': b'jpg'}
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int()), budget()) == 1 and card.files == {'/d': b'jpg'}
 
 
 def test_ff_run_an_empty_or_failed_output_leaves_the_destination_alone(fw):
     g = api(fw)
     card = Card(fw, {'/d.ff': b'', '/d': b'old'})
     statuses(fw, 0)
-    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int())) == 0 and card.files == {'/d': b'old'}
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int()), budget()) == 0 and card.files == {'/d': b'old'}
     card.files['/d.ff'] = b'partial'
     statuses(fw, 9)
-    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int())) == 0 and card.files == {'/d': b'old'}
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int()), budget()) == 0 and card.files == {'/d': b'old'}
 
 
 def test_ff_run_a_refused_fork_counts_as_killed(fw):
@@ -1442,7 +1447,7 @@ def test_ff_run_a_refused_fork_counts_as_killed(fw):
     Card(fw)
     fw.mock('fw_fork', lambda *_: -1)
     got = C.c_int(-1)
-    assert g.ff_run(b'/s', b'/d', 160, 160, r(got)) == 0 and got.value == 0
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(got), budget()) == 0 and got.value == 0
     assert fw.var('ff_kills', C.c_uint).value == 1
 
 
@@ -1461,7 +1466,247 @@ def test_ff_run_a_signal_mid_wait_waits_again(fw):
         C.c_int.from_address(out).value = 0
         return pid
     fw.mock('fw_waitpid', wait)
-    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int())) == 1 and len(tries) == 2
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int()), budget()) == 1 and len(tries) == 2
+
+
+
+def budget(ms=FF_WAIT_MS):
+    """A request's ffmpeg time, as ff_run takes it."""
+    return r(C.c_uint(ms))
+
+
+class Hung:
+    """ffmpeg's child on a damaged file, ending by itself at exits_at ms (None: never), on a clock sleep_ms moves:
+    a look (WNOHANG) answers 0 until then; chapter_kill's SIGKILL ends it (status 9), unless stuck (in the card's
+    I/O: it never ends). A blocking wait is answered 0 and counted, so a wait without a limit fails the test."""
+    def __init__(self, fw, exits_at=None, status=0, stuck=False):
+        self.now, self.exits_at, self.status, self.stuck = 0, exits_at, status, stuck
+        self.killed, self.blocked, self.forks = [], 0, 0
+        fw.mock('fw_fork', self.fork)
+        fw.mock('time_now_ms', lambda *_: self.now)
+        fw.mock('sleep_ms', lambda ms, *_: setattr(self, 'now', self.now + ms))
+        fw.mock('chapter_kill', self.kill)
+        fw.mock('fw_waitpid', self.wait)
+
+    def fork(self, *_):
+        self.dead, self.forks = 0, self.forks + 1
+        return 1234
+
+    def kill(self, pid, sig, *_):
+        self.killed.append((pid, sig))
+        self.dead = not self.stuck
+
+    def wait(self, pid, out, options, *_):
+        ended = self.exits_at is not None and self.now >= self.exits_at
+        if not (self.dead or ended):
+            self.blocked += options != 1
+            return 0
+        C.c_int.from_address(out).value = 9 if self.dead else self.status
+        return pid
+
+
+def test_ff_run_a_hung_ffmpeg_is_killed_at_the_limit_and_fails(fw):
+    g = api(fw)
+    card = Card(fw, {'/d.ff': b'part'})
+    hung = Hung(fw)
+    got, left = C.c_int(-1), C.c_uint(FF_WAIT_MS)
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(got), r(left)) == 0 and hung.killed == [(1234, 9)] and not hung.blocked
+    assert FF_WAIT_MS <= hung.now <= FF_WAIT_MS + 20 and got.value == 0 and card.files == {} and left.value == 0
+    assert fw.var('ff_kills', C.c_uint).value == 1  # as the kernel's kill: no "no art" marker follows
+
+
+def test_ff_run_a_killed_child_that_never_dies_is_given_up_after_a_second(fw):
+    """A child in the card's I/O (a failing card) outlives SIGKILL: after FF_GRACE_MS of looks it is left unreaped
+    and the run counts as killed, rather than a blocking reap holding the caller."""
+    g = api(fw)
+    Card(fw)
+    hung = Hung(fw, stuck=True)
+    got = C.c_int(-1)
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(got), budget()) == 0 and hung.killed == [(1234, 9)]
+    assert not hung.blocked and hung.now <= FF_WAIT_MS + 1000 + 20 and got.value == 0
+    assert fw.var('ff_kills', C.c_uint).value == 1
+
+
+@pytest.mark.parametrize('ms', [0, 19])  # under a poll's 20 ms: a start would only be killed at its first look
+def test_ff_run_with_its_request_s_time_spent_starts_no_ffmpeg(fw, ms):
+    g = api(fw)
+    Card(fw)
+    hung = Hung(fw)
+    got = C.c_int(-1)
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(got), budget(ms)) == 0 and hung.forks == 0 and got.value == 0
+    assert fw.var('ff_kills', C.c_uint).value == 1  # a kill's failure: no marker
+
+
+@pytest.mark.parametrize('clock', ['back', 'stuck'])
+def test_ff_run_a_clock_stepped_back_or_stuck_mid_wait_still_kills_within_the_limit(fw, clock):
+    """time_now_ms is stock's CLOCK_MONOTONIC; still, a clock set back 50 s mid-wait reads as past the limit (the
+    difference is unsigned), and one that stops is caught by each look counting its 20 ms sleep. Without that
+    count the stuck clock is let go only after ten times the sleeps, and the test fails."""
+    g = api(fw)
+    Card(fw)
+    hung = Hung(fw)
+    hung.now, sleeps = 50000, []
+
+    def sleep(ms, *_):
+        sleeps.append(ms)
+        if clock == 'back':
+            hung.now = 0 if len(sleeps) == 5 else hung.now + ms
+        elif len(sleeps) > 10 * FF_WAIT_MS // 20:
+            hung.now += FF_WAIT_MS  # the guard's stand-in, so a wait without the count ends rather than hangs
+    fw.mock('sleep_ms', sleep)
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int()), budget()) == 0 and hung.killed == [(1234, 9)]
+    assert sum(sleeps) <= FF_WAIT_MS + 20
+
+
+@pytest.mark.parametrize('at', [20, FF_WAIT_MS - 20])
+def test_ff_run_an_ffmpeg_that_ends_within_the_limit_is_not_killed(fw, at):
+    g = api(fw)
+    card = Card(fw, {'/d.ff': b'jpg'})
+    hung = Hung(fw, exits_at=at)
+    left = C.c_uint(FF_WAIT_MS)
+    assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int()), r(left)) == 1 and not hung.killed and card.files == {'/d': b'jpg'}
+    assert left.value == FF_WAIT_MS - at  # what it ran is taken from the request's time
+
+
+def test_build_art_a_hung_ffmpeg_leaves_no_marker_so_the_next_open_retries(fw):
+    g = api(fw)
+    card = Card(fw, {'/m/a.mp3': b''})
+    builder(fw, card, ff=0)
+    hung = Hung(fw)
+    g.build_art(r(job(b'/m/a.mp3')))
+    assert hung.killed and art(0xabc) not in card.files
+
+
+BESIDE = ('cover.jpg', 'folder.jpg', 'cover.png', 'folder.png', 'cover.webp', 'folder.webp')
+
+
+def test_build_art_an_album_whose_every_file_hangs_costs_one_budget_not_seven(fw):
+    """Six cover files beside the track and the track itself, each hanging ffmpeg, were seven 10 s runs, 70 s, all
+    of which a join after Cover Flow's close waited out: the album has one FF_WAIT_MS for all of them, so one run
+    starts and is killed, and the later names start none (each is still looked at)."""
+    g = api(fw)
+    card = Card(fw, {'/m/a.mp3': b'', **{'/m/' + n: b'x' for n in BESIDE}})
+    builder(fw, card)  # stock decodes none of them
+    hung = Hung(fw)
+    g.build_art(r(job(b'/m/a.mp3')))
+    assert hung.forks == 1 and hung.killed == [(1234, 9)] and hung.now <= FF_WAIT_MS + 20
+    assert art(0xabc) not in card.files  # a kill: retried at the next open
+
+
+def test_build_art_a_folder_image_stock_reads_still_counts_after_the_budget_is_spent(fw):
+    """cover.jpg hangs ffmpeg and spends the album's time; folder.jpg, which stock decodes in demo with no ffmpeg,
+    is still read and is the album's art."""
+    g = api(fw)
+    card = Card(fw, {'/m/a.mp3': b'', '/m/cover.jpg': b'x', '/m/folder.jpg': b'x'})
+    builder(fw, card)
+
+    def stock(src, dst, *_):
+        if C.string_at(src) != b'/m/folder.jpg':
+            return 0
+        card.files[C.string_at(dst).decode()] = b'art'
+        return 1
+    fw.mock('toolsThumbSpecCover', stock)
+    hung = Hung(fw)
+    g.build_art(r(job(b'/m/a.mp3')))
+    assert hung.forks == 1 and hung.killed and card.files[art(0xabc)] == b'art'
+
+
+PL_AT = '/mnt/mmc/.coverflow/pl_3_00000001'
+
+
+def pl_runs(fw, card, plan, cancel_at=None):
+    """Each ffmpeg a playlist job starts takes 1000 ms of a clock sleep_ms moves; plan[i] is the i-th run's end:
+    'none' (exit 1, no picture), 'cover' (album k's picture), 'tile' (the 2x2). cancel_at: the run during which the
+    page closes (pl.cancel)."""
+    st = dict(now=0, at=0, run=-1, k=0)
+    pl = fw.var('playlist_art__pl', test_playlist_art.Pl)
+    pl.cancel = 0
+
+    def fork(*_):
+        st['run'] += 1
+        st['at'] = st['now']
+        if st['run'] == cancel_at:
+            pl.cancel = 1
+        return 1234
+
+    def wait(pid, out, *_):
+        if st['now'] - st['at'] < 1000:
+            return 0
+        what = plan[st['run']]
+        if what == 'cover':
+            card.files[f"{PL_AT}_{st['k']}.tmp.jpg.ff"] = b'jpg'
+            st['k'] += 1
+        elif what == 'tile':
+            card.files[PL_AT + '.tmp.jpg.ff'] = b'2x2'
+        C.c_int.from_address(out).value = 1 << 8 if what == 'none' else 0
+        return pid
+    fw.mock('fw_fork', fork)
+    fw.mock('fw_waitpid', wait)
+    fw.mock('time_now_ms', lambda *_: st['now'])
+    fw.mock('sleep_ms', lambda ms, *_: st.__setitem__('now', st['now'] + ms))
+    fw.mock('chapter_kill', lambda *_: pytest.fail('a healthy run killed'))
+    fw.mock('toolsGetAlbumCover', lambda *_: 0)
+    fw.mock('toolsThumbSpecCover', lambda src, dst, *_: card.files.__setitem__(C.string_at(dst).decode(), b's') or 1)
+    return st, pl
+
+
+def pl_albums(fw, card, n):
+    tracks = [(str(100 + i), f'/m/{i}/a.flac', f'Album {i}', 'Artist', '') for i in range(n)]
+    card.files.update({t[1]: b'' for t in tracks})
+    return test_playlist_art.songs(fw, tracks, collect=1)
+
+
+def test_a_playlist_of_artless_albums_then_four_with_art_still_gets_its_2x2(fw):
+    """Twelve albums without art (a quick failing ffmpeg each, here 1 s) before four with art: each album try has
+    its own FF_WAIT_MS, as a Cover Flow album has, and the 2x2 its own, so none is starved by the others."""
+    card = Card(fw, {'/mnt/mmc/.coverflow': b''})
+    s = pl_albums(fw, card, 16)
+    st, _ = pl_runs(fw, card, ['none'] * 12 + ['cover'] * 4 + ['tile'])
+    four = fw.fn('playlist_art__four', C.c_int, C.c_void_p, C.c_char_p, C.c_uint)
+    assert four(C.byref(s), PL_AT.encode(), fw.var('ff_kills', C.c_uint).value) == 1
+    assert st['run'] == 16 and card.files[PL_AT + '.jpg'] == b'2x2' and PL_AT + '_s.jpg' in card.files
+
+
+def test_a_playlist_job_cancelled_mid_way_stops_before_the_2x2(fw):
+    card = Card(fw, {'/mnt/mmc/.coverflow': b''})
+    s = pl_albums(fw, card, 6)
+    st, pl = pl_runs(fw, card, ['cover'] * 6 + ['tile'], cancel_at=1)
+    four = fw.fn('playlist_art__four', C.c_int, C.c_void_p, C.c_char_p, C.c_uint)
+    assert four(C.byref(s), PL_AT.encode(), fw.var('ff_kills', C.c_uint).value) == 0
+    assert st['run'] == 1 and pl.cancel == 1  # no further album, no 2x2
+    assert not any(p.startswith(PL_AT) for p in card.files)  # nothing named, no marker
+
+
+def test_build_art_a_cancelled_worker_writes_no_marker(fw):
+    """Cover Flow closed mid-album: the album gets no verdict, even one its ffmpeg gave as the picture's fault."""
+    g = api(fw)
+    card = Card(fw, {'/m/a.mp3': b''})
+    builder(fw, card, ff=1 << 8)
+    c = cf(fw)
+    c.cancel = 0
+    fw.mock('fw_fork', lambda *_: setattr(c, 'cancel', 1) or 1234)
+    g.build_art(r(job(b'/m/a.mp3')))
+    assert c.cancel == 1 and art(0xabc) not in card.files
+
+
+def test_player_cover_with_every_candidate_hanging_holds_its_lock_one_budget(fw):
+    """Now Playing's art runs under stock's g_playcover_mutex, which Cover Flow's worker waits for: six hanging cover
+    files and the track are one FF_WAIT_MS in all."""
+    g = api(fw)
+    Card(fw, {'/m/a.flac': b'', **{'/m/' + n: b'x' for n in BESIDE}})
+    fw.mock('toolsGetExternCover', lambda *_: 0)
+    hung = Hung(fw)
+    assert g.coverflow_player_cover(b'/m/a.flac', b'/d', 240, 240) == 0
+    assert hung.forks == 1 and hung.killed == [(1234, 9)] and hung.now <= FF_WAIT_MS + 20
+
+
+def test_grid_cover_a_hung_ffmpeg_is_not_a_miss(fw):
+    g = api(fw)
+    ogg_rig(fw)
+    hung = Hung(fw)
+    g.coverflow_grid_cover(b'/m/a.ogg', b'/d', 1, 1)
+    g.coverflow_grid_cover(b'/m/a.ogg', b'/d', 1, 1)
+    assert len(hung.killed) == 2  # each ask its own budget: tried again, as a slow card may manage it then
 
 
 def art(key, suffix=''):
@@ -1648,7 +1893,7 @@ def test_a_clean_end_mid_build_stops_the_worker_before_the_next_album_s_note(fw,
     c = cf(fw)
     c.jobs, c.total, c.done, c.cancel = C.addressof(jobs), 2, 0, 0
     assert g.worker(None) is None and c.done == (during == 'cover')
-    assert set(card.files) == {'/m/a.mp3', '/m/b.mp3'} | ({art(0xa)} if during == 'cover' else set())
+    assert set(card.files) == {'/m/a.mp3', '/m/b.mp3'}  # a stopped mid-album gets no verdict either
 
 
 def png(w, h):
@@ -2834,8 +3079,8 @@ def test_the_streaming_row_opens_the_page_in_full(fw, stock_bg):
 
 @pytest.mark.parametrize('home', ('0', '1', '2'))
 @pytest.mark.parametrize('theme', (MINIMAL, CLASSIC, MODERN))
-@pytest.mark.parametrize('shortcut, shown, label', (('0', 0, 'Rockbox'), ('6', 1, 'Games'), ('11', 0, 'Favorites'),
-                                                    ('12', 1, 'Favorites')))
+@pytest.mark.parametrize('shortcut, shown, label', (('0', 0, 'Rockbox'), ('6', 1, 'Games'), ('11', 0, 'Favourites'),
+                                                    ('12', 1, 'Favourites')))
 def test_the_shortcut_row_sits_after_folder_unless_rockbox_is_missing_or_none(fw, theme, home, shortcut, shown, label):
     # None hides the row in every layout and theme; the carousel's card stays, naming the default as with no choice
     themed(fw, theme, SHORTCUT=shortcut, HOME=home)
@@ -2865,6 +3110,78 @@ def test_hidden_folder_and_streaming_rows_go_last_and_take_no_taps(fw, folder, s
     assert ui[h.view].kids == [h.rows[n] for n in h.ROWS if h.rows[n] not in hidden] + hidden
     for n in ('img_folder', 'img_services'):
         assert ui[h.rows[n]].visible == ui[h.rows[n]].sensitive == (h.rows[n] not in hidden)
+
+
+# Now Playing's row shows only while a song is loaded (queue_loaded), as an iPod's: with none it goes last, as a hidden
+# Folder does, and takes no taps; loaded, it is back first.
+def now_playing_home(fw, loaded, home='1', theme=CLASSIC):
+    themed(fw, theme, HOME=home)
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = Deques(fw).new([1]) if loaded else 0
+    ui = Ui(fw)
+    h = Homes(ui, rockbox=True)
+    ui[h.rows['img_playing']].name = 'btn_playing'
+    return ui, h
+
+
+@pytest.mark.parametrize('home', ('0', '1'))
+@pytest.mark.parametrize('loaded', (0, 1))
+def test_now_playing_s_row_shows_only_while_a_song_is_loaded(fw, mcl, loaded, home):
+    ui, h = now_playing_home(fw, loaded, home)
+    row = h.rows['img_playing']
+    ui.restack(row, 6)  # from anywhere: shown again, it goes back first
+    h.open(fw)
+    others = [h.rows[n] for n in h.ROWS if n != 'img_playing']
+    assert ui[h.view].kids == ([row] + others if loaded else others + [row])
+    assert ui[row].visible == ui[row].sensitive == loaded
+
+
+def test_carousel_s_now_playing_card_with_nothing_loaded_opens_nothing(fw, mcl):
+    """ponytail: the card stays (docs/internals.md, Home: Carousel); its press, stock's on_backplay_click with class
+    0xff, is refused: the window it made closes unbuilt and Home stays as it was."""
+    themed(fw, CLASSIC, HOME='2')
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = 0
+    ui = Ui(fw)
+    h = Homes(ui, carousel=True)
+    h.open(fw)
+    before = [(w, ui[w].visible) for w in (h.main, *h.carousel)]
+    closed = []
+    fw.mock('window_close', lambda w, *_: closed.append(w) or 0)
+    np = ui.make(0, 'window', 0, 30, 375, 290, name='playing_page')
+    ctx = (C.c_int * 4)(0, 0, 0xff, 2)
+    assert fw.fn('ringnav_playing', C.c_int, C.c_void_p, C.c_void_p)(np, C.addressof(ctx)) == 11  # STOP
+    assert closed == [np] and [(w, ui[w].visible) for w in (h.main, *h.carousel)] == before
+    assert all(ui[w].visible for w in h.carousel) and not fw.calls('stock_playing_trampoline')
+
+
+@pytest.mark.parametrize('sel, after', ((0, 0), (3, 2), (-1, -1)))
+def test_the_row_going_moves_the_selection_with_its_rows(fw, mcl, sel, after):
+    # a live list: the count and the selection move with the row, so the wheel's ring and the row under the
+    # selection stay (navigation.c's load would drop a selection whose count changed); on the row itself the
+    # selection goes to the row that takes its place
+    ui, h = now_playing_home(fw, 1)
+    h.open(fw)
+    ui[h.view].props.update({'_ringnav_count': 7, '_ringnav_index': sel})
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = 0
+    fw.fn('coverflow_home_layout', None)()
+    assert ui[h.view].props == {'_ringnav_count': 6, '_ringnav_index': after}
+    assert ui[h.view].kids[-1] == h.rows['img_playing'] and not ui[h.rows['img_playing']].visible
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = Deques(fw).new([1])
+    fw.fn('coverflow_home_layout', None)()  # loaded again: back first, the selection on the same row (Library)
+    assert ui[h.view].props == {'_ringnav_count': 7, '_ringnav_index': after + 1 if after >= 0 else -1}
+    assert ui[h.view].kids[0] == h.rows['img_playing'] and ui[h.rows['img_playing']].visible
+
+
+def test_the_bar_s_pass_lays_home_out_again_only_when_a_song_loads_or_goes(fw, mcl):
+    # bar_sync calls coverflow_home_sync at each bar paint, Home on screen or under a page: no poll of its own
+    ui, h = now_playing_home(fw, 0)
+    h.open(fw)
+    sync, row = fw.fn('coverflow_home_sync', None), h.rows['img_playing']
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = Deques(fw).new([1])
+    sync()
+    assert ui[h.view].kids[0] == row and ui[row].visible
+    fw.var('fw_log_n', C.c_int).value = 0
+    sync()  # unchanged: nothing laid out
+    assert not fw.calls('widget_restack')
 
 
 @pytest.mark.parametrize('show, want', (('1', b'Q2 Pod'), ('0', b'')))
@@ -3802,3 +4119,10 @@ def test_the_landing_s_art_is_drawn_in_the_art_s_own_paint(fw, mcl):
     art(land.art, C.addressof(run.canvas))
     assert fills()[-1] == (0, 0, 178, 218) and land.got == 2
     assert rects == [[list(land.box), [0, 0, 178, 218]]] and list(land.box) == [16, 22, 178, 218]
+
+
+@pytest.mark.parametrize('n', (1, 2, 5, 80, 160))
+def test_transpose_turns_rows_to_columns(fw, n):
+    t = (C.c_uint * (n * n))(*range(n * n))
+    fw.fn('cf_transpose', None, C.c_void_p, C.c_int)(t, n)
+    assert list(t) == [x * n + y for y in range(n) for x in range(n)]

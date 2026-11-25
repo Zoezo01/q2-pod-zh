@@ -136,8 +136,14 @@ assert m.read==[1,2],m.read; passed()
 # animation), is force-closed from the next loop pass, then the toast says so. Until then it is
 # polled (EMPTY_POLL_MS) until it opens or stops being on top, then the toast alone; a page already left, or
 # another class's, keeps the toast only.
-def empty(cls,page,stage=O['WINDOW_STAGE_OPENED'],leave=False,shown=None):
-    m=ClassMachine(page=page,cls=cls,rows=0); m.found=[]; m.query=None
+class OneSong(ClassMachine):  # the library holds a song: the probe's exec answers one row
+    def hook(self,u,address,size,unused):
+        if address!=syms['sqlite3_exec']: return super().hook(u,address,size,unused)
+        row=u.reg_read(REGS[2]); values=self.alloc(4); self.word(values,self.string('1'))
+        if row: self.nested(row,u.reg_read(REGS[3]),1,values,0)  # the connection's PRAGMAs have no callback
+        self.returns(0)
+def empty(cls,page,stage=O['WINDOW_STAGE_OPENED'],leave=False,shown=None,machine=ClassMachine):
+    m=machine(page=page,cls=cls,rows=0); m.found=[]; m.query=None
     assert m.call(address=HOOKS['load_localclass_list'][0],args=(cls,0,0,0),gap=0)==0 and len(m.timers)==1
     m.nodes[m.top]['stage']=stage
     if shown is not None: m.word(syms['g_class_type'],shown)
@@ -148,7 +154,7 @@ closes=lambda m: [c[:3] for c in m.calls if c[0]=='window_manager_close_window_f
 for cls,page in ((0xf003,'album_page'),(0xf003,'localclass_page'),(0xf004,'localclass_page'),(0xf005,'localclass_page'),(0xf006,'localclass_page')):
     m=empty(cls,page); top=m.stack[-1]
     assert closes(m)==[('window_manager_close_window_force',m.wm,top)]
-    assert m.toasts==[('dialog/msginfo_dialog',1,2000,{0xf003:'暂无专辑',0xf004:'暂无表演者',0xf005:'暂无作曲家',0xf006:'暂无流派'}[cls])] and not m.timers
+    assert m.toasts==[('dialog/msginfo_dialog',1,2000,'请先更新本地音乐库')] and not m.timers
     passed()
 m=empty(0xf003,'album_page',stage=2)  # created, its open animation still running
 assert not closes(m) and not m.toasts and len(m.timers)==1
@@ -160,7 +166,7 @@ m.top=m.node('window','localmusic_page'); m.calls=[]; m.advance(O['EMPTY_POLL_MS
 assert not closes(m) and m.toasts and not m.timers; passed()  # left before it opened: the toast alone
 m=empty(0xf003,'album_page',leave=True)
 assert not closes(m) and m.toasts and not m.timers; passed()
-m=empty(0xf004,'localclass_page',shown=0xf006)  # Genres' page on top by now: not Artists' to close
+m=empty(0xf004,'localclass_page',shown=0xf006,machine=OneSong)  # Genres' page on top by now: not Artists' to close; songs, so the class's word
 assert not closes(m) and m.toasts==[('dialog/msginfo_dialog',1,2000,'暂无表演者')]; passed()
 # Library -> Songs reads straight into the showlist: stock's load holds its copy and the staging deque
 # together, the library twice. The staging pointer comes back, its deque cleared as stock leaves it.

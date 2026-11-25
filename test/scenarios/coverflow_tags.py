@@ -21,7 +21,7 @@ for action,want in ((0,['A','T2','B','C']),(1,['A','B','C','T2'])):
     m.press(100); assert m.hold()==11 and m.nodes[m.title]['text']=='T2' and m.release()==0
     assert m.labels()==['下一首播放','加入播放队列','加入收藏','前往表演者']
     assert m.hold()==0  # a repeated hold while the dialog is open cannot open another
-    m.pick(action); m.pick(action); m.advance(0)
+    m.pick(action); m.pick(action); m.advance(0); blink_out(m)
     assert m.names()==want and m.top==m.page and m.selected(view)==1 and not m.playback() and not m.plays
     assert m.names(m.get(syms['p_deque_showlist']))==['Row 0','Row 1','Row 2','Row 3']
     m.press(200); assert m.release()==1; passed()

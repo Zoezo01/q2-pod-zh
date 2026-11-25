@@ -17,7 +17,9 @@
 #include <string.h>
 #include <math.h>
 #include <unistd.h>
+#include <signal.h>
 #define child_exit _exit
+#define chapter_kill kill
 static inline void child_oom_first(void) {
     int fd = open("/proc/self/oom_score_adj", O_WRONLY);
     if (fd >= 0) write(fd, "1000", 4), close(fd);
@@ -30,6 +32,7 @@ static inline void crash_note(const char *path, const char *file, const char *lo
 #include "peq_platform.h"
 #define PEQ_ROOT "" /* host tests pass a scratch directory */
 void child_exit(int status) __attribute__((noreturn));
+int chapter_kill(int pid, int sig); /* chapters.c: kill(2), which demo does not import */
 void child_oom_first(
     void); /* between fork and exec: the OOM killer takes this child, not demo (#169) */
 void ringnav_clean_end(
@@ -277,8 +280,8 @@ void mute_stamp(void);
 #define SPOT_OUT "/tmp/q2-librespot.out" /* the output for the card's aplay.sh, none on the DAC */
 #define SPOT_DOWNLOAD                                                                              \
     "/tmp/q2-librespot.download" /* backend download progress, independent of playback */
-#define SPOT_KILL                                                                                  \
-    "kill -9 $(cat /tmp/q2-librespot); killall -9 librespot aplay; "                               \
+#define SPOT_KILL_REST                                                                             \
+    "killall -9 librespot aplay; "                                                                 \
     "rm -f /tmp/q2-librespot /tmp/q2-librespot.state " SPOT_OUT " " SPOT_DOWNLOAD
 double decibels(double power); /* 10 log10 */
 
@@ -321,7 +324,7 @@ void land_quad(const int from[4], const int to[3], int ms, int len, int travel, 
  * (coverflow_land.c land_frame). from is the panel's box (x, y, w, h), to the art's (x, y, side),
  * in the frame's coordinates; the ms are the motion's, the covers' fade's and Now Playing's. The
  * pixels are the screen's BGRA: shelf the side covers' frame (CF_VIEW_W wide, or 0), back BACK_W x
- * BACK_H (0 once face up), front ART_SIZE square. */
+ * BACK_H (0 once face up), front ART_SIZE square, by rows. */
 typedef struct {
     int from[4], to[3], len, travel, out_at, out_ms, np_at, np_ms;
     const unsigned *shelf, *back, *front;
@@ -359,10 +362,13 @@ int csv_toggle(char *list, unsigned size, const char *item);
 int text_differs(widget_t *w, const char *s);
 void *song_list(void);                              /* coverflow.c: an empty stSongInfo deque */
 long file_size(const char *path);                   /* coverflow.c: -1 when it can't be opened */
+int ff_reap(int pid, unsigned *left);               /* coverflow.c: a child reaped within *left */
 int picture_size(const char *path, int *w, int *h); /* coverflow.c */
 void *read_all(const char *path, unsigned max, unsigned *size); /* scrobble.c */
+int sfnt_whole(const unsigned char *b, unsigned n);             /* script.c */
 int visual(widget_t *s, int n, int *c, int *frac);
 int thumb(const char *src, const char *dst, int w, int h);
+int thumb_within(const char *src, const char *dst, int w, int h, unsigned *left);
 extern volatile unsigned ff_kills; /* coverflow.c: ffmpeg runs killed or never started */
 int card_space(const char *dir);
 int card_room(const char *dir, unsigned mb, unsigned pct);
@@ -414,10 +420,11 @@ enum {
                          pod_rows 26 */
     POD_ALBUM_GRID,   /* Library & Folders' Album View: stock's value and PLAYSET key
                          (album_view_toggle) */
-    POD_HIDE_APPS,    /* Appearance's Hide Apps, Hide Games and Hide App Store: Library's rows
-                         (home.c ringnav_localmusic) */
+    POD_HIDE_APPS,    /* Appearance's Hide Apps, Hide Games, Hide App Store and Hide Hi-Res:
+                         Library's rows (home.c ringnav_localmusic) */
     POD_HIDE_GAMES,
     POD_HIDE_STORE,
+    POD_HIDE_HIRES,
     POD_BT_RECEIVE, /* Bluetooth's Receive Audio (headset_bt_service; the bluealsa2 launcher) */
     POD_CF_ART_LOG, /* Display's Log Failed Artwork: coverflow.c build_art */
     /* Display's Hide Duplicate Albums and Hide Duplicate Songs: coverflow.c music_albums and
@@ -452,9 +459,11 @@ void night_set(int on, int kelvin), night_save(void), night_paint(canvas_t *canv
     night_clock(int dark);
 int clock_night(void); /* theme_engine.c: Night Shift's Auto hours now */
 int worker_stop(unsigned long thread, int *running, volatile int *cancel, unsigned *timer);
-void ringnav_select(widget_t *w, int id, int rows);
-int library_scanning(void); /* coverflow.c: a library scan's thread runs */
-int library_counting(void); /* coverflow.c: a song count reads songtable */
+void ringnav_select(widget_t *w, int id, int rows), ringnav_light(widget_t *list, int index);
+int qm_blinking(void);              /* queue_menu.c: the hold menu's blink owns the keys */
+int library_scanning(void);         /* coverflow.c: a library scan's thread runs */
+int library_count(const char *sql); /* library_lists.c: sql's one number, -1 when it can't be had */
+int library_counting(void);         /* coverflow.c: a song count reads songtable */
 /* coverflow.c: the library's generation, one up each rewrite (Most Played's too); an album row's
  * tracks, its id and the length of a path's album folder */
 extern volatile unsigned library_gen;
@@ -480,6 +489,7 @@ void coverflow_letter_hold(widget_t *w, unsigned letter);
 /* A letter with this bit is the Year sort's year instead, in its low bits, 0 undated. */
 #define CF_YEAR 0x80000000u
 int blob_io(const char *path, const char *tmp, void *buf, unsigned size, int write);
+int blob_load(const char *path, void *buf, unsigned size, unsigned *fails);
 /* card_theme.c: 1 when path holds these n bytes, read at most max */
 int file_holds(const char *path, const void *b, unsigned n, unsigned max);
 #define BLOB_IO(file, buf, write) blob_io(file, file ".tmp", &(buf), sizeof(buf), write)
@@ -527,7 +537,7 @@ const char *addon_slot_id(int i); /* slot i's app's id while it has a row anywhe
 int addon_libs(void), addon_lib_open(void *ctx, event_t *event);
 const char *addon_lib_name(int k);
 int addon_apps(void *ctx, event_t *event), addon_apps_sync(void *win, event_t *event);
-void library_apps_show(widget_t *row, int on); /* home.c: the Library's Apps row */
+void list_row_show(widget_t *row, int on); /* home.c: the Library's Apps row, Home's Now Playing */
 /* addon.c: System settings → Network's rows for apps whose q2app says row=network, as the Library's
  * above: addon_network (how many, a scan), addon_network_name, addon_network_icon,
  * addon_network_open (ctx: its place by name). */
@@ -661,6 +671,8 @@ unsigned long long now_ms(void); /* CLOCK_MONOTONIC */
 void field(const char *raw, const char *key, char *out, unsigned n);
 unsigned long long number(const char *raw, const char *key);
 unsigned state_read(const char *path, char *raw, unsigned size);
+int pid_of(const char *path);
+void spot_kill(const char *before, const char *after);
 struct unix_addr { /* sockaddr_un */
     unsigned short family;
     char path[108];
@@ -671,6 +683,7 @@ widget_t *label(widget_t *parent, int x, int y, int w, int h, const char *style,
                 unsigned color);
 void spot_yield(void), spot_stop(void), radio_stop(void);
 void headset_volume_reset(void);
+void volume_save_flush(void); /* navigation.c: a held volume save, written now */
 void headset_poll(void), headset_eq_poll(void), headset_manual(void);
 /* onlinematch.c's 补全封面与歌词 over the whole card: the library's albums and its albumless
  * songs, read on the UI thread (library_lists.c) and worked on the job's own. */
@@ -808,6 +821,8 @@ const char *tr(const char *en) __attribute__((format_arg(1)));
 #define N_(en) en
 void language_sync(void);
 void language_removing(const char *dir);
+/* stock's T9 as it loads: a Chinese pack's starts in pinyin */
+void language_keyboard(widget_t *kb);
 int valid_id(const char *s); /* addon.c: a card app's id */
 /* smart_wifi.c: its radio woken, 1 while its link comes up; its radio off; an action
  * held for that link (fn(ctx, 0) once it is up, if page, or any page when 0, is still in use) */

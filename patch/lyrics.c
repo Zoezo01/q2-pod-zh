@@ -16,9 +16,10 @@
  * a line with several stamps once for each, and lines without one (LRC's "[ar:...]" tags) left out.
  * Plain text fills it a line each, at a time no track reaches, so the page stays at its top as
  * before a .lrc's first stamp. libtag_c's property calls are found from taglib_file_new's address,
- * which that call binds in demo's GOT. ponytail: no SYLT frame, lines starting in its first
- * LYRIC_TAG_MAX bytes, and none from an Ogg file whose comment header is over OGG_TAGS_MAX (xiph.h:
- * TagLib would hold it ~4 times over). The lines keep their milliseconds and A2 word stamps
+ * which that call binds in demo's GOT. ponytail: no SYLT frame, only its first LYRIC_TAG_MAX
+ * bytes (lrc_parse cuts the tag at a line end there, else a character whole), and none from an Ogg
+ * file whose comment header is over OGG_TAGS_MAX (xiph.h: TagLib would hold it ~4 times over). The
+ * lines keep their milliseconds and A2 word stamps
  * ("<mm:ss.xx>" before a word, cut from the text) for iPod's lyrics page (lyrics.c), lose the
  * spaces at their ends, and blank ones go; a .lrc's synced lines replace stock's, read alike. */
 #define LYRIC_TAG_MAX 65536
@@ -132,14 +133,22 @@ static int lrc_order(const void *a, const void *b) {
  * without the spaces at its ends, and a blank one (a stamp alone, an empty line, CR CR LF's) is
  * left out, so the rows keep an even spacing. */
 static int lrc_parse(char *text, lrc_line **lp, lrc_mark **mp) {
-    unsigned cap = 1, caps = 0, n = 0, nm = 0;
-    for (const char *s = text; *s && s - text < LYRIC_TAG_MAX; ++s) /* a line, or a stamp */
+    unsigned cap = 1, caps = 0, n = 0, nm = 0, len = 0;
+    while (text[len] && len < LYRIC_TAG_MAX) ++len;
+    if (text[len]) { /* nothing past the cap is read, as it stands in stock's list, or counted */
+        unsigned e = len;
+        while (e && text[e] != '\n' && text[e] != '\r') --e; /* the last line whole, else one cut */
+        if (e) len = e;
+        while (!e && len && (text[len] & 0xc0) == 0x80) --len; /* else not mid-character */
+        text[len] = 0;
+    }
+    for (const char *s = text; *s; ++s) /* a line, or a stamp */
         cap += *s == '\n' || *s == '\r' || *s == '[', caps += *s == '<';
     lrc_line *l = *lp = calloc(cap, sizeof *l);
     lrc_mark *m = *mp = caps ? calloc(caps, sizeof *m) : 0;
     if (!l || (caps && !m)) return -1;
     int synced = 0;
-    for (char *s = text; *s && s - text < LYRIC_TAG_MAX;) {
+    for (char *s = text; *s;) {
         char *e = s, c, *line = s;
         int t[8], k;
         unsigned first;

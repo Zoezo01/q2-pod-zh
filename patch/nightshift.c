@@ -132,7 +132,7 @@ void night_clock(int dark) {
     if (ns.on == 2) night_set(2, ns.kelvin);
 }
 
-/* The page's save (crossfade.c refresh): what night_set showed, into config.ini. */
+/* The page's save (crossfade.c xfade_save): what night_set showed, into config.ini. */
 void night_save(void) {
     settings();
     if (ns.on != ns.saved_on) write_int_config(ns.on, "Q2POD", "NIGHTSHIFT");

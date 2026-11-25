@@ -240,15 +240,21 @@ def test_jpeg_size_agrees_with_the_builders_check(fw):
 
 
 class Card(Files):
-    """The card and flash as files, access() and stat() too (o32: size word 12, mtime word 16); ffmpeg as a child
-    that writes rot (or fails)."""
+    """The card and flash as files, access() and stat() too (o32: size word 12, mtime word 16; access fails as a read
+    open does); ffmpeg as a child that writes rot (or fails)."""
     def __init__(self, fw, files=None):
         super().__init__(fw, files)
         self.rot, self.status, self.pid, self.mtime = None, 0, 4321, {}
-        fw.mock('fw_access', lambda path, *_: 0 if C.string_at(path).decode() in self.files else -1)
+        fw.mock('fw_access', self.access)
         fw.mock('fw___xstat', self.stat)
         fw.mock('fw_fork', lambda *_: self.pid)
         fw.mock('fw_waitpid', self.wait)
+
+    def access(self, path, *_):
+        if not self.fail_open and C.string_at(path).decode() in self.files:
+            return 0
+        self.errno()[0] = self.fail_open or 2
+        return -1
 
     def stat(self, version, path, info, *_):
         path = C.string_at(path).decode()
@@ -273,8 +279,19 @@ def logo_sync(fw, power):
 
 def test_no_card_logo_brings_the_stock_logo_back(fw, power):
     card = Card(fw, {LOGO_DST: jpeg(320, 375)})
+    Mounts(fw, card)
     power('logo_busy').value = 1
     assert logo_sync(fw, power) is None and LOGO_DST not in card.files and power('logo_busy').value == 0
+
+
+@pytest.mark.parametrize('mounted, eio', [(True, True), (False, False), (False, True)])
+def test_a_card_logo_not_seen_keeps_the_copy(fw, power, mounted, eio):
+    """Only a mounted card whose file answers ENOENT takes the copy away: not another error, nor a card gone since the
+    mount."""
+    card = Card(fw, {LOGO_DST: jpeg(320, 375)})
+    Mounts(fw, card, mounted)
+    card.fail_open = 5 if eio else 0
+    assert logo_sync(fw, power) is None and LOGO_DST in card.files
 
 
 def test_a_portrait_logo_is_kept_on_flash(fw, power):
@@ -288,7 +305,8 @@ def test_the_same_logo_is_not_written_again(fw, power):
     logo = jpeg(320, 375)
     card = Card(fw, {LOGO_SRC: logo, LOGO_DST: logo})
     assert logo_sync(fw, power) is None and card.files[LOGO_DST] == logo
-    assert [C.string_at(c[1][1]) for c in fw.calls('fw_fopen')] == [b'rb', b'rb']  # read both, wrote nothing
+    opens = [C.string_at(c[1][1]) for c in fw.calls('fw_fopen') if C.string_at(c[1][0]) != b'/proc/mounts']
+    assert opens == [b'rb', b'rb']  # read both, wrote nothing (the card theme's check reads the mounts)
 
 
 def test_a_landscape_logo_is_turned_upright_by_ffmpeg(fw, power):
@@ -312,6 +330,26 @@ def test_no_fork_keeps_the_old_logo(fw, power):
     card = Card(fw, {LOGO_SRC: jpeg(375, 320), LOGO_DST: old})
     card.pid = -1
     assert logo_sync(fw, power) and card.files[LOGO_DST] == old and not fw.calls('fw_waitpid')
+
+
+def test_a_hung_turn_is_killed_at_the_limit_and_the_logo_thread_ends(fw, power):
+    """An ffmpeg that never ends is killed at FF_WAIT_MS (10 s): the old logo stays, nothing is said (the file was
+    not refused: "must be a 320x375 JPEG" would be untrue) and logo_busy clears, so the next mount copies again."""
+    old = jpeg(320, 375, tag=b'old')
+    card = Card(fw, {LOGO_SRC: jpeg(375, 320), LOGO_DST: old})
+    card.rot, clock, killed = jpeg(320, 375, tag=b'turned'), Clock(fw, now=0), []
+    fw.mock('sleep_ms', lambda ms, *_: setattr(clock, 'now', clock.now + ms))
+    fw.mock('chapter_kill', lambda pid, sig, *_: killed.append((pid, sig)))
+
+    def wait(pid, status, *_):
+        if not killed:
+            return 0  # still running (a blocking wait too: answered, so an endless one fails rather than hangs)
+        card.status = 9
+        return card.wait(pid, status)
+    fw.mock('fw_waitpid', wait)
+    power('logo_busy').value = 1
+    assert logo_sync(fw, power) is None and card.files[LOGO_DST] == old and killed == [(card.pid, 9)]
+    assert 10000 <= clock.now <= 10020 and power('logo_busy').value == 0 and LOGO_ROT not in card.files
 
 
 def test_the_child_runs_ffmpeg_on_the_card_logo(fw, power):
@@ -885,9 +923,11 @@ def test_no_rockbox_toasts_and_stays(fw, st):
 def test_rockbox_leaves_its_flag_and_ends_demo(fw, power):
     card = rockbox(fw)
     power('wdt').value = 6
+    ran = []
+    fw.mock('fw_system', lambda cmd, *_: ran.append(C.string_at(cmd)))  # the command is built on rockbox_open's stack
     fw.fn('rockbox_open', C.c_int, C.c_void_p, C.c_void_p)(None, None)
     assert host.tools_build.ROCKBOX_FLAG in card.files  # S90play runs Rockbox on it
-    cmd = C.string_at(fw.calls('fw_system')[-1][1][0])
+    cmd = ran[-1]
     assert cmd.endswith(b'kill -9 $PPID') and b'checkappprocess.sh' in cmd and b'hciplayer' in cmd
     assert fw.calls('save_memoryplay_info')  # the queue kept as power-off keeps it
     assert power('ended').value == 1 and (6, WDT_STOP) in [(c[1][0], c[1][1] & 0xffffffff) for c in fw.calls('fw_ioctl')]
@@ -1394,6 +1434,83 @@ def test_now_playing_waits_while_behind_a_window_or_its_bar_is_held(np_front, st
     assert np_front.frame() == [DRAWN, PAINTED]
 
 
+# The page's 250 ms timer calls its update through ringnav_np_tick (NP_TICK in tools/build.py).
+FLAGS = ('g_autochange_flag', 'g_forcerefresh_flag', 'g_playcover_finishflag')  # what the update consumes
+
+
+def tick(fw, force=0):
+    return fw.fn('ringnav_np_tick', C.c_int, C.c_void_p, C.c_int)(0x5100, force)
+
+
+def test_a_dark_tick_skips_the_update(fw, np_front):
+    """A minute dark on the page: 240 ticks, no update."""
+    np_front.lit.value = 0
+    np_front.log.clear()
+    assert [tick(fw) for _ in range(240)] == [0] * 240 and np_front.log == []
+
+
+@pytest.mark.parametrize('flag', FLAGS)
+def test_a_dark_tick_with_a_flag_set_runs_the_update(fw, np_front, flag):
+    """A track change, a forced refresh or new art: the update takes its flag on the same tick as before."""
+    np_front.lit.value = 0
+    fw.var(flag, C.c_ubyte).value = 1
+    np_front.log.clear()
+    tick(fw)
+    assert np_front.log == [('update', 0x5100, 0)]
+
+
+def test_a_dark_forced_tick_runs_the_update(fw, np_front):
+    np_front.lit.value = 0
+    np_front.log.clear()
+    tick(fw, 1)
+    assert np_front.log == [('update', 0x5100, 1)]
+
+
+@pytest.mark.parametrize('stream', [0xf1, 0xf2])
+def test_a_dark_tick_on_a_stream_runs_the_update(fw, np_front, stream):
+    """A stream's change shows the buffering spinner, and only a later tick stops its animation."""
+    np_front.lit.value = 0
+    fw.mock('mclGetPlayType', lambda *_: stream)
+    np_front.log.clear()
+    tick(fw)
+    assert np_front.log == [('update', 0x5100, 0)]
+
+
+def test_a_lit_tick_runs_the_update_as_stock(fw, np_front):
+    np_front.log.clear()
+    tick(fw), tick(fw, 1)
+    assert np_front.log == [('update', 0x5100, 0), ('update', 0x5100, 1)]
+
+
+def test_the_first_lit_frame_after_skipped_ticks_updates_once(fw, np_front):
+    np_front.lit.value = 0
+    for _ in range(3):
+        tick(fw)
+    np_front.lit.value = 1
+    assert [np_front.frame(), np_front.frame()] == [[('update', 0x5100, 0), PAINTED], [PAINTED]]
+
+
+def test_a_song_changed_while_ticks_were_skipped_is_drawn_by_one_forced_update(fw, np_front):
+    np_front.lit.value = 0
+    tick(fw)
+    np_front.song(b'B')
+    tick(fw)
+    np_front.lit.value = 1
+    assert [np_front.frame(), np_front.frame()] == [[DRAWN, PAINTED], [PAINTED]]
+
+
+def test_a_lit_tick_after_the_dark_leaves_no_update_owed(fw, np_front):
+    """The page behind a window at wake: the timer's next tick draws it, so its return to the front owes none."""
+    np_front.lit.value = 0
+    tick(fw)
+    np_front.lit.value = 1
+    np_front.top = 0x5200
+    assert np_front.frame() == [PAINTED]
+    tick(fw)
+    np_front.top = 0x5100
+    assert np_front.frame() == [PAINTED]
+
+
 def test_no_window_manager_is_stocks_bad_params(fw):
     fw.var('g_backlight_status', C.c_ubyte).value = 1
     assert Wm(fw).call(None) == 0x10
@@ -1830,9 +1947,9 @@ def test_a_ring_list_bumps_at_its_end_then_carries_over_after_a_pause(fw, keys):
     assert sv.ints[SEL] == 4  # and back round the top
 
 
-def test_a_list_that_isnt_a_ring_stops_at_its_end(fw, keys):
+def test_a_list_that_loads_more_at_its_end_stops_there(fw, keys):
     ui = Ui(fw)
-    sv = list_page(ui, 'about_page')
+    sv = list_page(ui, 'tidal_viewall_page')
     select(fw, sv, 4)
     for _ in range(3):
         keys(KEY_NEXT, 1000)
@@ -2923,6 +3040,8 @@ class QuickHold:
     def __init__(self, fw, loop):
         self.fw, self.loop, self.opened = fw, loop, []
         Config(fw)
+        C.c_uint.from_address(O['MCL_POS']).value = 0
+        fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = Deques(fw).new([1])  # a song loaded: there is a page to look at
         self.quick = loop.ui.window('statusbar_dialog', 'dialog')
         fw.mock('navigator_switch_to_with_context', lambda name, *_: self.opened.append(C.string_at(name)) and 0)
         assert fw.fn('compact_now_playing', C.c_int)() == 0
@@ -3247,17 +3366,20 @@ def test_a_failed_songtable_check_ends_the_pass_unwritten(fw, st):
 
 
 # More of the key release: Home's main list, the media keys, the restart toast, a carousel page.
-def test_return_on_homes_list_selects_now_playing_then_opens_it(fw, keys):
+@pytest.mark.parametrize('loaded', (1, 0))
+def test_return_on_homes_list_selects_now_playing_then_opens_it(fw, keys, mcl, loaded):
+    """With nothing loaded Home has no Now Playing row: the first row is Library's, and Return there opens nothing."""
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = Deques(fw).new([1]) if loaded else 0
     ui = Ui(fw)
     sv = list_page(ui, 'home_page', rows=6)
     select(fw, sv, 3)
     assert keys(KEY_RETURN) == STOP and sv.ints[SEL] == 0 and not fw.calls('navigator_switch_to_with_context')
-    assert keys(KEY_RETURN, 300) == STOP
-    assert [C.string_at(c[1][0]) for c in fw.calls('navigator_switch_to_with_context')] == [b'playing_page']
+    assert keys(KEY_RETURN, 300) == STOP and sv.ints[SEL] == 0
+    assert [C.string_at(c[1][0]) for c in fw.calls('navigator_switch_to_with_context')] == [b'playing_page'] * loaded
 
 
 def test_homes_list_bumps_and_wraps_as_a_ring_list(fw, keys):
-    """docs/ipod.md#home: though contexts.inc doesn't mark home_page a ring."""
+    """docs/ipod.md#home: as every list does."""
     ui = Ui(fw)
     sv = list_page(ui, 'home_page', rows=6)
     select(fw, sv, 5)

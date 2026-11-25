@@ -69,11 +69,11 @@ After Rockbox exits, the hook stops `bluetoothd`, `bluealsa` and `rtk_hciattach`
 
 Put your logo on the microSD card as `/Q2Pod/boot/boot-logo.jpg`. While Q2 Pod is running, it checks the file on each card mount (including startup and leaving USB storage mode) and copies it to `/mnt/data/boot-logo.jpg`, through a synced temporary file and rename; the splash is drawn before the card is read, so the new logo shows from the next power-on after synchronization. Booting directly into Rockbox does not import a new card logo; start Q2 Pod once first.
 
-- **Size: 320x375, stored turned 90° clockwise as the stock splash is, or upright at 375x320**, which Q2 Pod turns itself with the Q2's own `ffmpeg`.
+- **Size: 320x375, stored turned 90° clockwise as the stock splash is, or upright at 375x320**, which Q2 Pod turns itself with the Q2's own `ffmpeg` (killed after 10 s, `FF_WAIT_MS`: the current logo stays and nothing is shown, as the file was not refused).
 - **Format: 8-bit, three-component baseline JPEG, at most 512 KB** ([Making a logo that works](#making-a-logo-that-works)).
 - A file that doesn't qualify shows "Boot logo must be a 320x375 JPEG", and one that can't be saved "Could not save boot logo"; either way the current logo stays. `logo_poll` clears the failure before its toast: the toast's dialog runs the UI loop, which polls again, so a failure still set would toast inside each toast until the watchdog restarted the Q2, at every boot.
 - A refused file is reported once, not at each power-on or mount. A changed file, or a good logo or none in between, is reported again. To see it again, remove the file for one mount or save it again.
-- Removing the file from the card deletes `/mnt/data/boot-logo.jpg` at the next mount while Q2 Pod is running; the following power-on shows the built-in splash.
+- Removing the file from the card deletes `/mnt/data/boot-logo.jpg` at the next mount while Q2 Pod is running; the following power-on shows the built-in splash. The copy goes only when the card is mounted and its file answers as missing (`ENOENT`); any other error, or a card taken out during the check, keeps it. Linux's FAT driver skips a folder block it can't read and then answers the file as missing, so a read error inside the card's `Q2Pod` or `boot` folder can still remove the copy.
 
 ### In a build
 

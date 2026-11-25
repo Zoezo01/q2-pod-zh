@@ -26,7 +26,8 @@ class Ui(C.Structure):
     _fields_ = [*((n, C.c_void_p) for n in 'page info msg art bar glyph title artist album elapsed remain note sub'.split()),
                 *((n, C.c_uint) for n in 'timer leave scrub_at shown playing press press_at bar_drawn'.split()),
                 *((n, C.c_int) for n in ('scrub', 'scrub_ms', 'ipod')),
-                ('art_track', C.c_char * 64), ('art_tried', C.c_char * 64), ('art_tries', C.c_int)]
+                ('art_track', C.c_char * 64), ('art_tried', C.c_char * 64), ('art_tries', C.c_int),
+                ('art_left', C.c_uint)]
 
 
 class Clock:
@@ -169,8 +170,8 @@ class Librespot:
         return [a[:3] for _, a in self.fw.calls('reset_poweroptions_timer')]
 
     def stopped(self):
-        """spot_stop's commands run: the launcher's loop by its pid, librespot and aplay, and their files removed."""
-        return [c for c in self.ran if 'kill -9 $(cat /tmp/q2-librespot)' in c and 'killall -9 librespot aplay' in c
+        """spot_stop's commands run: the launcher's loop by its pid (kill -9 <pid> when its file holds one), librespot and aplay, and their files removed."""
+        return [c for c in self.ran if 'killall -9 librespot aplay' in c
                 and all(f in c.split('rm -f', 1)[-1] for f in (STATE, OUT, DOWNLOAD))]
 
 
@@ -285,6 +286,15 @@ def test_local_music_playing_takes_the_keys_back_until_librespot_plays_again(fw)
     assert (lib.sp.local, lib.sp.active) == (1, 0)
     lib.poll(state=b'state=playing\ntrack=1\n')
     assert (lib.sp.local, lib.sp.active) == (0, 1)
+
+
+@pytest.mark.parametrize('raw, head', [(b'4321\n', 'kill -9 4321; '), (b' 4321 ', 'kill -9 4321; '), (b'-1', ''), (b'-9 -1', ''),
+                                      (b'1', ''), (b'0', ''), (b'4321 -1', ''), (b'', '')])
+def test_the_stop_kills_only_the_one_pid_in_the_pid_file(fw, raw, head):
+    lib = Librespot(fw)
+    lib.card.files['/tmp/q2-librespot'] = raw
+    fw.fn('spot_stop', None)()
+    assert lib.ran[-1].startswith(head + 'killall -9 librespot aplay') and '$(cat' not in lib.ran[-1]
 
 
 @pytest.mark.parametrize('played, idle_ms', [(True, 30000), (False, 150000)])
@@ -567,6 +577,33 @@ def test_a_cover_that_fails_is_tried_on_the_next_3_ticks_then_left(fw):
     np.sp.track = b'spotify:track:2'
     np.tick()
     assert len(thumbs.asked) == 5
+
+
+def test_a_hung_cover_ffmpeg_holds_the_ui_3_s_once_a_track(fw):
+    """The cover is sized on the UI thread: a hung ffmpeg is killed at UI_FF_WAIT_MS (3 s), and the track's later
+    tries start none, their time spent; the next track has 3 s again."""
+    Thumbs(fw, ok=0)
+    np = Np(fw, **TRACK | dict(cover=1))
+    forks, killed = [], []
+    fw.mock('fw_access', lambda *_: 0)
+    fw.mock('fw_fork', lambda *_: forks.append(np.clock.now) or 4242)
+    fw.mock('chapter_kill', lambda pid, sig, *_: killed.append(np.clock.now))
+
+    def wait(pid, status, *_):
+        if not killed:
+            return 0
+        C.c_int.from_address(status).value = 9
+        return pid
+    fw.mock('fw_waitpid', wait)
+    start = np.clock.now
+    np.tick()
+    assert len(forks) == 1 and killed == [start + 3000] and np.clock.now <= start + 3020
+    for _ in range(3):
+        np.tick()
+    assert len(forks) == 1  # the track's 3 s are spent
+    np.sp.track, killed[:] = b'spotify:track:2', []
+    np.tick()
+    assert len(forks) == 2
 
 
 def test_the_bar_repaints_only_when_its_width_or_the_scrub_s_colour_moves(fw):
@@ -1086,6 +1123,8 @@ def test_clear_all_previews_every_download_then_removes_them(fw):
     assert b.request().endswith(b'\tremove\tall\t\n') and b.br.act == A_PREVIEW
     b.answer(msg=b'All 120 tracks')
     assert b.top.kind == L_REMOVE and b.captions()[0] == 'All 120 tracks'
+    picked = [C.c_int(a[2]).value for _, a in fw.calls('widget_set_prop_int') if C.string_at(a[1]) == b'_ringnav_index']
+    assert picked[-1] == 1  # the confirm opens on Cancel, not on the count's row, which does nothing
     b.click(2)  # Remove
     assert b.request().endswith(b'\tremove\tall\t\tconfirm\n')
 

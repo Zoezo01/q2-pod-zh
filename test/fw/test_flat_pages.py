@@ -284,6 +284,27 @@ def test_the_flat_volume_in_the_light_half_is_final(fw, world, st, accent):
     assert canvas.fill == 0xff123456
 
 
+@pytest.mark.parametrize('light, ink', [('0', 0xffffff), ('1', 0x1c1c1e)])
+def test_over_the_flat_quick_settings_max_volume_is_marked_where_its_fill_would_end(fw, world, st, light, ink):
+    """Max Volume's triangle under the bar, its tip where the fill ends at the limit, in the half's ink, inside the
+    card; nothing else changes."""
+    theme(fw, MODERN, ACCENT=str(TIDAL), LIGHT=light)
+    dialog, *_ = volume(fw, world, st, 60, under='statusbar_dialog')
+    free = Canvas(fw)
+    vol_paint(fw, dialog, free)
+    lit, _ = lit_of(fw, free)
+    end = max(f[0] + f[2] for f in lit)  # the fill's end at 60
+    fw.var('g_maxvolume', C.c_ubyte).value = 60
+    canvas = Canvas(fw)
+    vol_paint(fw, dialog, canvas)
+    extra = list(canvas.fills)
+    for f in free.fills:
+        extra.remove(f)
+    assert [f[:4] for f in extra] == [(end - h, 239 + 36 + i, 2 * h, 1) for i, h in enumerate((1, 1, 2, 3, 4, 5))]
+    assert {f[4] for f in extra} == {rgba(ink)} and 239 + 36 + 6 <= 226 + 62  # inside the card
+    assert (canvas.rounded, canvas.arts) == (free.rounded, free.arts) and canvas.fill == 0xff123456
+
+
 @pytest.mark.parametrize('light', ['0', '1'])
 @pytest.mark.parametrize('level, maximum, part', [(0, 100, 0), (1, 100, 4), (50, 100, 113), (100, 100, 227), (40, 80, 113)])
 def test_over_modern_s_other_windows_the_volume_is_the_flat_panel(fw, world, st, light, level, maximum, part):

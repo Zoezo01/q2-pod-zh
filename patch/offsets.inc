@@ -467,6 +467,33 @@ static inline int arc_out(int r, int y) {
 #define STALL_POLL_MS 5000
 #define STALL_MS 20000
 #define STALL_AGAIN_MS 45000
+/* ffmpeg's time (ff_reap, docs/internals.md#coverflow): a request for one picture has one budget,
+ * every ffmpeg tried for it (beside_art's six names, then the track's own) taking what is left; one
+ * still running when it is spent is killed, given FF_GRACE_MS to die, and no further run starts
+ * (under 20 ms left counts as spent), the request failing as a kill does. FF_WAIT_MS is a cover's
+ * (Now Playing's, a list row's, a Cover Flow album's, a playlist's album or 2x2), the boot logo's:
+ * a picture's seconds at most. Worst UI-thread waits, one hung file or every file hung alike, with
+ * B = FF_WAIT_MS + FF_GRACE_MS (11 s) and one Now Playing request (a track's start, by a skip or
+ * its own end) per lock wait: Now Playing holds g_playcover_mutex B, and album_art waits for it
+ * holding parse_cover_mutex, so the UI thread's own parse_cover_mutex takes wait B; a Cover Flow
+ * join is that wait and its album's B, 22 s; a playlist join that wait and the album's or 2x2's B,
+ * plus publish's stock decode waiting B again, 33 s; a Photos join B, its copy's PH_FF_WAIT_MS +
+ * FF_GRACE_MS, then its thumbnail's stock decode waiting B for the next track's request, 43 s;
+ * Spotify's art B and UI_FF_WAIT_MS + FF_GRACE_MS, 15 s, once a track. All under 45 s, so the
+ * workers check cancel between albums only. ponytail: fixed guesses (the chapter read's 10 s,
+ * chapters.c), which a slow card's real decode times would tune; two Now Playing requests within
+ * one wait (a track under 11 s) add B each. A timeout reads as a kernel kill, so a file that times
+ * out every time is tried again at each ask: B on stock's list cover thread each time its row
+ * shows, B at each start of its track, B at each Cover Flow open; telling a timeout from a kill in
+ * ff_reap and remembering it would lift that. */
+#define FF_WAIT_MS 10000
+#define FF_GRACE_MS 1000
+/* Photos' (photos.c's build): a camera's JPEG over 6 MB or a large PNG, decoded whole, can take
+ * ffmpeg past FF_WAIT_MS; its copy and thumbnail share it. ponytail: a guess, held to 20 s by the
+ * join above, which a big photo's real decode time on a Q2 would tune. */
+#define PH_FF_WAIT_MS 20000
+/* Spotify's cover (spotify.c), sized on the UI thread: a track's every try shares it. */
+#define UI_FF_WAIT_MS 3000
 /* Standby limit (docs/internals.md#standby-limit): its three choices after Off, in hours of one
  * Standby, after which the Q2 powers off. */
 #define STANDBY_LIMIT_1 1

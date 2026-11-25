@@ -63,6 +63,48 @@ static struct {
     void *bytes; /* stb reads them as long as the font lives: for good */
 } gf;
 
+/* 1 iff the n bytes are a font stb can open without reading outside them: sfnt version 0x10000 or
+ * true, a directory that fits, every table inside the file, and what stb's init reads there: cmap,
+ * head, hhea, hmtx, loca and glyf present (the first record of a tag counts; offset 0 is "none" to
+ * stb), head 54 bytes, hhea 36, maxp 6 when present, cmap room for its record count. A font with no
+ * glyf takes stb's CFF path, which is bound by 512 MB, not the table: so OTTO and CFF fonts are
+ * refused outright, as is 'ttcf' (its first font's directory is not at 0, and is not walked here).
+ * ponytail: stops a cut or short file and everything init reads; a file made to deceive can still
+ * fault at draw time, where stb follows offsets and counts inside the cmap subtables, hmtx, kern,
+ * GPOS, loca and glyf. A walk of each table stb reads would lift it. */
+int sfnt_whole(const unsigned char *b, unsigned n) {
+    static const struct {
+        char tag[5];
+        unsigned min;
+    } need[] = { { "cmap", 4 }, { "head", 54 }, { "hhea", 36 }, { "hmtx", 0 },
+                 { "loca", 0 }, { "glyf", 0 },  { "maxp", 6 } };
+    unsigned v, t, i, k;
+#define BE32(p) ((unsigned)(p)[0] << 24 | (p)[1] << 16 | (p)[2] << 8 | (p)[3])
+    if (n < 12) return 0;
+    v = BE32(b);
+    if (v != 0x10000 && v != 0x74727565) return 0;
+    t = b[4] << 8 | b[5];
+    if (12 + 16 * t > n) return 0;
+    for (i = 0; i < t; ++i) {
+        const unsigned char *r = b + 12 + 16 * i;
+        unsigned off = BE32(r + 8), len = BE32(r + 12);
+        if (len > n || off > n - len) return 0;
+    }
+    for (k = 0; k < sizeof need / sizeof *need; ++k) {
+        const unsigned char *r = b + 12;
+        for (i = 0; i < t && memcmp(r, need[k].tag, 4); ++i) r += 16;
+        if (i == t || !BE32(r + 8)) {
+            if (k < 6) return 0; /* maxp may be absent */
+            continue;
+        }
+        if (BE32(r + 12) < need[k].min) return 0;
+        if (k == 0 && BE32(r + 12) < 4 + 8u * (b[BE32(r + 8) + 2] << 8 | b[BE32(r + 8) + 3]))
+            return 0;
+    }
+    return 1;
+#undef BE32
+}
+
 /* 1 iff font (font_t's name heads it) is a face the build cut to a few scripts and lacks chr: a
  * painter or a label that names bold or classic-light outright, not through script_face (Classic's
  * search tabs, the slider's caption, flat titles), shows a translation's letters in stock's face
@@ -84,6 +126,10 @@ int ringnav_font_glyph(font_t *font, unsigned chr, unsigned size, void *glyph) {
             unsigned n = 0;
             gf.tried = 1;
             gf.bytes = read_all(GLYPH_FONT, GLYPH_FONT_BYTES, &n);
+            if (gf.bytes && !sfnt_whole(gf.bytes, n)) {
+                free(gf.bytes), gf.bytes = 0;
+                unlink(GLYPH_FONT);
+            }
             gf.font = gf.bytes ? font_stb_create("q2-font", gf.bytes) : (font_t *)0;
         }
         if (gf.font) font = gf.font;

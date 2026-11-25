@@ -322,10 +322,16 @@ int addon_is_bar_icon(const char *name) {
 }
 
 /* A pid file whose loop is gone (crashed, or killed) is removed, so no wait spends its limit on it.
- * ponytail: trusts the pid in the file; a loop that died without removing it, its pid since reused,
- * would TERM that process. A flock in run would close this. */
+ * The file is the app's (a non-root user's): only its one decimal pid above 1 reaches kill
+ * (pid_of), as an int, never the file's words (-9 -1, 1, 0 would signal everything); else it is
+ * removed. ponytail: trusts the pid in the file; a loop that died without removing it, its pid
+ * since reused, would TERM that process. A flock in run would close this. */
 static void stop_cmd(const char *pid, char *cmd, unsigned n) {
-    snprintf(cmd, n, "kill $(cat %s) 2>/dev/null || rm -f %s", pid, pid);
+    int p = pid_of(pid);
+    if (p)
+        snprintf(cmd, n, "kill %d 2>/dev/null || rm -f %s", p, pid);
+    else
+        snprintf(cmd, n, "rm -f %s", pid);
 }
 
 static void launch(app_t *a) {
@@ -1492,11 +1498,8 @@ void addon_stop(void) {
 /* An app's loop runs: its pid file names a process that is there (/proc/<pid>; demo imports no
  * kill()). A pid file alone may be a dead loop's, kept in /tmp across a restart of demo. */
 static int loop_alive(const app_t *a) {
-    char raw[16], proc[24];
-    if (!state_read(a->pid, raw, sizeof raw)) return 0;
-    int pid = 0;
-    for (const char *c = raw + 1; *c >= '0' && *c <= '9' && pid < 10000000; ++c) /* past its '\n' */
-        pid = pid * 10 + *c - '0';
+    char proc[24];
+    int pid = pid_of(a->pid);
     tk_snprintf(proc, sizeof proc, "/proc/%d", pid);
     return pid > 0 && !access(proc, 0);
 }
@@ -2445,7 +2448,7 @@ static int searched(void *ctx, event_t *event) {
     if (strlen(t) >= sizeof pg.term) { /* none of it goes: the box closes, the level stays */
         memset(t, 0, sizeof t);
         if (!pg.go) /* its loop would run the go the first call armed, under this handler */
-            toast(tr("搜索词太长"));
+        toast(pg.field ? "太长" : "搜索内容过长");
     }
     tk_snprintf(pg.term, sizeof pg.term, "%s", t);
     memset(t, 0, sizeof t);
@@ -2516,6 +2519,8 @@ static void search_box(int field) {
     pg.field = field;
     widget_destroy_children(pg.page), pg.view = 0; /* the box alone, as Spotify's */
     pg.edit = edit_create(pg.page, "text", 2, 26);
+    /* a field is a sign-in's name, password or address: letters with a Chinese pack (language.c) */
+    if (field) widget_set_prop_int(pg.edit, "_ringnav_letters", 1);
     t9_box(pg.page, pg.edit, field ? cell(field - 1, 2) : app()->tips);
     if (field && cell(field - 1, 5)[0]) widget_set_text_utf8(pg.edit, cell(field - 1, 5));
     widget_on(pg.edit, EVT_VALUE_CHANGED, searched, 0);
@@ -2786,7 +2791,7 @@ int addon_apps(void *ctx, event_t *event) {
     return 0;
 }
 /* win back on top (the Library's, Home's or the Apps page), or 0: an App Store install's or
- * remove's end, for the top window. The Library's Apps row there (home.c library_apps_show) shown
+ * remove's end, for the top window. The Library's Apps row there (home.c list_row_show) shown
  * while the card has an app for it, the Apps page's rows built again. The card is read again only
  * after such a job or USB storage: a return from Artists takes the last scan's count. */
 int addon_apps_sync(void *win, event_t *event) {
@@ -2795,7 +2800,7 @@ int addon_apps_sync(void *win, event_t *event) {
     if (!row && (!win || win != la.page)) return 0;
     int n = apps_stale ? addon_libs() : ap.cnt[ROW_LIBRARY];
     apps_stale = 0;
-    if (row) library_apps_show(row, n > 0);
+    if (row) list_row_show(row, n > 0);
     if (win == la.page) apps_rows(n);
     return 0;
 }

@@ -193,7 +193,8 @@ def test_no_list_is_no_apps(fw):
 
 def test_the_repo_ships_a_list_that_parses(fw):
     lines = [x for x in (SHELF.parent.parent/'sources.list').read_bytes().splitlines() if x.strip() and not x.startswith(b'#')]
-    assert b'[Games]' in lines and len(sources(fw, b'\n'.join(lines))) == len(lines) - 1  # every line an app but the section's
+    sections = sum(x.startswith(b'[') for x in lines)
+    assert b'[Games]' in lines and len(sources(fw, b'\n'.join(lines))) == len(lines) - sections  # every line an app but the sections'
 
 
 def test_hostile_sources(fw):
@@ -625,6 +626,7 @@ class Card:
                          ('fw_unlink', unlink), ('fw_mkdir', mkdir), ('fw_rmdir', rmdir), ('fw_system', system), ('fw___xstat', stat)):
             fw.mock(stub, fn)
         fw.mock('fw_ftell', lambda f, *_: self.at[f])
+        fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))  # card_path's
         fw.mock('fw_access', lambda p, *_: 0 if C.string_at(p) in self.files else -1)
 
     def of(self, kind):
@@ -666,6 +668,12 @@ def test_a_path_too_long_moves_nothing(fw):
     apps(fw, b'me/foo')
     card = Card(fw)
     assert move(fw, b'a' * 600) == 1 and card.log == []
+
+
+def test_a_staged_path_off_the_card_moves_nothing(fw):
+    apps(fw, b'me/foo')
+    card = Card(fw)
+    assert move(fw, b'../../tmp/x') == 1 and card.log == []
 
 
 def test_the_longest_path_fits_exactly(fw):
@@ -756,6 +764,17 @@ def test_a_folder_left_with_files_stops_the_climb(fw):
     card = Card(fw, {b'/mnt/mmc/.q2/apps/rockbox.files': b'.rockbox/a/b/c\n', b'/mnt/mmc/.rockbox/a/keep': b''})
     remove(fw, 0)
     assert card.of('rmdir') == [(b'/mnt/mmc/.rockbox/a/b',), (b'/mnt/mmc/.rockbox/a',)]
+
+
+def test_a_remove_deletes_nothing_its_list_names_off_the_card(fw):
+    # the list is a card file, which an app (uid 1000) can write; the remove runs as root
+    apps(fw, b'x/q2-rockbox')
+    files = b'../../usr/data/config.ini\n.rockbox/../../../bin/sh\n..\n.rockbox/a/../../../etc/x\n.rockbox/ok\n'
+    card = Card(fw, {b'/mnt/mmc/.q2/apps/rockbox.files': files})
+    remove(fw, 0)
+    gone = [p for (p,) in card.of('unlink') + card.of('rmdir')]
+    assert b'/mnt/mmc/.rockbox/ok' in gone and b'/mnt/mmc/.rockbox' in gone
+    assert not [p for p in gone if b'..' in p], gone
 
 
 def test_a_remove_with_no_list_still_goes(fw):
@@ -2832,7 +2851,7 @@ def test_a_remove_leaves_nothing_an_app_saves_on_its_way_out(fw, save_ms):
         app_saves()
 
     def system(cmd):
-        if cmd.startswith(b'kill $(cat /tmp/q2-foo)'):
+        if cmd.startswith(b'kill 4321 '):
             term.append(now[0])
         return card.shell(cmd)
     card.system = system
@@ -3014,7 +3033,7 @@ def test_the_themes_pressed_once_rockbox_left_the_card_ask_for_it(fw):
 
 
 def test_spotify_installs_with_librespot_stopped_and_its_cache_kept(fw):
-    kill = b'kill -9 $(cat /tmp/q2-librespot)'
+    kill = b'killall -9 librespot aplay'
     card = Disk(fw, {SOURCES: b'x/q2-librespot Spotify\n', b'/mnt/mmc/.spotify/cache/x': b'mine', b'/mnt/mmc/.spotify/.cache-size': b'2G'})
     store_net(fw, {'.spotify/librespot': b'bin', '.spotify/run': b'sh', '.spotify/cache/x': b'theirs', '.spotify/.cache-size': b'0'},
               listed=b'x/q2-librespot Spotify\n')

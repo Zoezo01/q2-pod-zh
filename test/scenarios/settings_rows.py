@@ -53,8 +53,8 @@ passed()
 m,rows,texts,icons,click=settings_page('display','scroll_view_display',{'WHEELQS':'1'},stock_rows=3,sub=3)
 assert 'Wheel QS' not in texts() and texts()[:2]==['Wheel Sensitivity: 50%','Hold Return: Recent'] and click(1)==[(1,'Q2POD','HOLDRETURN')]; passed()
 # Its row opens stock's Boot volume page re-dressed (crossfade.c): titled, no switch, the percent
-# beside the slider, which runs 50-200 in tens. The wheel and +/- step 10%, live and saved, the
-# slider snaps to a ten, a drag is live but saved once at its release, and Centre goes back (edit_key, as on Brightness).
+# beside the slider, which runs 50-200 in tens. The wheel and +/- step 10%, live, the slider snaps to a ten, a drag
+# is live, nothing is saved until the page closes, and Centre goes back (edit_key, as on Brightness).
 m,rows,texts,icons,click=settings_page('display','scroll_view_display',stock_rows=3,sub=3)
 display_page=m.top; m.stack=[m.top]; m.nodes[m.wm]=dict(type='window_manager',name='',children=m.stack,visible=1)
 assert click(0)==[] and m.top!=display_page and m.nodes[m.top]['name']=='bootvol_page'
@@ -66,48 +66,45 @@ def press(w,kind=O['EVT_CLICK']):
 def turn(key=O['KEY_NEXT']):
     assert m.call(key)==11; return [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']
 W='Q2POD','WHEELSENSITIVITY'
-assert turn()==[(60,*W)] and m.nodes[m.vol]['text']=='60%' and texts()[0]=='Wheel Sensitivity: 60%'
-assert turn(O['KEY_PREV'])==[(50,*W)] and m.nodes[m.vol]['text']=='50%' and turn(O['KEY_PREV'])==[(40,*W)] and turn()==[(50,*W)]  # 50% is the default, not the bottom
-assert press(m.add)==[(60,*W)] and m.nodes[m.vol]['text']=='60%' and texts()[0]=='Wheel Sensitivity: 60%'
-assert press(m.dec)==[(50,*W)] and texts()[0]=='Wheel Sensitivity: 50%'
-m.nodes[m.slider]['value']=3; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(10,*W)] and m.nodes[m.vol]['text']=='10%' and press(m.dec)==[] and turn(O['KEY_PREV'])==[]  # 10% is the bottom
-m.nodes[m.slider]['value']=127; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(130,*W)] and m.nodes[m.vol]['text']=='130%'
+assert turn()==[] and m.nodes[m.vol]['text']=='60%' and texts()[0]=='Wheel Sensitivity: 60%'
+assert turn(O['KEY_PREV'])==[] and m.nodes[m.vol]['text']=='50%' and turn(O['KEY_PREV'])==[] and m.nodes[m.vol]['text']=='40%' and turn()==[]  # 50% is the default, not the bottom
+assert press(m.add)==[] and m.nodes[m.vol]['text']=='60%' and texts()[0]=='Wheel Sensitivity: 60%'
+assert press(m.dec)==[] and texts()[0]=='Wheel Sensitivity: 50%'
+m.nodes[m.slider]['value']=3; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[] and m.nodes[m.vol]['text']=='10%' and press(m.dec)==[] and turn(O['KEY_PREV'])==[] and m.nodes[m.vol]['text']=='10%'  # 10% is the bottom
+m.nodes[m.slider]['value']=127; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[] and m.nodes[m.vol]['text']=='130%'
 m.nodes[m.slider]['value']=300; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and m.nodes[m.vol]['text']=='200%'
-assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(200,*W)] and press(m.add)==[] and turn()==[]
-# A drag over several values saves once, at the release; one whose release sends nothing (stock: a
-# drag back to its start, an aborted press) is saved by the next step, which saves as ever.
-m.nodes[m.slider]['value']=127; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and m.nodes[m.vol]['text']=='130%'
-m.nodes[m.slider]['value']=163; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and press(m.slider,O['EVT_VALUE_CHANGED'])==[(160,*W)]
-m.nodes[m.slider]['value']=143; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and m.nodes[m.vol]['text']=='140%'
-assert press(m.dec)==[(130,*W)] and turn()==[(140,*W)]
-m.echoes=0; m.nodes[m.slider]['value']=157; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(160,*W)] and m.echoes==1  # its snap to 160 echoes, unsaved
-m.nodes[m.slider]['value']=300; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and press(m.add)==[(200,*W)]
+assert press(m.slider,O['EVT_VALUE_CHANGED'])==[] and press(m.add)==[] and turn()==[] and m.nodes[m.vol]['text']=='200%'
+m.nodes[m.slider]['value']=163; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and press(m.slider,O['EVT_VALUE_CHANGED'])==[] and m.nodes[m.vol]['text']=='160%'
+m.echoes=0; m.nodes[m.slider]['value']=157; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[] and m.echoes==1  # its snap to 160 echoes
+m.nodes[m.slider]['value']=300; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and press(m.add)==[]
 assert texts()[0]=='Wheel Sensitivity: 200%' and m.nodes[m.switch]['visible']==0
-assert m.confirm()==11 and [c[0] for c in m.calls].count('navigator_back')==1; passed()
-# Resume Songs' row opens the same page: no switch, Off below 20, then 20-120 min in fives, live and
-# saved (a drag at its release); Centre goes back.
+assert m.confirm()==11 and [c[0] for c in m.calls].count('navigator_back')==1
+assert press(m.top,O['EVT_DESTROY'])==[(200,*W)]; passed()  # the page goes: the one change, once
+# Resume Songs' row opens the same page: no switch, Off below 20, then 20-120 min in fives, live, saved
+# as the page closes; Centre goes back.
 m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=13)
 m.stack=[m.top]; m.nodes[m.wm]=dict(type='window_manager',name='',children=m.stack,visible=1)
 assert click(1)==[] and m.nodes[m.top]['name']=='bootvol_page' and m.nodes[m.title]['text']=='Resume Songs'
 assert m.nodes[m.switch]['visible']==0 and m.nodes[m.vol]['text']=='30 min'
 R='Q2POD','RESUMEMIN'
-assert turn()==[(35,*R)] and m.nodes[m.vol]['text']=='35 min' and texts()[1]=='Resume Songs: 35 min'
-assert press(m.dec)==[(30,*R)] and turn(O['KEY_PREV'])==[(25,*R)] and turn(O['KEY_PREV'])==[(20,*R)]
-assert turn(O['KEY_PREV'])==[(0,*R)] and m.nodes[m.vol]['text']=='Off' and texts()[1]=='Resume Songs: Off'
-assert turn(O['KEY_PREV'])==[] and press(m.add)==[(20,*R)]  # Off is the bottom; up from it is 20
-m.nodes[m.slider]['value']=63; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(65,*R)] and m.nodes[m.vol]['text']=='65 min'
+assert turn()==[] and m.nodes[m.vol]['text']=='35 min' and texts()[1]=='Resume Songs: 35 min'
+assert press(m.dec)==[] and turn(O['KEY_PREV'])==[] and turn(O['KEY_PREV'])==[] and m.nodes[m.vol]['text']=='20 min'
+assert turn(O['KEY_PREV'])==[] and m.nodes[m.vol]['text']=='Off' and texts()[1]=='Resume Songs: Off'
+assert turn(O['KEY_PREV'])==[] and press(m.add)==[] and m.nodes[m.vol]['text']=='20 min'  # Off is the bottom; up from it is 20
+m.nodes[m.slider]['value']=63; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[] and m.nodes[m.vol]['text']=='65 min'
 m.nodes[m.slider]['value']=300; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and m.nodes[m.vol]['text']=='120 min'
-assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(120,*R)] and turn()==[]
-m.nodes[m.slider]['value']=15; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(0,*R)] and texts()[1]=='Resume Songs: Off'
+assert press(m.slider,O['EVT_VALUE_CHANGED'])==[] and turn()==[]
+m.nodes[m.slider]['value']=15; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[] and texts()[1]=='Resume Songs: Off'
 assert m.confirm()==11 and [c[0] for c in m.calls].count('navigator_back')==1
+assert press(m.top,O['EVT_DESTROY'])==[(0,*R)]  # the page goes: 30 min to Off, once
 # A page closed mid-drag saves the dragged value once, as it closes.
 m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=13)
 m.stack=[m.top]; m.nodes[m.wm]=dict(type='window_manager',name='',children=m.stack,visible=1)
 assert click(1)==[]
 m.nodes[m.slider]['value']=53; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and texts()[1]=='Resume Songs: 55 min'
 assert press(m.top,O['EVT_DESTROY'])==[(55,*R)] and texts()[1]=='Resume Songs: 55 min'; passed()
-# Crossfade's row opens it with its switch: Off or XF_MIN..XF_MAX s. A drag saves both keys at its
-# release; the switch, +/- and the wheel save each change.
+# Crossfade's row opens it with its switch: Off or XF_MIN..XF_MAX s. Every change is live; the close
+# saves the keys that changed.
 m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=13)
 m.stack=[m.top]; m.nodes[m.wm]=dict(type='window_manager',name='',children=m.stack,visible=1)
 assert click(0)==[] and m.nodes[m.title]['text']=='Crossfade' and m.nodes[m.vol]['text']=='Off'
@@ -117,11 +114,11 @@ X=lambda on,sec: [(on,'Q2POD','XFADE'),(sec,'Q2POD','XFADESEC')]
 m.byte(O['MCL_GAPLESS'],0)
 m.nodes[m.slider]['value']=7; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[(1,'PLAYSET','GAPLESS')] and m.nodes[m.vol]['text']=='7 s'
 assert [c[1] for c in m.calls if c[0]=='mclSetGaplessMode']==[1]; m.byte(O['MCL_GAPLESS'],1)
-m.nodes[m.slider]['value']=9; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and press(m.slider,O['EVT_VALUE_CHANGED'])==X(1,9)
-assert texts()[0]=='Crossfade: 9 s' and press(m.switch)==X(0,9) and m.nodes[m.vol]['text']=='Off'
-assert press(m.add)==X(1,1) and turn()==X(1,2)  # up from Off is XF_MIN, 1 s
+m.nodes[m.slider]['value']=9; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and press(m.slider,O['EVT_VALUE_CHANGED'])==[]
+assert texts()[0]=='Crossfade: 9 s' and press(m.switch)==[] and m.nodes[m.vol]['text']=='Off'
+assert press(m.add)==[] and turn()==[] and m.nodes[m.vol]['text']=='2 s'  # up from Off is XF_MIN, 1 s
 m.nodes[m.slider]['value']=0; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and m.nodes[m.vol]['text']=='Off'
-assert press(m.dec)==X(0,2)  # a drag whose release sent nothing: the next step saves it, unchanged or not
+assert press(m.top,O['EVT_DESTROY'])==[(2,'Q2POD','XFADESEC')]  # Off as it opened: only the length is new
 passed()
 # Night Shift (nightshift.c): the main Display page's last row, after Appearance,
 # Coverflow and Controls; Q2POD NIGHTSHIFT and NIGHTK, 3400K unless a hundred in 2000-5000.
@@ -132,32 +129,33 @@ for config,text in (({},'Off'),({'NIGHTSHIFT':'1'},'3400K'),({'NIGHTSHIFT':'1','
     assert texts()[1]=='Night Shift: '+text and icons[1]=='display_backlight' and m.nodes[label]['name']=='label_night',config
     assert m.nodes[named(m,m.top,'scroll_view_display')]['children'][3]==rows[1],config  # after Smart Awake
 passed()
-# Its row opens the same page with its switch, Off. The switch turns it on and off and saves it; the
-# wheel, +/- and the slider step 100K, warmer to the right, a move turning it on; each change repaints
-# the whole screen at once, a drag's every step too, but a drag saves once, at its release.
+# Its row opens the same page with its switch, Off. The switch turns it on and off; the wheel, +/- and
+# the slider step 100K, warmer to the right, a move turning it on; each change repaints the whole screen
+# at once, a drag's every step too, and nothing is saved until the page closes.
 m,rows,texts,icons,click=settings_page('display','scroll_view_display',stock_rows=3)
 m.stack=[m.top]; m.nodes[m.wm]=dict(type='window_manager',name='',children=m.stack,visible=1)
 assert click(1)==[] and m.nodes[m.top]['name']=='bootvol_page' and m.nodes[m.title]['text']=='Night Shift'
 assert m.nodes[m.switch]['visible']!=0 and m.nodes[m.vol]['text']=='Off'
 N,K=('Q2POD','NIGHTSHIFT'),('Q2POD','NIGHTK')
 def repaints(): return [c[1:3] for c in m.calls if c[0]=='widget_invalidate_force']==[(m.wm,0)]
-assert press(m.switch)==[(1,*N)] and repaints() and m.nodes[m.vol]['text']=='3400K' and texts()[1]=='Night Shift: 3400K'
+assert press(m.switch)==[] and repaints() and m.nodes[m.vol]['text']=='3400K' and texts()[1]=='Night Shift: 3400K'
 assert m.nodes[m.switch]['image']=='switch_on'
-assert turn()==[(3300,*K)] and repaints() and m.nodes[m.vol]['text']=='3300K'
-assert turn(O['KEY_PREV'])==[(3400,*K)] and press(m.add)==[(3300,*K)] and press(m.dec)==[(3400,*K)]
-m.nodes[m.slider]['value']=30; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(2000,*K)] and turn()==[] and press(m.add)==[]
+assert turn()==[] and repaints() and m.nodes[m.vol]['text']=='3300K'
+assert turn(O['KEY_PREV'])==[] and press(m.add)==[] and press(m.dec)==[] and m.nodes[m.vol]['text']=='3400K'
+m.nodes[m.slider]['value']=30; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[] and turn()==[] and press(m.add)==[] and m.nodes[m.vol]['text']=='2000K'
 m.nodes[m.slider]['value']=10; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and repaints() and texts()[1]=='Night Shift: 4000K'
 m.nodes[m.slider]['value']=0; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and repaints() and texts()[1]=='Night Shift: 5000K'
-assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(5000,*K)] and turn(O['KEY_PREV'])==[]  # the release saves, once
+assert press(m.slider,O['EVT_VALUE_CHANGED'])==[] and turn(O['KEY_PREV'])==[]
 # The switch cycles Off, On and Auto; a move in Auto keeps Auto.
-assert texts()[1]=='Night Shift: 5000K' and press(m.switch)==[(2,*N)] and repaints() and m.nodes[m.vol]['text']=='Auto'
+assert texts()[1]=='Night Shift: 5000K' and press(m.switch)==[] and repaints() and m.nodes[m.vol]['text']=='Auto'
 assert texts()[1]=='Night Shift: Auto' and m.nodes[m.switch]['image']=='switch_on'
-assert turn()==[(4900,*K)] and texts()[1]=='Night Shift: Auto' and turn(O['KEY_PREV'])==[(5000,*K)]
-assert press(m.switch)==[(0,*N)] and repaints() and m.nodes[m.vol]['text']=='Off'
+assert turn()==[] and texts()[1]=='Night Shift: Auto' and turn(O['KEY_PREV'])==[] and m.nodes[m.vol]['text']=='Auto'
+assert press(m.switch)==[] and repaints() and m.nodes[m.vol]['text']=='Off'
 assert texts()[1]=='Night Shift: Off' and m.nodes[m.switch]['image']=='switch_off'
-assert turn(O['KEY_PREV'])==[(1,*N)] and texts()[1]=='Night Shift: 5000K'  # at an end too
-assert press(m.switch)==[(2,*N)] and press(m.switch)==[(0,*N)]
-assert turn()==[(1,*N),(4900,*K)] and texts()[1]=='Night Shift: 4900K'; passed()  # a move turns it on
+assert turn(O['KEY_PREV'])==[] and texts()[1]=='Night Shift: 5000K'  # at an end too
+assert press(m.switch)==[] and press(m.switch)==[]
+assert turn()==[] and texts()[1]=='Night Shift: 4900K'  # a move turns it on
+assert press(m.top,O['EVT_DESTROY'])==[(1,*N),(4900,*K)]; passed()  # the page goes: what changed, once
 # The tint (nightshift.c night_end, stock lcd_end_frame calling it): on, as boot read it, the first
 # normal frame's paint gives the screen's lcd night_end, reading no setting. Each frame warms the
 # pixels drawn in its rect (alpha not 0xf7): red kept, green and blue scaled, alpha 0xf7; one
