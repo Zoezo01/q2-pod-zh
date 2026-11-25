@@ -8,6 +8,7 @@ import pytest
 from conftest import O, Config, Deques, block, rgba
 from test_lockscreen import WALLS, AURORA, Bitmaps, Window, draws, handlers
 from test_upnext import Low
+from test_language import COPY, lang, lines  # noqa: F401  (lang: the fixture)
 
 THEMES = ['0', '1', '2', '3']  # THEME's stored values: Minimal, Classic, Modern, Classic Modern
 STOCK = ('img_screensaver', 'view_timeinfo', 'clock_time', 'clock_date', 'label_battery', 'img_battery', 'pgbar_battery',
@@ -714,3 +715,9 @@ def test_wheel_unlocks_is_off_until_set(fw, mcl, now, saved, taken):
     C.c_int.from_address(C.addressof(e) + O['EVENT_TYPE']).value = KEY_DOWN
     C.c_int.from_address(C.addressof(e) + O['EVENT_KEY']).value = KEY_NEXT
     assert fw.fn('lockscreen_input', C.c_int, C.c_void_p, C.c_void_p)(0x4400, C.addressof(e)) == taken
+
+
+def test_a_language_that_translates_md_as_dm_puts_the_day_first(fw, mcl, now, lang):
+    lang.files[COPY] = lines(('MD', 'MD', 'DM'))
+    g = Glance(fw, mcl, queue=1, LANG='de')
+    assert (g.text('day'), g.text('date')) == ('Thursday', '1 Jan')

@@ -264,11 +264,16 @@ static void clock_place(void) {
     int tw = now ? digits * px * 56 / 100 + px * 28 / 100 : px * 2;
     int pm = h12 ? (apx * 10 + 40) / 7 : 0; /* AM or PM's room */
     const char *month = tm ? tr(time_months[tm[4] % 12]) : "";
+    /* the date's order: a language puts its day first by translating "MD" as "DM" */
+    int dm = *tr("MD") == 'D';
     if (big) {
         int x = (GL_W - tw - (pm ? pm + 6 : 0)) / 2;
         put(gl.time, x - 4, G.big_y, tw + 8, px + 8, px, ROLE_NP, "center", 0xff);
         put(gl.ampm, x + tw + 6, G.big_ampm_y, pm + 4, apx + 4, apx, ROLE_INFO, "left", 0xff);
-        if (tm) tk_snprintf(s, sizeof s, "%s, %s %d", tr(days[tm[6] % 7]), month, tm[3]);
+        if (tm && dm)
+            tk_snprintf(s, sizeof s, "%s, %d %s", tr(days[tm[6] % 7]), tm[3], month);
+        else if (tm)
+            tk_snprintf(s, sizeof s, "%s, %s %d", tr(days[tm[6] % 7]), month, tm[3]);
         if (gl.day) widget_set_text_utf8(gl.day, tm ? s : "");
         if (gl.date) widget_set_text_utf8(gl.date, "");
         put(gl.day, 0, G.big_day_y, GL_W, G.big_day_px + 8, G.big_day_px, ROLE_INFO, "center",
@@ -280,7 +285,10 @@ static void clock_place(void) {
         put(gl.time, G.x, G.time_y, tw + 8, px + 8, px, ROLE_NP, "left", 0xff);
         put(gl.ampm, G.x + tw + 6, G.ampm_y, pm + 4, apx + 5, apx, ROLE_INFO, "left", 0xff);
         if (gl.day) widget_set_text_utf8(gl.day, tm ? tr(days[tm[6] % 7]) : "");
-        if (tm) tk_snprintf(s, sizeof s, "%s %d", month, tm[3]);
+        if (tm && dm)
+            tk_snprintf(s, sizeof s, "%d %s", tm[3], month);
+        else if (tm)
+            tk_snprintf(s, sizeof s, "%s %d", month, tm[3]);
         if (gl.date) widget_set_text_utf8(gl.date, tm ? s : "");
         put(gl.day, G.right - 170, G.date_y, 170, G.date_px + 5, G.date_px, ROLE_INFO, "right",
             0xff);
