@@ -1,5 +1,6 @@
 # Changelog
 
+- **1.9.4**:
 - **1.9.3**:
   - Now Playing: a song rated 1 to 4 hearts fills the heart from the bottom, more for each heart, in place of the number on its corner. A full heart is still 5, **My Fav**.
   - Lock Screen: a **Layout** row chooses **Default**, the lock screen as it was, or **At a Glance**: the time and date across the top, the song with its square cover, album, time and place in the queue, and a **slide to unlock** knob to drag. It takes your theme's own colours, text and fonts, in Light Mode too. **Background** sets what is behind the song: **Cover Colour**, one colour from the cover, **Plain**, the theme's own background, or **Blurred Cover**. **Classic Slider** gives **slide to unlock** a grey knob and track with a shine across its words, the same in every theme. **Wheel Unlocks** lets a turn of the wheel slide the knob: three clicks forward unlock, and it goes back if you stop short. With it on, the wheel doesn't change the volume while the lock screen is lit. With nothing queued it shows your lock screen picture, or the time large. Hold the clock for a second to switch between the song and the picture. **Clock** shows under Default only, **Background**, **Classic Slider** and **Wheel Unlocks** under At a Glance only.
