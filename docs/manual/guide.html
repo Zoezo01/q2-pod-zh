@@ -1146,7 +1146,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
     <thead><tr><th>Timer</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td>Screen Off Time (Display)</td><td>How long the screen stays on. The music continues.</td></tr>
-      <tr><td>Auto-standby (Power → Standby)</td><td>After 5 minutes without playback, the Q2 goes into Standby, a low-power sleep, until you push a key.</td></tr>
+      <tr><td>Auto-standby (Power → Standby)</td><td>After 5 minutes without playback, the Q2 goes into Standby, a low-power sleep, until you push a key. Standby can cause the Q2 to freeze, to start again unexpectedly, or to give no response. Auto-shutdown is strongly recommended instead. The Q2 asks before it sets Auto-standby on: <b>Accept</b> sets it on, and <b>Cancel</b> changes nothing.</td></tr>
       <tr><td>Auto-shutdown (Power → Standby)</td><td>After 1, 3, 5 or 10 minutes without playback, the Q2 shuts down. When you set this on, Auto-standby goes off, and the opposite.</td></tr>
     </tbody>
   </table>
@@ -1223,7 +1223,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   <div class="sec">
   <h2 id="update">Update Q2 Pod</h2>
   <p>On Wi-Fi, select <b>System settings → System Update → Network update</b>. It downloads and examines the newest release, then shows an install prompt. To cancel, push the row again. While Wi-Fi is on, Home tells you one time when a new release is available (<b>Update Notifications</b>). The row then shows <b>Update to</b> and the version number.</p>
-  <p>Or do the <a href="#install">install steps</a> again with the newest <code>update.tar</code>. Your settings, ratings and play counts stay. The Q2 skips a version that is installed.</p>
+  <p>Or do the <a href="#install">install steps</a> again with the newest <code>update.tar</code>. Your settings, ratings and play counts stay. Thus an Auto-standby that was on stays on, and the Shanling firmware has it on by default. Examine <b>System settings → Power → Standby</b> after an update (<a href="#power">Power and battery</a>). The Q2 skips a version that is installed.</p>
   </div>
 
   <div class="sec">
@@ -1307,7 +1307,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
 
   <div class="sec">
   <h2 id="trouble">Problems with the Q2 and your library</h2>
-    <p><b>The Q2 does not start, does not charge, or is frozen.</b> Connect it to the charger. Hold Centre for 15 seconds, through the shutdown prompt, until it starts again (in Rockbox, hold Play/Pause). A Q2 that gives no response starts again in less than one minute, and <code>q2-crash.log</code> on the card records why.</p>
+    <p><b>The Q2 does not start, does not charge, or is frozen.</b> Connect it to the charger. Hold Centre for 15 seconds, through the shutdown prompt, until it starts again (in Rockbox, hold Play/Pause). A Q2 that gives no response starts again in less than one minute, and <code>q2-crash.log</code> on the card records why. It is possible that a Q2 that freezes when it goes into or comes out of Standby does not start again by itself.</p>
   <p><b>The charge sign shows, but the battery level decreases.</b> Hold Centre while you connect the Q2 to the charger. This resets its power controller.</p>
   <p><b>A song is missing.</b> Examine its format (<a href="#card">Files on the microSD card</a>), then start Update Library. DRM-protected files do not show. Then examine its tags (<a href="#tagging">Music tags</a>).</p>
   <p><b>An album shows as two.</b> Give its tracks the same Album Artist, then start Update Library.</p>
