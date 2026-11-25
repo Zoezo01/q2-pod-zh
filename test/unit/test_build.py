@@ -1043,23 +1043,14 @@ def test_patch_bluealsa_payload_must_fit(silence, monkeypatch):
         build.patch_bluealsa(bluealsa())
 
 
-def elf(*headers, size=0x3000):
-    """An ELF32 image of size bytes whose program headers, (type, offset, vaddr, filesz, memsz) each, start at 52."""
-    data = bytearray(size)
-    struct.pack_into('<I', data, 28, 52)
-    struct.pack_into('<HH', data, 42, 32, len(headers))
-    for i, (kind, offset, vaddr, filesz, memsz) in enumerate(headers):
-        struct.pack_into('<8I', data, 52 + 32 * i, kind, offset, vaddr, vaddr, filesz, memsz, 5, 0x1000)
-    return data
-
-
 # The TagLib cover library's layout (test/m4b.py): the M4A test's beq at SITE to the MP4 extractor
 # (0x1040004a, to SITE + 4 + 0x4a * 4), the next format's test after its delay slot, gp and strcasecmp's GOT slot.
 SITE, MP4, NEXT, GP, STRCASECMP = 0x125ac, 0x126d8, 0x125b4, 0x327e0, 0x327e0 - 0x7e90
 
 
 def taglib():
-    lib = elf((1, 0x1000, 0x12000, 0x1000, 0x1000), (1, 0x2000, 0x2a000, 0x1000, 0x1000), (0, 0, 0, 0, 0))
+    lib = program((1, 0x1000, 0x12000, 0x12000, 0x1000, 0x1000, 5, 0x1000), (1, 0x2000, 0x2a000, 0x2a000, 0x1000, 0x1000, 5, 0x1000),
+                  (0, 0, 0, 0, 0, 0, 5, 0x1000), size=0x3000)
     struct.pack_into('<I', lib, build.fileoff(lib, SITE), 0x1040004a)
     return bytes(lib)
 
