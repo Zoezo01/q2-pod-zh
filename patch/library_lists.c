@@ -162,10 +162,8 @@ static struct {
 /* id added to ids; 1 (and nothing added) out of memory. */
 static int ids_add(unsigned id) {
     if (ids.n == ids.cap) {
-        unsigned cap = ids.cap ? ids.cap * 2 : 1024, *p = calloc(cap, sizeof *p);
+        unsigned cap = ids.cap ? ids.cap * 2 : 1024, *p = realloc(ids.v, cap * sizeof *p);
         if (!p) return 1;
-        if (ids.n) memcpy(p, ids.v, ids.n * sizeof *p);
-        free(ids.v);
         ids.v = p, ids.cap = cap;
     }
     ids.v[ids.n++] = id;
