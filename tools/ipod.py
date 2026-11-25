@@ -1039,7 +1039,6 @@ def pane_icon(data, size):
     nearer of the two and the disc's edge its half-covered line, and the shrink to size smooths those edges.
     ponytail: two colours only, and a line thinner than a source pixel comes out thinner still (GLYPH_CUT is
     the knob); an icon with a third colour or a gradient needs real art at the pane's size."""
-    import re
     listing = imagemagick('png:-', '-alpha', 'on', '-depth', '8', '-format', '%c', 'histogram:info:-', data=data).decode()
     opaque = [(int(n), (int(r), int(g), int(b))) for n, r, g, b in
               re.findall(r'(\d+): *\( *(\d+), *(\d+), *(\d+), *255\)', listing)]
