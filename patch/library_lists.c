@@ -16,7 +16,6 @@ static struct {
     widget_t *sp_page;
 } ll __attribute__((section(".scratch")));
 
-extern int coverflow_goto_album(void *r);
 extern int stock_dbquery_trampoline(const char *, const char *, void *, int);
 
 /* songs_unsorted(0)'s rows whose path is one of paths, in its order, in a deque of their own; 0
