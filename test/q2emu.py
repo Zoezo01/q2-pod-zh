@@ -21,7 +21,7 @@ assert manifest['version'] == (dev_tag(manifest['dev']) if manifest.get('dev') e
 assert manifest.get('compact_code')
 from ipod import INC, O  # patch/offsets.inc and its integer #defines
 from theme import MOTION_WIDGET, MOTION_WINDOW, SCHEME_MODE_OFF, THEME_GEOM_OFF, THEME_MOTION_OFF, builtins as theme_builtins, geometry_sets
-from theme import derive_gloss, turn, GLOSS_TOP  # tools/theme.py: the derived accents' bands
+from theme import turn, GLOSS_TOP  # tools/theme.py: the derived accents' bands
 GEOMS=[g.name for g in geometry_sets(theme_builtins())]; GEOM_CLASSIC_LIGHT,GEOM_CLASSIC_LIGHT_TEXT=GEOMS.index('classic-light'),GEOMS.index('classic-light-text')
 DC=O['DOUBLE_CLICK_MS']  # centre double-press window
 # iPod accent presets: {gradient top, bottom, light tone, red tone, highlight} per Accent setting value.
@@ -3181,7 +3181,7 @@ def host_render(textures,cases,style=None,paper=None,windows=False,still=False):
     still: nothing moving, as the page's own frame at rest (the shelf's seven); else moving, as a direct render is."""
     import subprocess, tempfile
     from coverflow import CF_SOURCES, SHIM_H
-    from theme import ROLE_MACROS, builtins
+    from theme import builtins
     style=style or {f:v for f,v in builtins()[0].items() if f.startswith('cf.')}  # Minimal's, as the payload has it: a thumb theme, its shelf draws seven covers a side
     if len(textures)==7:  # the seven round the centre, the wide ring's ends left out
         textures=[textures[0]]*4+list(textures)+[textures[0]]*4; cases=[(c[0],c[1]<<4,*c[2:]) for c in cases]
