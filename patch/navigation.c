@@ -2372,12 +2372,6 @@ __attribute__((noinline)) static void pale_lit(canvas_t *canvas, const rect_t *c
         }
     }
 }
-/* The tray's lit cell: an outer ring. */
-static void tray_lit(canvas_t *canvas, const rect_t *c) {
-    rect_t ring = { c->x - 1, c->y - 1, c->w + 2, c->h + 2 };
-    round_ring(canvas, &ring, 7, 0x77000000u);
-    lit_rows(canvas, c, ROUND_LEFT | ROUND_RIGHT);
-}
 /* Over the selection: each cell's text over its shadow a row up. White, but for the dark half's
  * unlit cell. */
 static void confirm_labels(widget_t *w, canvas_t *canvas) {
@@ -2518,9 +2512,12 @@ static void paint_selection(widget_t *w, canvas_t *canvas) {
         rect_t cell = { I(e, W_X), I(e, W_Y), I(e, W_W), I(e, W_H) };
         if (flat_dialogs())
             confirm_lit(canvas, &cell);
-        else if (form == FORM_TRAY)
-            tray_lit(canvas, &cell);
-        else
+        else if (form == FORM_TRAY) {
+            /* The tray's lit cell: an outer ring. */
+            rect_t ring = { cell.x - 1, cell.y - 1, cell.w + 2, cell.h + 2 };
+            round_ring(canvas, &ring, 7, 0x77000000u);
+            lit_rows(canvas, &cell, ROUND_LEFT | ROUND_RIGHT);
+        } else
             pale_lit(canvas, &cell, !i);
         st.sel_w = w;
         st.sel_row = i;
