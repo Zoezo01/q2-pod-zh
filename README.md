@@ -390,7 +390,6 @@ Copy your music to the card over USB-C, then run **Library â†’ Update Library â†
 Made by others, not part of Q2 Pod: use them at your own risk.
 
 - **[Q2 Emulator](https://github.com/bryanmario/q2-emulator)**, by bryanmario: runs a Q2 Pod build on a computer.
-- **[Q2 Simulator](https://github.com/lampsonlnguyen/q2-emulation)**, by lampsonlnguyen: previews a build's screens, settings and card apps, and runs card games.
 - **[EQ Studio for iPhone and iPad](https://github.com/js-surya/q2-eq-studio-ios)**, by js-surya: shape [EQ Studio](https://github.com/DiamondBond/q2-eq-studio)'s curve on your phone.
 - **[Q2 Theme Studio](https://tyleree.github.io/q2-themes/)**, by tyleree: make themes and EQ presets in the browser.
 - **[Q2 Sync](https://github.com/PaleoLabs/Q2-Sync)**, by PaleoLabs: sync the music files in your Mac's Music app to the Q2.
