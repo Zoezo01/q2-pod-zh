@@ -569,9 +569,10 @@ void qm_select(void) {
 /* Stock playlist rows use the queue in add mode 2. Guard their final dispatch as well. */
 #define PLAYLIST_PICK ((int (*)(void *, event_t *))0x4b4840)
 static int pl_at(widget_t *button);
-/* An album's songs (qm_own_songs) into the picked playlist, in qm_collect's order, every one
- * selected, through batch_add_file as the editor's add; then the toast and the picker's close, as
- * stock's pick. ponytail: an album's tracks, so no cap; stock's add runs on the UI thread. */
+/* An album's songs (qm_own_songs, taken as the picker opened: qm_songs) into the picked playlist,
+ * in qm_collect's order, every one selected, through batch_add_file as the editor's add; then the
+ * toast and the picker's close, as stock's pick. ponytail: an album's tracks, so no cap; stock's
+ * add runs on the UI thread. */
 static int pl_add_songs(widget_t *button, void *songs) {
     void *lists = P(p_deque_playlist, 0);
     int at = pl_at(button);
@@ -582,19 +583,17 @@ static int pl_add_songs(widget_t *button, void *songs) {
         for (unsigned i = 0; i < n; ++i) batch_set_selectitem((int)i);
         batch_add_file(0xf001, 0xf00b, songs, P(p_vector_select_record, 0), I(r, REC_DISC));
     }
-    if (songs) deque_destroy(songs);
     toast(r && n ? tr("Added to Playlist") : tr("Could not save playlist"));
     if (r && n) window_close(window_of(button));
     return 0;
 }
 int qm_playlist_pick(void *ctx, event_t *event) {
     char click[0x30];
-    void *r = qm_record();
-    if (!r) {
+    if (qm_own_songs()) return pl_add_songs(ctx, qm_songs());
+    if (!qm_record()) {
         toast(tr("Queue unchanged"));
         return 0; /* a STOP would leave the list's scroll_view holding its grab */
     }
-    if (qm_own_songs()) return pl_add_songs(ctx, qm_collect(r));
     qm_select();
     /* Classic's picker has no dots: a tap at their place picks */
     return PLAYLIST_PICK(
@@ -603,6 +602,7 @@ int qm_playlist_pick(void *ctx, event_t *event) {
 
 int qm_playlist_gone(void *ctx, event_t *event) {
     st.qm_playlist = 0;
+    qm_songs_free();
     return 0;
 }
 

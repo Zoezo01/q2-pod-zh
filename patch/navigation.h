@@ -503,6 +503,7 @@ int hold_taken(const void *key); /* navigation.c: a Play/Pause hold taken: latch
 int qm_hold(void);
 void *qm_record(void);
 void *qm_collect(void *r);
+void *qm_songs(void), qm_songs_free(void); /* queue_menu.c: Add to Playlist's album songs */
 unsigned qm_album_id(void *r);
 
 /* clock.c */

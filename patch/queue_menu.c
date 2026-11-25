@@ -18,6 +18,7 @@ static struct {
     void *qm_queue;
     unsigned qm_queue_hash;
     unsigned char qm_classinfo[912];
+    void *qm_songs; /* an album's songs for Add to Playlist's picker, taken as it opens */
 } qm __attribute__((section(".scratch")));
 
 /* Play/Pause hold queue menu (docs/internals.md). Stock long press fires once per press, so a hold
@@ -80,6 +81,13 @@ static widget_t *qm_under(void) {
  * of the name. */
 int qm_own_songs(void) {
     return qm.qm_kind == QM_COVERALBUM || (qm.qm_kind == QM_ALBUM && qm.qm_cls == CLASS_ALBUMS);
+}
+
+/* Add to Playlist's album songs (qm_own_songs), kept from the menu until the picker goes. */
+void *qm_songs(void) { return qm.qm_songs; }
+void qm_songs_free(void) {
+    if (qm.qm_songs) deque_destroy(qm.qm_songs);
+    qm.qm_songs = 0;
 }
 
 static void *qm_list(void) {
@@ -375,6 +383,9 @@ static int qm_run(const void *unused) {
         if (cls == 0xf00a)
             g_delete_flag = 1;          /* My Fav reloads, as Now Playing's heart (0x53cafc) */
     } else if (r && a == QA_PLAYLIST) { /* the playlist page's add mode adds the selected row */
+        qm_songs_free();
+        /* an album's songs now: the picker covers its page, so its row can't be read at the pick */
+        if (qm_own_songs()) qm.qm_songs = qm_collect(r);
         qm_select();
         navigator_to_with_context(
             "localmusic/playlist_page",
