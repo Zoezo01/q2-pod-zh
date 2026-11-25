@@ -68,6 +68,10 @@ static void charge_poll(void) {
     battery_tick(level, g_usbdet_value != 0); /* Battery History's rows (battery.c) */
 }
 
+/* A row's switch off, as stock's handler reads it: Auto-standby's byte at 0, Auto-shutdown's mode
+ * (a signed byte, 1 to 4 its times) at 0 or less */
+static int switch_off(int row) { return row ? (signed char)g_savepower_mode <= 0 : !g_standbyflag; }
+
 /* The Standby page's two questions (docs/internals.md#standby-limit, #charge-limit). Waking from
  * Standby can leave a Q2 frozen, and the watchdog is stopped across the suspend. Charge Limit runs
  * only while demo does, so a Q2 that Auto-shutdown powered off charges to full on a charger. The
@@ -81,9 +85,6 @@ static void charge_poll(void) {
  * is still off. ponytail: only these two switches ask; an Auto-standby already on is not asked
  * about, and Standby Limit, the Sleep Timer and a shutdown by hand also leave the Q2 off,
  * charging to 100%, and ask nothing. */
-/* A row's switch off, as stock's handler reads it: Auto-standby's byte at 0, Auto-shutdown's mode
- * (a signed byte: 1 to 4 its times) at 0 or less */
-static int switch_off(int row) { return row ? (signed char)g_savepower_mode <= 0 : !g_standbyflag; }
 int ringnav_standby_row(widget_t *button, event_t *event) {
     const char *name = widget_get_prop_str(button, "name", "");
     int row = (name[0] == '0' || name[0] == '1') && !name[1] ? name[0] - '0' : -1;
