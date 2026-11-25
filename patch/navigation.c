@@ -7354,12 +7354,6 @@ void ringnav_cover_done(int row, int big, const char *key) {
  * Albums order: the same-named album in its folder, else by its album artist. ponytail: an album
  * across folders whose album artist isn't the row's keeps stock's key; look up its track's
  * albumsonger by fileurl if that shows. */
-static void artist_keys_free(void) {
-    for (unsigned i = 0; i < st.art_n; ++i) free(st.art_keys[i]);
-    free(st.art_keys);
-    free(st.art_ids);
-    st.art_keys = 0, st.art_ids = 0, st.art_n = 0;
-}
 static int same_dir(void *a, void *b) {
     const char *x = P(a, REC_PATH), *y = P(b, REC_PATH);
     unsigned n = x ? album_dir(x, 1) : 0;
@@ -7482,7 +7476,10 @@ static int artist_list(int tab) {
     if (!strcmp((const char *)ARTIST_TITLE, "(null)"))
         getFormatString("player_unknown", (char *)ARTIST_TITLE, 0x200);
     artist_bar();
-    artist_keys_free();
+    for (unsigned i = 0; i < st.art_n; ++i) free(st.art_keys[i]);
+    free(st.art_keys);
+    free(st.art_ids);
+    st.art_keys = 0, st.art_ids = 0, st.art_n = 0;
     if (tab != 1 || n <= 0 || !(st.art_keys = calloc((unsigned)n, sizeof(char *)))) return n;
     st.art_ids = calloc((unsigned)n, sizeof *st.art_ids);
     st.art_n = (unsigned)n;
