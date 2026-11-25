@@ -203,14 +203,6 @@ static int entry_quads(const entry_t *n, int *centre, cf_quad_t *q, int *album) 
     return k;
 }
 
-/* Going by letters, the row held as the entry left it (th.hold_*), frac (16.16) of an album on as
- * it slides: the entry's row past its end, with frac's centre the album at the screen's middle. */
-static void hold_at(entry_t *n, int frac) {
-    n->frac = frac - th.hold_k, n->lean = th.lean < 0 ? -1 : 1;
-    n->lead = th.hold_lead, n->run = th.hold_run, n->xrun = th.hold_xrun;
-    n->at = (float)n->frac / CF_ONE + n->lead + n->run;
-    n->focus = cf_round(n->at), n->after = n->at < (float)n->focus;
-}
 /* The held row's cover at16 (16.16) albums on from the screen's middle, as draw_quad draws it */
 static int hold_quad(int at16, cf_quad_t *q) {
     return row_quad_run(-at16 - th.hold_k, th.hold_lead, th.hold_run, th.hold_xrun, 0, q);
@@ -224,8 +216,15 @@ static void row_at(entry_t *n, int frac) {
         n->focus = cf_round(n->at), n->after = n->at < (float)n->focus;
     } else if (th.enter > 0)
         entry_at(n, frac, th.lead, th.enter, th.lean < 0 ? -1 : 1);
-    else
-        hold_at(n, frac);
+    else {
+        /* Going by letters, the row held as the entry left it (th.hold_*), frac (16.16) of an album
+         * on as it slides: the entry's row past its end, with frac's centre the album at the
+         * screen's middle. */
+        n->frac = frac - th.hold_k, n->lean = th.lean < 0 ? -1 : 1;
+        n->lead = th.hold_lead, n->run = th.hold_run, n->xrun = th.hold_xrun;
+        n->at = (float)n->frac / CF_ONE + n->lead + n->run;
+        n->focus = cf_round(n->at), n->after = n->at < (float)n->focus;
+    }
 }
 
 /* The window's middle (coverflow_paint's, fx_window's) of the row at frac as it is drawn now: at
