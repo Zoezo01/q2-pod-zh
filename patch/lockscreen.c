@@ -350,12 +350,11 @@ void lock_face(widget_t *w, const char *face, int px) {
         widget_set_prop_int(w, "style:normal:font_size", px);
     }
 }
-/* A label's face and size for its text, in any script. Answers the face (0: the system font) and
- * px. */
-static const char *info_face(widget_t *w, int *px) {
-    const char *face = theme_face(w ? widget_get_text(w) : 0, -1, px);
-    lock_face(w, face, *px);
-    return face;
+/* A label's face and size for its text, in any script: px, unless theme_face sets another size
+ * for the text. */
+static void info_face(widget_t *w, int px) {
+    const char *face = theme_face(w ? widget_get_text(w) : 0, -1, &px);
+    lock_face(w, face, px);
 }
 /* A label's box, face, size and colour, left unless it's centred. */
 static void info_label(widget_t *w, int x, int y, int ww, int h, int px, const char *align) {
@@ -435,12 +434,9 @@ static void info_screen(widget_t *win, widget_t *img, int id) {
 static void info_paint(widget_t *w, canvas_t *canvas) {
     void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;
-    int px = INFO_TITLE_PX;
-    info_face(lk.title, &px);
-    px = INFO_ARTIST_PX;
-    info_face(lk.artist, &px);
-    px = INFO_DATE_PX;
-    info_face(lk.date, &px);
+    info_face(lk.title, INFO_TITLE_PX);
+    info_face(lk.artist, INFO_ARTIST_PX);
+    info_face(lk.date, INFO_DATE_PX);
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     if (lk.page) paint_page(w, canvas, 26);
     if (lk.black) { /* whichever half: the window's own black flips */
