@@ -345,15 +345,13 @@ static int m3u_write(const char *path, const list_t *l, int skip, const list_t *
     return ok && !rename(tmp, path);
 }
 
-static void send_key(const char *c, unsigned n) { dgram_send(&rd.sock, RADIO_SOCK, c, n); }
-
 /* q2video quit, and killed if it does not go within RADIO_QUIT_MS. The media keys stay radio's. */
 static void radio_halt(void) {
     rd.wait = 0;
     if (!rd.pid) return;
     int status, done;
     unsigned start = time_now_ms();
-    send_key("q", 1);
+    dgram_send(&rd.sock, RADIO_SOCK, "q", 1);
     while (!(done = waitpid(rd.pid, &status, 1)) && time_now_ms() - start < RADIO_QUIT_MS)
         sleep_ms(20);
     if (!done) {
@@ -428,7 +426,7 @@ void radio_poll(void) {
     if (rd.volume != headset_gain() + 1u) {
         char v[2] = { 'v', (char)headset_gain() };
         rd.volume = headset_gain() + 1u;
-        send_key(v, 2);
+        dgram_send(&rd.sock, RADIO_SOCK, v, 2);
     }
 }
 
