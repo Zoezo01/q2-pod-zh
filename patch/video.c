@@ -158,6 +158,15 @@ static long long now_ms(void) {
     return (long long)t.sec * 1000 + t.nsec / 1000000;
 }
 
+/* The flag file at path mapped, or 0 while it doesn't exist. */
+static volatile int *flag_at(const char *path) {
+    int fd = open(path, 0); /* O_RDONLY */
+    if (fd < 0) return 0;
+    void *p = mmap(0, sizeof(int), 1, 1, fd, 0); /* PROT_READ, MAP_SHARED */
+    close(fd);
+    return p != (void *)-1 ? p : 0;
+}
+
 static void *writer(void *unused) {
     short buf[2 * CHUNK];
     long written = 0, delay;
@@ -165,22 +174,8 @@ static void *writer(void *unused) {
         0; /* demo's MONO_FILE, looked for every hundredth chunk till it appears */
     volatile int *swap_on = 0;
     for (int end = 0, tries = 0; !end;) {
-        if (!swap_on && !(tries % 100)) {
-            int fd = open(SWAP_FILE, 0);
-            if (fd >= 0) {
-                void *p = mmap(0, sizeof *swap_on, 1, 1, fd, 0);
-                close(fd);
-                if (p != (void *)-1) swap_on = p;
-            }
-        }
-        if (!mono_on && !(tries % 100)) {
-            int fd = open(MONO_FILE, 0); /* O_RDONLY */
-            if (fd >= 0) {
-                void *p = mmap(0, sizeof *mono_on, 1, 1, fd, 0); /* PROT_READ, MAP_SHARED */
-                close(fd);
-                if (p != (void *)-1) mono_on = p;
-            }
-        }
+        if (!swap_on && !(tries % 100)) swap_on = flag_at(SWAP_FILE);
+        if (!mono_on && !(tries % 100)) mono_on = flag_at(MONO_FILE);
         ++tries;
         unsigned got = 0;
         while (got < sizeof buf) {
