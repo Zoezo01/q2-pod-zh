@@ -175,12 +175,8 @@ static void stall_read(char *in, const char *path) { /* the file's start, NUL-te
 }
 /* in's line that starts with key */
 static const char *stall_find(const char *in, const char *key) {
-    unsigned n = strlen(key);
-    for (const char *s = in; *s; ++s) {
-        if (!strncmp(s, key, n)) return s;
-        while (*s && *s != '\n') ++s;
-        if (!*s) break;
-    }
+    for (const char *s = strstr(in, key); s; s = strstr(s + 1, key))
+        if (s == in || s[-1] == '\n') return s;
     return 0;
 }
 static char *stall_add(char *p, char *end, const char *label, const char *s) { /* s's first line */
