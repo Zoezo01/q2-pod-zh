@@ -11138,7 +11138,7 @@ m=ShelfMachine({LIST:bytearray((ROOT/'sources.list').read_bytes()),SPOT_TAG:byte
 m.rockbox_mode=0; m.wifi=-1; apps_open(m)
 BLANK=m.labels()[2]; assert BLANK in ('',' ')  # Check for Updates' blank detail: ' ' under a theme's separators
 assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Plex','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install','Books','Install','EQ Studio','Install','Mixtape','Install','Groovebox','Install','Videos','Install','Tailscale','Install','Languages','Install'] and not m.threads; passed()  # the Apps tab: no themes without Rockbox
-tab=lambda key: m.call(address=payload_syms['shelf_key'],args=(m.page,O[key],0,0),gap=0,count=5_000_000)
+tab=lambda key: m.call(address=payload_syms['store_tabs_key'],args=(m.page,O[key],0,0),gap=0,count=5_000_000)
 assert tab('KEY_FWD_BTN')==1 and m.labels()==['App Store','Check for Updates',BLANK,'Buddy','Install','Arcade Games','Install','2048','Install','Dino Runner','Install','Flappy Bird','Install','Pocket Boy','Install','ClassiCube','Install','Doom','Install','Wings','Install','Q2A Miami','Install','Six Track','Install','Challenger Deep','Install','Q2 Hero','Install','PICO-8','Install','Vortex','Install','Wordle','Install','Connect Four','Install','Tic-Tac-Toe','Install','Chess & Checkers','Install']
 assert tab('KEY_BACK_BTN')==1 and m.labels()[3:5]==['Rockbox','Install'] and tab('KEY_CENTER')==0; passed()  # Next opens Games, Previous Apps
 m.close(); m.wifi=3; m.rockbox_mode=0o100755; m.dirs['/mnt/mmc/.spotify']=[]; apps_open(m)

@@ -2118,7 +2118,8 @@ class EraRow(C.Structure):
 
 class Era(C.Structure):
     _fields_ = [('page', C.c_void_p), ('albums', C.c_void_p), ('decade', C.c_int * 32), ('count', C.c_int * 32), ('n', C.c_int),
-                ('v', C.POINTER(EraRow)), ('m', C.c_uint), ('cap', C.c_uint)]
+                ('v', C.POINTER(EraRow)), ('m', C.c_uint), ('cap', C.c_uint), ('year', C.c_int * 128), ('ycount', C.c_int * 128),
+                ('ny', C.c_int), ('tab', C.c_int), ('from_', C.c_int), ('to', C.c_int)]
 
 
 def row(*values):
@@ -2141,6 +2142,16 @@ def test_era_decades_in_order(fw):
     add = fw.fn('library_lists__era_decade_row', *ROW)
     assert add(None, 2, row(b'1970', b'4'), None) == 0 and add(None, 2, row(b'2000', b'11'), None) == 0
     assert state.n == 2 and list(state.decade[:2]) == [1970, 2000] and list(state.count[:2]) == [4, 11]
+
+
+def test_era_years_in_order_up_to_128(fw):
+    state = fw.var('library_lists__era', Era)
+    add = fw.fn('library_lists__era_year_row', *ROW)
+    assert add(None, 2, row(b'2003', b'2'), None) == 0 and add(None, 2, row(b'1991', b'5'), None) == 0
+    assert state.ny == 2 and list(state.year[:2]) == [2003, 1991] and list(state.ycount[:2]) == [2, 5]
+    for i in range(200):
+        add(None, 2, row(b'%d' % (1990 - i), b'1'), None)
+    assert state.ny == 128 and state.year[127] == 1990 - 125  # the newest kept, as the query gives them
 
 
 @pytest.mark.parametrize('n, values', [(1, (b'1970', b'4')), (3, (b'1970', b'4', b'x')), (2, (None, b'4')), (2, (b'1970', None))])

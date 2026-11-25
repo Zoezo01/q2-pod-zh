@@ -15,11 +15,17 @@
 #define SEG_H 30
 #define RIM 0x717171 /* Classic's rims: #8E8E8E on its paper, Light Mode's flip */
 #define BADGE 0xe0261b
-#define GAMES_X 120 /* Minimal's Games name, Apps' from 36 */
+#define GAMES_X 120 /* Minimal's Games name, Apps' from 36: its second name, or past a longer first */
+#define NAME_GAP 34   /* Minimal: from a first name past GAMES_X to the second, its dot and room */
 
-static char on_page __attribute__((section(".scratch"))); /* the App Store's page is open */
+/* The open page with tabs (the App Store, Era), its two names and its pick. ponytail: one such page
+ * at a time; a strip per page if one ever opens over another. */
+static widget_t *tabs_page __attribute__((section(".scratch")));
+static const char *const *tab_names __attribute__((section(".scratch")));
+static void (*tab_pick)(int) __attribute__((section(".scratch")));
 static unsigned tab_timer __attribute__((section(".scratch")));
 static int tab_want __attribute__((section(".scratch")));
+static int second_x __attribute__((section(".scratch"))); /* Minimal's second name, as painted */
 
 static int strip_h(void) { return theme()->page_title_h ? theme()->page_title_h : STRIP_H; }
 
@@ -33,7 +39,7 @@ static unsigned face_px(unsigned px) {
 
 static int tab_go(const void *unused) {
     tab_timer = 0;
-    shelf_tab(tab_want);
+    if (tab_pick) tab_pick(tab_want);
     return 0;
 }
 
@@ -42,16 +48,17 @@ static int tab_go(const void *unused) {
 static int tab_touch(void *ctx, event_t *event) {
     int xy[2] = { I(event, EVENT_X), I(event, EVENT_Y) };
     widget_to_local(ctx, xy);
-    tab_want = xy[0] >= (theme()->painter[PAINT_SELECTION] == SEL_CARD ? GAMES_X - 20 : 188);
+    tab_want = xy[0] >= (theme()->painter[PAINT_SELECTION] == SEL_CARD ? (second_x ? second_x : GAMES_X) - 20 : 188);
     rearm(&tab_timer, tab_go, 0);
     return 0;
 }
 
-/* The tabs over view, page_list's on page (or none: the page closed); the strip, its tab and
- * badges set by store_tabs_set. With a title row (Minimal, Modern) the tabs take its place and its
+/* The tabs over view, page_list's on page (or none: the page closed), names[0] and names[1], pick
+ * taking a tap's or Previous and Next's tab; the strip, its tab and badges set by store_tabs_set.
+ * With a title row (Minimal, Modern) the tabs take its place and its
  * label hides; under Classic, whose bar holds the title, the list moves down under the strip. */
-widget_t *store_tabs(widget_t *page, widget_t *view) {
-    on_page = page != 0;
+widget_t *store_tabs(widget_t *page, widget_t *view, const char *const *names, void (*pick)(int)) {
+    tabs_page = page, tab_names = names, tab_pick = pick;
     if (!page) return 0;
     int h = strip_h();
     if (theme()->page_title_h) {
@@ -67,6 +74,15 @@ widget_t *store_tabs(widget_t *page, widget_t *view) {
     widget_set_prop_int(strip, "_tab", 0);
     widget_on(strip, EVT_POINTER_DOWN, tab_touch, strip);
     return strip;
+}
+
+/* ringnav, before stock's song skip: on a page with tabs, Previous opens the first and Next the
+ * second. ponytail: a toast on top (msginfo_dialog, 0x49b7c8) stops them for its time, as for
+ * field_key; looking past it (smart_wifi.c page_in_use) would lift that. */
+int store_tabs_key(widget_t *top, unsigned key) {
+    if (!tabs_page || top != tabs_page || (key != KEY_BACK_BTN && key != KEY_FWD_BTN)) return 0;
+    if (tab_pick) tab_pick(key == KEY_FWD_BTN);
+    return 1;
 }
 
 /* The open tab (0 Apps, 1 Games) and each tab's updates, for the strip's next paint. */
@@ -124,7 +140,7 @@ static void paint_strip(widget_t *w, canvas_t *canvas) {
     const theme_t *T = theme();
     int h = I(w, W_H), tab = widget_get_prop_int(w, "_tab", 0),
         n[2] = { widget_get_prop_int(w, "_b0", 0), widget_get_prop_int(w, "_b1", 0) };
-    static const char *const names[2] = { N_("Apps"), N_("Games") };
+    const char *const *names = tab_names;
     canvas_set_fill_color(canvas, rgba(0, 255)); /* the paper */
     canvas_fill_rect(canvas, 0, 0, 375, h);
     if (T->painter[PAINT_SELECTION] == SEL_CARD) { /* Minimal: the names, the open one dotted */
@@ -134,9 +150,9 @@ static void paint_strip(widget_t *w, canvas_t *canvas) {
                 rect_t dot = { x - 14, h / 2 - 2, 5, 5 };
                 fill_box(canvas, &dot, rgba(0xffffff, 255), 3);
             }
-            text_at(canvas, tr(names[i]), x, 0, h, 17, rgba(i == tab ? 0xffffff : 0x5c5c5c, 255),
-                    LEFT);
-            x = GAMES_X;
+            int tw = text_at(canvas, tr(names[i]), x, 0, h, 17,
+                            rgba(i == tab ? 0xffffff : 0x5c5c5c, 255), LEFT);
+            if (!i) x = second_x = x + tw + NAME_GAP > GAMES_X ? x + tw + NAME_GAP : GAMES_X;
         }
         if (n[0] + n[1]) {
             char s[64];
@@ -197,7 +213,7 @@ static void paint_row(widget_t *w, canvas_t *canvas, int state) {
 
 /* ringnav_paint, every widget after stock painted it: the App Store's strip and its apps' rows. */
 void store_paint(widget_t *w, canvas_t *canvas) {
-    if (!on_page || !P(canvas, CANVAS_LCD)) return;
+    if (!tabs_page || !tab_names || !P(canvas, CANVAS_LCD)) return;
     int h = I(w, W_H);
     if (h != strip_h() && h != page_h(64)) return; /* no prop lookups for other widgets */
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);

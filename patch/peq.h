@@ -871,9 +871,10 @@ int page_keyup(void *ctx, event_t *event); /* navigation.c: Return leaves a payl
 int ringnav_localclass(int cls);           /* navigation.c: load_localclass_list's hook */
 int shelf_open(void *ctx, event_t *event); /* netupdate.c: Library's App Store page */
 void shelf_tab(int tab); /* netupdate.c: the App Store's open tab, 0 Apps, 1 Games */
-int shelf_key(widget_t *top, unsigned key); /* netupdate.c: Previous and Next switch its tabs */
-/* app_store.c: the App Store's tabs and rows, drawn in ringnav_paint (store_paint) */
-widget_t *store_tabs(widget_t *page, widget_t *view);
+/* app_store.c: the App Store's tabs (Era's too) and rows, drawn in ringnav_paint (store_paint);
+ * Previous and Next switch the tabs (store_tabs_key) */
+widget_t *store_tabs(widget_t *page, widget_t *view, const char *const *names, void (*pick)(int));
+int store_tabs_key(widget_t *top, unsigned key);
 void store_tabs_set(widget_t *strip, int tab, const int *updates);
 void store_state(widget_t *item, int state);
 void store_paint(widget_t *w, canvas_t *canvas);

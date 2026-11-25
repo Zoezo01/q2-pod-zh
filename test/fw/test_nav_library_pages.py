@@ -2871,7 +2871,7 @@ def test_era_lists_each_decade_with_its_albums(fw, ui):
     db = EraDb(fw, decades=[(b'1970', b'1'), (b'1990', b'3'), (b'2000', b'12')])
     call(fw, 'era_menu')
     page = ui.top()
-    assert ui.name[page] == 'era_page' and 'Era' in ui.shown(page)
+    assert ui.name[page] == 'era_page' and 'Era' not in ui.shown(page)  # the Decades and Years tabs in its place
     assert ui.rows(page) == [('70s', '1 album'), ('90s', '3 albums'), ('2000s', '12 albums')]
     assert db.asked[-1].startswith('select year/10*10,count(*)')
     call(fw, 'era_menu')
@@ -2956,6 +2956,34 @@ def test_a_decade_query_groups_only_the_names_dated_in_it(fw, ui):
     assert [(album, year) for album, _, year, _ in rows] == [('Mixed', 1991), ('The Wall', 1991), ('HITS', 1992), ('Dated', 1995)]
     lib.execute('create index songtable_album on songtable(album collate nocase)')  # as a library has after any scan
     assert lib.execute(sent).fetchall() == rows
+
+
+def test_the_years_tab_lists_each_year_newest_first_and_a_year_opens_its_albums(fw, ui):
+    """Next opens Years: its query run on a real songtable counts albums per year as the decades do, newest first; a
+    year's row opens that year's albums."""
+    db = EraDb(fw, decades=[(b'1990', b'3')], albums=ERA_ALBUMS)
+    call(fw, 'era_menu')
+    era, lib = ui.top(), era_library()
+    db.decades = None
+    run = db.run
+    def years(d, sql, *a):
+        if b'select year,count(*)' in C.string_at(sql):
+            db.decades = lib.execute(C.string_at(sql).decode()).fetchall()
+            db.decades = [tuple(str(v).encode() for v in r) for r in db.decades]
+        return run(d, sql, *a)
+    fw.mock('sqlite3_exec', years)
+    assert fw.fn('store_tabs_key', C.c_int, C.c_void_p, C.c_uint)(era, O['KEY_FWD_BTN']) == 1
+    assert ui.rows(era) == [('2022', '1 album'), ('2003', '1 album'), ('1995', '1 album'), ('1992', '1 album'),
+                            ('1991', '2 albums'), ('1981', '1 album'), ('1975', '1 album')]
+    ui.click(era, 4)
+    assert ui.name[ui.top()] == 'era_albums_page' and '1991' in ui.shown(ui.top())
+    assert 'having release_year between 1991 and 1991' in db.asked[-1]
+    asked = len(db.asked)
+    ui.close(ui.top())
+    fw.fn('store_tabs_key', C.c_int, C.c_void_p, C.c_uint)(era, O['KEY_BACK_BTN'])
+    assert ui.rows(era) == [('90s', '3 albums')]
+    fw.fn('store_tabs_key', C.c_int, C.c_void_p, C.c_uint)(era, O['KEY_FWD_BTN'])
+    assert len(ui.rows(era)) == 7 and len(db.asked) == asked  # the years are read once a page
 
 
 def test_a_decade_s_albums_stop_at_its_count(fw, ui):

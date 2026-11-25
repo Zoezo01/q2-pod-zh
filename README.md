@@ -32,7 +32,7 @@
   </tr>
   <tr valign="top">
     <td><b>Library</b></td>
-    <td>Search, Era (albums by decade), Most Played, Long Songs and favourites. Playlists with Edit Playlist and M3U import and export. Play Next, Add to Queue and View Queue. An empty <code>database.ignore</code> file <a href="#library">hides a folder</a>.</td>
+    <td>Search, Era (albums by decade or year), Most Played, Long Songs and favourites. Playlists with Edit Playlist and M3U import and export. Play Next, Add to Queue and View Queue. An empty <code>database.ignore</code> file <a href="#library">hides a folder</a>.</td>
   </tr>
   <tr valign="top">
     <td><b>Ratings</b></td>

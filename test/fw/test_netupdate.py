@@ -3161,7 +3161,7 @@ def test_the_tabs_split_the_list_and_previous_and_next_switch_them(fw):
     fw.mock('widget_factory_create_widget', lambda *_: 88)  # the strip
     s = Store(fw, card, wifi=0)
     assert s.sh.tab == 0 and s.labels() == ['Install'] and s.details() == ['me'] and s.props[(88, '_tab')] == 0
-    key = fw.fn('shelf_key', C.c_int, C.c_void_p, C.c_uint)
+    key = fw.fn('store_tabs_key', C.c_int, C.c_void_p, C.c_uint)
     assert key(77, O['KEY_FWD_BTN']) == 1 and s.sh.tab == 1 and s.details() == ['you'] and s.props[(88, '_tab')] == 1  # Next: Games
     assert key(77, O['KEY_FWD_BTN']) == 1 and s.sh.tab == 1  # Next again stays
     assert key(66, O['KEY_BACK_BTN']) == 0 and s.sh.tab == 1  # another page's
@@ -3206,7 +3206,7 @@ def test_the_cards_custom_sources_follow_the_list_and_never_reach_its_copy(fw, m
     s = Store(fw, card)
     assert s.run() == 0 and card.files[SOURCES] == LISTED  # the list's copy alone
     assert [s.sh.next[k].repo for k in range(s.sh.n)] == [b'me/q2-foo', b'me/q2-bar'] + [b'you/q2-mine', b'you/q2-play'] * bool(mine)
-    key = fw.fn('shelf_key', C.c_int, C.c_void_p, C.c_uint)
+    key = fw.fn('store_tabs_key', C.c_int, C.c_void_p, C.c_uint)
     assert s.details() == ['me', 'you'][:1 + bool(mine)]
     key(77, O['KEY_FWD_BTN'])
     assert s.details() == ['me', 'you'][:1 + bool(mine)]  # Games: Bar, Play
@@ -3234,7 +3234,8 @@ def test_app_store_paints_a_rows_state_as_a_word_and_the_tabs_badges(fw, theme):
     fw.mock('widget_get_prop_int', lambda w, k, d, *_: props.get((w, C.string_at(k)), d))
     fw.mock('widget_set_prop_str', lambda w, k, v, *_: strs.__setitem__(w, C.create_string_buffer(C.string_at(v))) or 0)
     fw.mock('widget_get_prop_str', lambda w, k, d, *_: C.addressof(strs[w]) if w in strs else d)
-    fw.var('app_store__on_page', C.c_char).value = b'\x01'
+    fw.var('app_store__tabs_page', C.c_void_p).value = 1  # the App Store's tabs open
+    fw.var('app_store__tab_names', C.c_void_p).value = C.addressof(fw.var('netupdate__sh_tabs', C.c_void_p * 2))
 
     def widget(h):
         w = block(fw, size=0x200)
@@ -3269,7 +3270,7 @@ def test_app_store_paints_a_rows_state_as_a_word_and_the_tabs_badges(fw, theme):
         band = rgba(0x007dde) if theme == b'1' else tone(fw, 0)
         assert any(o.kind == 'fill' and o.rect[0] == 14 + 173 and o.color == band for o in ops)
     assert {o.px for o in ops if o.kind == 'text'} == {b'0': {17, 12}, b'1': {23, 15}, b'2': {16, 11}}[theme]  # names, count
-    fw.var('app_store__on_page', C.c_char).value = b'\x00'
+    fw.var('app_store__tabs_page', C.c_void_p).value = 0
     assert painted(row)[0] == []  # the page closed: nothing
 
 
@@ -3280,7 +3281,8 @@ def test_a_selected_rows_state_takes_the_rows_ink_as_stocks_labels_do(fw, st):
     props = {}
     fw.mock('widget_set_prop_int', lambda w, k, v, *_: props.__setitem__((w, C.string_at(k)), C.c_int(v).value) or 0)
     fw.mock('widget_get_prop_int', lambda w, k, d, *_: props.get((w, C.string_at(k)), d))
-    fw.var('app_store__on_page', C.c_char).value = b'\x01'
+    fw.var('app_store__tabs_page', C.c_void_p).value = 1  # the App Store's tabs open
+    fw.var('app_store__tab_names', C.c_void_p).value = C.addressof(fw.var('netupdate__sh_tabs', C.c_void_p * 2))
     h = fw.fn('page_h', C.c_int, C.c_int)(64)
     row, view = block(fw, size=0x200), block(fw, size=0x200)
     C.c_int.from_address(row + O['W_Y']).value, C.c_int.from_address(row + O['W_H']).value = 2 * h, h
@@ -3367,7 +3369,7 @@ def test_a_press_held_for_wifi_through_a_real_click_follows_its_app(fw):
     s.click(1)  # Foo's Install
     assert sw.hold_fn and s.sh.job == 0 and s.toasts[-1] == 'Connecting to Wi-Fi…'
     fn, ctx = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)(sw.hold_fn), sw.hold_ctx
-    key = fw.fn('shelf_key', C.c_int, C.c_void_p, C.c_uint)
+    key = fw.fn('store_tabs_key', C.c_int, C.c_void_p, C.c_uint)
     key(77, O['KEY_FWD_BTN'])  # Games: Bar is row 1 now
     s.wifi = 3
     fw.mock('networkGetConnectStatus', lambda *_: 1)
@@ -3400,6 +3402,6 @@ def test_classic_moves_the_list_under_the_tabs_strip(fw):
     page, view, lst = (block(fw, size=0x200) for _ in range(3))
     C.c_void_p.from_address(view + O['W_PARENT']).value = lst
     C.c_int.from_address(lst + O['W_Y']).value, C.c_int.from_address(lst + O['W_H']).value = 10, 390
-    fw.fn('store_tabs', C.c_void_p, C.c_void_p, C.c_void_p)(page, view)
+    fw.fn('store_tabs', C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p)(page, view, None, None)
     assert moved[lst] == (0, 54, 375, 346) and moved[view] == (0, 0, 375, 346)
-    fw.fn('store_tabs', C.c_void_p, C.c_void_p, C.c_void_p)(0, 0)  # closed
+    fw.fn('store_tabs', C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p)(0, 0, None, None)  # closed

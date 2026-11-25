@@ -1234,9 +1234,11 @@ static int sh_click(void *ctx, event_t *event) {
 }
 
 static int sh_closed(void *ctx, event_t *event) {
-    sh.page = sh.strip = store_tabs(0, 0), sh.rows = sh.armed = 0;
+    sh.page = sh.strip = store_tabs(0, 0, 0, 0), sh.rows = sh.armed = 0;
     return 0;
 }
+
+static const char *const sh_tabs[2] = { N_("Apps"), N_("Games") };
 
 /* The rows: Check for Updates, then the open tab's apps (sh_shown) in the list's order; built again
  * when a job's end or the tab changes which. The tabs' badges are counted here too, as only a job's
@@ -1251,7 +1253,7 @@ static void sh_rows(void) {
         memcpy(sh.map, map, sizeof map);
         sh.rows = 0;
         widget_t *view = page_list(sh.page, sh.page, 0, tr("App Store"), n, 64);
-        sh.strip = store_tabs(sh.page, view);
+        sh.strip = store_tabs(sh.page, view, sh_tabs, shelf_tab);
         for (int r = 0; r < n; ++r) {
             int i = map[r];
             /* sh_text writes the detail: a blank one, or a theme would centre the name over it */
@@ -1270,15 +1272,6 @@ void shelf_tab(int tab) {
     if (!sh.page || tab == sh.tab) return;
     sh.tab = tab, sh.armed = 0;
     sh_rows();
-}
-
-/* ringnav, before stock's song skip: on the App Store, Previous opens Apps and Next Games.
- * ponytail: a toast on top (msginfo_dialog, 0x49b7c8) stops them for its time, as for field_key;
- * looking past it (smart_wifi.c page_in_use) would lift that. */
-int shelf_key(widget_t *top, unsigned key) {
-    if (!sh.page || top != sh.page || (key != KEY_BACK_BTN && key != KEY_FWD_BTN)) return 0;
-    shelf_tab(key == KEY_FWD_BTN);
-    return 1;
 }
 
 /* Streaming → Configuration's Erase Spotify Data (navigation.c): with start, Spotify's login, cache

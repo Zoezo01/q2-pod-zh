@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.9.4**:
+  - Library: **Era** has two tabs, **Decades** and **Years**. **Years** lists each year with albums, newest first; a year opens its albums, with **Play All** and **Shuffle**, as a decade does. Tap a tab, or press **Previous** or **Next**. Era opens on **Decades**, as before.
   - Cover Flow: under Classic and Classic Modern, Return from a song picked on a turned-over album goes back to the covers: the cover flies from Now Playing's art to the middle as the other covers slide in from the edges, as in spghetti's Cover Flow lab.
 - **1.9.3**:
   - Now Playing: a song rated 1 to 4 hearts fills the heart from the bottom, more for each heart, in place of the number on its corner. A full heart is still 5, **My Fav**.
