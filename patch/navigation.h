@@ -493,7 +493,6 @@ void confirm_lit(canvas_t *canvas, const rect_t *c);
 void confirm_labels_flat(widget_t *w, canvas_t *canvas, int form);
 
 /* np_marks.c */
-void np_mark_add(widget_t *const *image, unsigned n);
 void np_marks_page(widget_t *win);
 void np_marks(widget_t *w, canvas_t *canvas);
 
