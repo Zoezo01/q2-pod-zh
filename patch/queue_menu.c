@@ -68,10 +68,18 @@ static void *page_tracks(widget_t *page) {
                                 : coverflow_tracks(page);
 }
 
-/* The page whose row the menu is for: the one it opened over while it is up (a blink keeps it on
- * top as the row is read), else the top one, before it opens. */
+/* The page whose row the menu is for: the one it opened over while it or its Add to Playlist
+ * picker is up (a blink keeps it on top as the row is read), else the top one, before it opens. */
 static widget_t *qm_under(void) {
-    return st.qm_dialog ? qm.qm_page : window_manager_get_top_window(window_manager());
+    return st.qm_dialog || st.qm_playlist ? qm.qm_page
+                                          : window_manager_get_top_window(window_manager());
+}
+
+/* An album the picker adds as Play Next queues it (qm_collect), not as stock's add would: a
+ * Coverflow cover, which has no showlist row, and an Albums row, whose stock add takes every album
+ * of the name. */
+int qm_own_songs(void) {
+    return qm.qm_kind == QM_COVERALBUM || (qm.qm_kind == QM_ALBUM && qm.qm_cls == CLASS_ALBUMS);
 }
 
 static void *qm_list(void) {
@@ -371,7 +379,7 @@ static int qm_run(const void *unused) {
         navigator_to_with_context(
             "localmusic/playlist_page",
             (void *)(long)((qm.qm_kind == QM_PLAYING ? 0x20000 : 0x10000) | cls));
-        if (qm.qm_kind == QM_PLAYING) {
+        if (qm.qm_kind == QM_PLAYING || qm_own_songs()) {
             widget_t *top = window_manager_get_top_window(window_manager());
             if (!tk_strcmp(widget_get_prop_str(top, "name", ""), "playlist_page")) {
                 st.qm_playlist = top;
@@ -588,7 +596,8 @@ static int qm_open(const void *unused) {
     unsigned aid = song ? 0 : qm_album_id(r);
     int album_hearts = aid ? rate_kept(1, aid) : 0;
     if (aid) acts[n++] = album_hearts == 5 ? QA_UNFAV : QA_FAV, acts[n++] = QA_RATE;
-    if (qm.qm_kind < QM_COVERFLOW || qm.qm_kind == QM_PLAYING) acts[n++] = QA_PLAYLIST;
+    if (qm.qm_kind < QM_COVERFLOW || qm.qm_kind == QM_PLAYING || qm.qm_kind == QM_COVERALBUM)
+        acts[n++] = QA_PLAYLIST;
     /* a card app's song isn't in the Library: Go to only to the app's own page */
     int hidden = song && !addon_goes(P(r, REC_PATH));
     if ((qm.qm_kind == QM_SONG || qm.qm_kind == QM_PLAYING) && album && *album && !hidden &&

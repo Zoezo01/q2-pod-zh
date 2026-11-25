@@ -755,6 +755,7 @@ int confirm_over(const char *text, const char *verb, int tray);
 void *click_bound(widget_t *w, const void *fn); /* w's EVT_CLICK item bound to fn, or any if 0 */
 void qm_playlist_bind(widget_t *w, int depth, int (*pick)(void *, event_t *));
 void qm_select(void);
+int qm_own_songs(void);
 int qm_playlist_gone(void *ctx, event_t *event);
 int qm_playlist_pick(void *ctx, event_t *event);
 int ple_key(unsigned key, int phase);
