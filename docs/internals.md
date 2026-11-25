@@ -21,7 +21,7 @@ Checked MIPS prologues redirect into a payload at `0xb00000`, using the final un
 | `set_equalizer_value`                 | `0x5039c0` | Keeps the stock filter and ties the EQ icon to 3EQ or PEQ being on                                                                      |
 | `home_page_init`                      | `0x534b6c` | Binds the Coverflow card (iPod: row), then iPod Home art and layout                                                                     |
 | `load_localclass_list`                | `0x51357c` | Drops an empty Unknown row ([Unknown rows](#unknown-rows))                                                                              |
-| `scanAllMusicFile`                    | `0x5072f8` | Walks the card for folder markers ([discovery.md](discovery.md)), then as `deleteMusicFromMusicDb`, then indexes `songtable`            |
+| `scanAllMusicFile`                    | `0x5072f8` | Walks the card for folder markers, then as `deleteMusicFromMusicDb`, then indexes `songtable`            |
 | `scanSpecFolder`                      | `0x5074d4` | The same                                                                                                                                |
 | `deleteMusicFromMusicDb`              | `0x50b794` | Marks Coverflow's album list stale, before and after stock runs                                                                         |
 | `main_loop_sleep_default`             | `0x65c470` | Screen off: the UI loop idles longer ([Battery](#battery))                                                                              |
