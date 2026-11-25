@@ -2284,7 +2284,7 @@ def visualizer_check(tmp):
         lib.vis_bands((C.c_float * (2 * n))(*pcm), rate, out)
         return list(out)
     assert levels([0.0] * (2 * n)) == [0.0] * bands  # silence rests
-    edge = lambda b: int(40 * 400 ** (b / bands) * n / rate + 0.5)  # the C band_bin
+    edge = lambda b: int(40 * 400 ** (b / bands) * n / rate + 0.5)  # visualizer.c's vis_bands edge
     for k in (12, 100, 300):  # a sine exactly on bin k, in both channels
         pcm = [math.sin(2 * math.pi * k * i / n) for i in range(n) for _ in (0, 1)]
         got, want = levels(pcm), max(b for b in range(bands) if edge(b) <= k)
