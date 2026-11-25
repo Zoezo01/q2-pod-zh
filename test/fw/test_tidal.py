@@ -51,8 +51,7 @@ class Card(Files):
                                                   if p.startswith(path + '/') and '/' not in p[len(path) + 1:])
         return 0x3100 + self.handles
 
-    def readdir(self, d, *_):
-        return dir_readdir(self, d)
+    readdir = dir_readdir
 
     def stat(self, version, path, st, *_):
         path = C.string_at(path).decode()

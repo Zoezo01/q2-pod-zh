@@ -141,8 +141,7 @@ class World:
             self.written.setdefault(name, self.files.get(name, b''))
         return f
 
-    def fread(self, buf, size, n, f, *_):
-        return card_fread(self, buf, size, n, f)
+    fread = card_fread
 
     def fseek(self, f, off, *_):
         self.at[f] = off

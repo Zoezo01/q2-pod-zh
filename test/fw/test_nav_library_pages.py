@@ -1878,8 +1878,7 @@ class Card(Files):
         self.dirs[0x3100 + len(self.ents)] = names
         return 0x3100 + len(self.ents)
 
-    def readdir(self, d, *_):
-        return dir_readdir(self, d)
+    readdir = dir_readdir
 
     def paths(self, queue):
         return [field(r, 'path') for r in queue]

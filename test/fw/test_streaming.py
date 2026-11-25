@@ -228,8 +228,7 @@ class Files:
             f = len(self.names) + 1
             self.names[f], self.at[f] = name, 0
             return f
-        def fread(buf, size, n, f, *_):
-            return card_fread(self, buf, size, n, f)
+        fread = lambda *a: card_fread(self, *a)
         def fseek(f, at, whence, *_):
             self.at[f] = len(self.files[self.names[f]]) if whence == 2 else at
         fw.mock('fw_fopen', fopen)
