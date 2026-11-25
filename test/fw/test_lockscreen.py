@@ -521,14 +521,20 @@ class Window:
     """Widgets by name, each a zeroed block with its box's width and height; widget_lookup finds them. The
     properties set on them are read as they're set: a style key can be on the caller's stack."""
     def __init__(self, fw, names, size=(375, 320)):
-        self.fw, self.widgets, self.blocks, self.set = fw, {}, [], []
+        self.fw, self.widgets, self.blocks, self.set, self.looked = fw, {}, [], [], []
         for name in names:
             self.add(name, *size)
-        fw.mock('widget_lookup', lambda win, name, *_: self.widgets.get(C.string_at(name).decode(), 0))
+        fw.mock('widget_lookup', self.lookup)
         fw.mock('widget_set_prop_int', lambda w, key, value, *_: self.set.append(
             ('widget_set_prop_int', w, C.string_at(key).decode(), C.c_int(value).value)))
         fw.mock('widget_set_prop_str', lambda w, key, value, *_: self.set.append(
             ('widget_set_prop_str', w, C.string_at(key).decode(), C.string_at(value).decode())))
+
+    def lookup(self, win, name, deep, *_):
+        """widget_lookup: the name read now, as it can be on the caller's stack; each (name, deep) kept."""
+        name = C.string_at(name).decode()
+        self.looked.append((name, deep))
+        return self.widgets.get(name, 0)
 
     def add(self, name, w=375, h=320):
         self.blocks.append(C.create_string_buffer(0x400))
@@ -791,19 +797,18 @@ def test_every_widget_is_found_however_deep_it_sits(fw, clock, flow):
     Battery(fw)
     timers(fw)
     if flow == 'info':
-        lock_window(fw, WALLS[TIDE], names=INFO, THEME='1')
+        win = lock_window(fw, WALLS[TIDE], names=INFO, THEME='1')
     elif flow == 'large':
-        lock_window(fw, WALLS[TIDE], names=CLOCK, LOCKCLOCK='1')
+        win = lock_window(fw, WALLS[TIDE], names=CLOCK, LOCKCLOCK='1')
     elif flow == 'rows':
-        Picker(fw, [b'screensaver_default', *WALLS])
+        win = Picker(fw, [b'screensaver_default', *WALLS]).win
     else:
-        Window(fw, ['img_playcover'])
+        win = Window(fw, ['img_playcover'])
         fw.mock('stock_savercover_trampoline', lambda *_: 0)
         fw.fn('lockscreen_cover', C.c_int, C.c_void_p)(0x7700)
     # a switch row's own parts are its button's children, looked up there alone (list_toggle)
-    own = (b'_setting_switch', b'_setting_value')
-    lookups = [c for c in fw.calls('widget_lookup') if C.string_at(c[1][1]) not in own]
-    assert lookups and [args[2] for _, args in lookups] == [1] * len(lookups)
+    lookups = [deep for name, deep in win.looked if name not in ('_setting_switch', '_setting_value')]
+    assert lookups and lookups == [1] * len(lookups)
 
 
 # The picker's thumbnails (lockscreen_rows).
