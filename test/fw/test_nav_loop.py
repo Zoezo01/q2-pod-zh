@@ -904,29 +904,17 @@ def test_no_database_no_pass(fw, st):
     assert not lib.run(12) and lib.copy() is None
 
 
-# Rockbox from Home (docs/boot.md#rockbox-from-home).
-def rockbox(fw, there=True):
-    def stat(version, path, info, *_):
-        C.c_uint.from_address(info + 20).value = 0o100755
-        return 0 if there else -1
-    fw.mock('fw___xstat', stat)
-    return Files(fw, {})
+# A takeover app's hand-over (docs/boot.md#apps-that-take-over-the-device); test_addon.py has its flag.
+def hand_over(fw):
+    fw.fn('ringnav_hand_over', None)()
 
 
-def test_no_rockbox_toasts_and_stays(fw, st):
-    seen = toasts(fw)
-    card = rockbox(fw, there=False)
-    assert fw.fn('rockbox_open', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 0
-    assert len(seen) == 1 and not fw.calls('fw_system') and not card.files and not fw.calls('save_memoryplay_info')
-
-
-def test_rockbox_leaves_its_flag_and_ends_demo(fw, power):
-    card = rockbox(fw)
+def test_the_hand_over_ends_demo(fw, power):
+    Files(fw, {})
     power('wdt').value = 6
     ran = []
-    fw.mock('fw_system', lambda cmd, *_: ran.append(C.string_at(cmd)))  # the command is built on rockbox_open's stack
-    fw.fn('rockbox_open', C.c_int, C.c_void_p, C.c_void_p)(None, None)
-    assert host.tools_build.ROCKBOX_FLAG in card.files  # S90play runs Rockbox on it
+    fw.mock('fw_system', lambda cmd, *_: ran.append(C.string_at(cmd)))  # the command is built on the hand-over's stack
+    hand_over(fw)
     cmd = ran[-1]
     assert cmd.endswith(b'kill -9 $PPID') and b'checkappprocess.sh' in cmd and b'hciplayer' in cmd
     assert fw.calls('save_memoryplay_info')  # the queue kept as power-off keeps it
@@ -935,10 +923,10 @@ def test_rockbox_leaves_its_flag_and_ends_demo(fw, power):
 
 
 @pytest.mark.parametrize('held, enabled', [(1, [1]), (0, [])])
-def test_rockbox_gets_charging_back(fw, st, held, enabled):
-    rockbox(fw)
+def test_the_hand_over_gives_charging_back(fw, st, held, enabled):
+    Files(fw, {})
     st('charge_held').value = held
-    fw.fn('rockbox_open', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    hand_over(fw)
     assert [c[1][0] for c in fw.calls('switch_charge_enable')] == enabled
 
 
@@ -951,21 +939,21 @@ def bt_link(fw, link=b'1', codec=1, way=1):
 
 
 @pytest.mark.parametrize('limit, level', [(100, 127), (60, 76), (150, 127), (0, 0)])
-def test_rockbox_opens_the_headsets_volume_to_the_limit(fw, st, limit, level):
-    rockbox(fw)
+def test_the_hand_over_opens_the_headsets_volume_to_the_limit(fw, st, limit, level):
+    Files(fw, {})
     bt_link(fw)
     fw.var('g_maxvolume', C.c_ubyte).value = limit
     fw.mock('btctl_transport_get_volume', lambda *_: 40)
-    fw.fn('rockbox_open', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    hand_over(fw)
     assert [c[1][0] for c in fw.calls('btctl_transport_set_volume')] == [level]
 
 
 @pytest.mark.parametrize('link, current', [(b'0', 40), (b'1', 128), (b'1', -1)])
-def test_rockbox_leaves_a_headset_without_absolute_volume(fw, st, link, current):
-    rockbox(fw)
+def test_the_hand_over_leaves_a_headset_without_absolute_volume(fw, st, link, current):
+    Files(fw, {})
     bt_link(fw, link)
     fw.mock('btctl_transport_get_volume', lambda *_: current)
-    fw.fn('rockbox_open', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    hand_over(fw)
     assert not fw.calls('btctl_transport_set_volume')
 
 

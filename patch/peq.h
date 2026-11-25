@@ -275,7 +275,7 @@ void press_stamp(void), press_forget(void);
 #define MUTE_FILE PEQ_ROOT "/tmp/q2mute"
 void mute_stamp(void);
 /* librespot (spotify.c) and its restart loop, whose pid its launcher left, stopped: Spotify's idle
- * stop and Home's Rockbox row, which lets ALSA go too. A q2video sink ends with librespot's pipe.
+ * stop and a takeover app's row, which lets ALSA go too. A q2video sink ends with librespot's pipe.
  */
 #define SPOT_OUT "/tmp/q2-librespot.out" /* the output for the card's aplay.sh, none on the DAC */
 #define SPOT_DOWNLOAD                                                                              \
@@ -570,7 +570,10 @@ int addon_games(void), addon_game_start(int k);
 int addon_game_front(void), addon_game_keys(void);
 int addon_game_audio(
     void); /* a card game with audio=1 runs: the sound and the media keys are its */
-int addon_game_open(const char *id); /* Home's Shortcut: the card game with this id, -1 none */
+int addon_open_app(const char *id); /* Home's Shortcut: the app with this id pressed, -1 none */
+const char *addon_name_of(const char *id);
+int addon_sorted(int game, int *slots);
+void ringnav_hand_over(void); /* navigation.c: demo ends for a takeover app (addon.c takeover) */
 const char *addon_game_name(int k);
 /* games.c: the theme's pop-up for a card game (Q2_POPUP's value), 7 + 6 * 7 + 64 * 7 + 1 bytes at
  * most */
@@ -863,10 +866,9 @@ widget_t *coverflow_playlists_close(void);
 void playlist_open(widget_t *win, int cd_num);
 unsigned playlist_index(int cd_num);
 void playlists_edit(int edit);
-int rockbox_available(void);   /* theme_engine.c: a regular Rockbox binary on the card */
-int groovebox_available(void); /* theme_engine.c: the Groovebox card app's binary on the card */
-#define SHORTCUT_GROOVEBOX 10  /* IPOD SHORTCUT's Groovebox, after the ten stock-era values */
-#define SHORTCUT_NONE 11       /* IPOD SHORTCUT's None: Home has no Shortcut row */
+int rockbox_available(void); /* theme_engine.c: a regular Rockbox binary on the card */
+#define SHORTCUT_APP 0       /* IPOD SHORTCUT's card app, IPOD SHORTCUT_APP its id */
+#define SHORTCUT_NONE 11     /* IPOD SHORTCUT's None: Home has no Shortcut row */
 int page_keyup(void *ctx, event_t *event); /* navigation.c: Return leaves a payload page */
 int ringnav_localclass(int cls);           /* navigation.c: load_localclass_list's hook */
 int shelf_open(void *ctx, event_t *event); /* netupdate.c: Library's App Store page */

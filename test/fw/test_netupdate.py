@@ -1488,10 +1488,8 @@ def test_a_press_without_wifi_says_so(fw):
     assert p.sh.job == 0 and p.toasts == ['Connect to Wi-Fi first']
 
 
-def test_rockbox_asks_twice_as_it_becomes_the_default(fw):
+def test_rockbox_installs_on_one_press_as_any_app(fw):
     p = Page(fw, b'x/q2-rockbox')
-    p.click()
-    assert p.sh.job == 0 and p.label(1).endswith('Press again to install')
     p.click()
     assert p.sh.job == JOB_INSTALL
 
@@ -2969,17 +2967,15 @@ def test_an_install_that_fails_says_why_and_leaves_the_card_alone(fw, case, said
     assert sorted(card.files) == [SOURCES, MOUNTS]
 
 
-def test_rockbox_installs_on_a_second_press_keeping_its_config(fw):
+def test_rockbox_installs_keeping_its_config_and_says_where_its_row_is(fw):
     card = Disk(fw, {SOURCES: b'x/q2-rockbox Rockbox\n', b'/mnt/mmc/.rockbox/config.cfg': b'mine'})
     store_net(fw, {'.rockbox/rockbox': b'bin', '.rockbox/config.cfg': b'defaults', '.rockbox/fonts/a.fnt': b'font'},
               listed=b'x/q2-rockbox Rockbox\n')
     s = Store(fw, card, wifi=0)
     s.wifi = 1
     s.click()
-    label, = s.labels()
-    assert label.endswith('Press again to install') and not s.workers
-    s.click()
-    assert s.run() == 0 and s.toasts == ['Rockbox is ready. Find it on Home'] and s.labels() == ['Installed']
+    # its q2app (row=library) isn't in this zip: the generic toast's place is Streaming's, as for any app without one
+    assert s.run() == 0 and s.toasts == ['Rockbox is ready in Streaming'] and s.labels() == ['Installed']
     assert card.files[b'/mnt/mmc/.rockbox/config.cfg'] == b'mine' and card.files[b'/mnt/mmc/.rockbox/rockbox'] == b'bin'
     assert card.moves(b'/mnt/mmc/.rockbox/') == [b'/mnt/mmc/.rockbox/fonts/a.fnt', b'/mnt/mmc/.rockbox/rockbox']
 
@@ -3333,8 +3329,8 @@ def test_a_checks_age_counts_the_time_slept_in_standby(fw):
     assert s.sh.job == JOB_CHECK  # over SH_STALE_MS old: checked again
 
 
-def test_rockbox_s_armed_line_runs_to_the_rows_end_with_no_state_beside_it(fw):
-    """\"Starts at power-on. Press again to install" (258 px in Classic) needs the room the state's word leaves."""
+def test_an_armed_line_runs_to_the_rows_end_with_no_state_beside_it(fw):
+    """An armed row's line, "Press again to remove", has the room the state's word leaves."""
     moved = {}
     props = {}
     fw.mock('widget_get_child', lambda item, i, *_: 500 + i)

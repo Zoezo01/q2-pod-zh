@@ -244,30 +244,29 @@ GLYPH_FALLBACK_MACRO = '#define GLYPH_FALLBACK_RANGES {' + ','.join(f'0x{u:x}' f
 # rootfs's own libraries, with display_logo's inode metadata.
 HELPER, HELPER_LIKE = 'usr/bin/q2video', 'usr/bin/display_logo'
 HELPER_LIBS = ['lib/libc-2.28.so', 'lib/libpthread-2.28.so', 'usr/lib/libasound.so.2.0.0']
-# Rockbox dual boot (docs/boot.md#rockbox): S90play starts Rockbox whenever the card has it, as an
-# iPod with Rockbox does. Play/Pause held at power-on (patch/boot.c reads the key) or Rockbox's
-# exit 0x51 (Boot stock OS) starts Q2 Pod for that session only. boot-target selects the next
-# power-on default (missing or invalid retains Rockbox). ponytail: the card's mount is awaited (up to 3 s without a card)
-# unless Q2 Pod was asked for, as the card probe can't tell "no card" from "not yet". Rockbox runs
+# Rockbox dual boot (docs/boot.md#rockbox): S90play starts Rockbox when boot-target says rockbox (Power's Boot to)
+# and the card has it. Play/Pause held at power-on (patch/boot.c reads the key) or Rockbox's
+# exit 0x51 (Boot stock OS) starts Q2 Pod for that session only. ponytail: the card's mount is awaited (up to 3 s
+# without a card) once Rockbox was asked for, as the card probe can't tell "no card" from "not yet". Rockbox runs
 # with the launcher contract in its tools/shanlingq2/README; demo starts when it exits, or when the
-# card has none. demo keeps its argv[0], which checkappprocess.sh pgreps for. iPod's Home Rockbox row
-# (navigation.c rockbox_open) leaves ROCKBOX_FLAG and kills demo: Rockbox runs again, its
-# watchdog stopped in case demo's kill was not reached, then demo once more. Any other end of demo
-# ends the loop, so the watchdog reboots as stock's would. Wi-Fi is off while Rockbox runs (WIFI_OFF).
+# card has none. demo keeps its argv[0], which checkappprocess.sh pgreps for. A takeover card app's row
+# (addon.c takeover, docs/boot.md#apps-that-take-over-the-device) leaves its id in TAKEOVER_FLAG and kills demo:
+# app() runs its .<id>/q2-<id>, the watchdog stopped in case demo's kill was not reached, then demo once more. Any
+# other end of demo ends the loop, so the watchdog reboots as stock's would. Wi-Fi is off while an app runs (WIFI_OFF).
 BOOT = 'usr/bin/q2boot'
 REMOTE = 'usr/bin/q2remote'
 S90PLAY = 'etc/init.d/S90play'
-ROCKBOX_FLAG = '/tmp/q2pod-rockbox'
-# Rockbox can't use Wi-Fi and the radio costs battery, so rockbox() below stops it. Nothing is saved or restored
-# here: demo, which follows every Rockbox exit, restarts Wi-Fi from WIFI in config.ini, which wifi_switch writes on
-# every toggle. That covers a forced reset during Rockbox too, and writing the config here would lose the user's choice.
+TAKEOVER_FLAG = '/tmp/q2pod-takeover'
+# An app in demo's place has no Wi-Fi (Rockbox can't use it) and the radio costs battery, so app() below stops it.
+# Nothing is saved or restored here: demo, which follows every app's exit, restarts Wi-Fi from WIFI in config.ini, which wifi_switch writes on
+# every toggle. That covers a forced reset during the app too, and writing the config here would lose the user's choice.
 # No rmmod 8733bs: that module also holds Bluetooth's power line, and Bluetooth must survive the hand-over.
 # The rest ends as stock's networkStop does. wifi_connect.sh because demo may have just started it. No ifconfig wlan0
 # 0.0.0.0: BusyBox brings a down interface up to set an address, which would wake a cold boot's radio; demo clears it.
-# Home's hand-over pauses first: a shell demo forked for one of these just before it died isn't named yet, and would
-# start Wi-Fi under Rockbox. demo is gone, so nothing new can start and a short wait is enough. Not a wait for Wi-Fi to
+# A takeover pauses first: a shell demo forked for one of these just before it died isn't named yet, and would
+# start Wi-Fi under the app. demo is gone, so nothing new can start and a short wait is enough. Not a wait for Wi-Fi to
 # finish starting: wifi_connect.sh exits before its /tmp/wpasupplicant_initsuccess without a saved network, and demo
-# starts udhcpc later too. A second pass 2 s in, called off if Rockbox has already left and demo is starting Wi-Fi
+# starts udhcpc later too. A second pass 2 s in, called off if the app has already left and demo is starting Wi-Fi
 # again, catches a shell that took longer. ponytail: 300 ms and 2 s are guesses; a shell slower than 2 s still escapes.
 WIFI_OFF = 'killall -9 wifi_connect.sh udhcpc wpa_supplicant 2>/dev/null; ifconfig wlan0 down 2>/dev/null'
 BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
@@ -298,21 +297,23 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             [ -f $l ] && mv -f $l $l.1
             mv -f $l.new $l && sync && rm -f $c
         ) &
-        rb=/mnt/mmc/.rockbox
-        rockbox() {{
-            [ -f $rb/rockbox ] || return
-            /usr/bin/cmd_gpio set_func PE22 output0  # Rockbox never drives the charge pin, so the S12 inhibit would stay on
-            # Rockbox only starts here, so power-on and Home's hand-over both lose Wi-Fi (build.py WIFI_OFF)
+        # card folder .$1's binary $2 in demo's place, its log $2.log beside it
+        app() {{
+            d=/mnt/mmc/.$1
+            [ -f $d/$2 ] || return
+            /usr/bin/cmd_gpio set_func PE22 output0  # nothing drives the charge pin with demo gone, so the S12 inhibit would stay on
+            # an app only starts here, so power-on and a takeover both lose Wi-Fi (build.py WIFI_OFF)
             {WIFI_OFF}
-            (cd $rb && exec ./rockbox) > $rb/rockbox.log 2>&1
-            echo "exit $?" >> $rb/rockbox.log
+            (cd $d && exec ./$2) > $d/$2.log 2>&1
+            echo "exit $?" >> $d/$2.log
             # demo starts Bluetooth afresh: stock closeBluetooth's daemon/ready-file cleanup and PD20 low,
             # without switchBluetooth's settings writes. Keep the radio module loaded: it also supplies Wi-Fi.
             killall -9 bluetoothd bluealsa rtk_hciattach 2>/dev/null
             rm -f /tmp/rtk_init_success /tmp/bt_startup
             /usr/bin/cmd_gpio set_func PD20 output0
         }}
-        if [ "$(cat /mnt/data/boot-target 2>/dev/null)" != q2pod ] && ! /usr/bin/q2boot; then
+        rockbox() {{ app rockbox rockbox; }}
+        if [ "$(cat /mnt/data/boot-target 2>/dev/null)" = rockbox ] && ! /usr/bin/q2boot; then
             for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
                 [ -e /tmp/mmc_add ] && break
                 usleep 200000
@@ -320,9 +321,9 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             rockbox
         fi
         # Every register in the kernel log when a signal ends demo or a helper (show_regs), where a fault otherwise
-        # leaves its address, epc and ra alone; the crash log keeps the log's end (docs/boot.md#rockbox-from-home)
+        # leaves its address, epc and ra alone; the crash log keeps the log's end (docs/boot.md#apps-that-take-over-the-device)
         echo 1 > /proc/sys/kernel/print-fatal-signals
-        # demo's stderr (docs/boot.md#rockbox-from-home): stock starts its Bluetooth and Wi-Fi helpers from demo,
+        # demo's stderr (docs/boot.md#apps-that-take-over-the-device): stock starts its Bluetooth and Wi-Fi helpers from demo,
         # so they inherit it and their reasons for failing land here, in RAM, instead of on the serial console;
         # emptied once a minute past 512 KB (O_APPEND keeps demo writing at its end), its tail goes in the crash
         # log. stdout stays on the console as stock's; --dev takes both (LOG_HOOK)
@@ -330,13 +331,15 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
         while :; do
             /release/bin/demo 2>>/tmp/q2-demo.err
             s=$?
-            [ -e {ROCKBOX_FLAG} ] || break
-            rm -f {ROCKBOX_FLAG}
+            [ -e {TAKEOVER_FLAG} ] || break
+            id=$(cat {TAKEOVER_FLAG})
+            rm -f {TAKEOVER_FLAG}
             killall checkappprocess.sh 2>/dev/null
             # demo is gone: what it just launched gets this long to reach a name WIFI_OFF kills (build.py)
             usleep 300000
             (usleep 2000000; {WIFI_OFF}) &
-            rockbox
+            # an id as valid_id passes it (addon.c), as it goes in a path; else demo again
+            case $id in *[!a-z0-9-]*|'') ;; *) app $id q2-$id ;; esac
             kill $! 2>/dev/null
         done
         # 0 and 143 are a power-off's, but a clean end (ringnav_clean_end) removes $m first: still there, it wasn't one
@@ -379,7 +382,7 @@ LOG_HOOK = (b'        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.er
             b'        while :; do\n            /release/bin/demo >>/tmp/q2-demo.log 2>&1\n')
 # --dev only: the wheel's frame log (playback.c wl_flush) and stale-press notes (navigation.c stale_note) go to the
 # card's q2-wheel.log, appended, when the card is up, up to 256 KB. In BOOT_HOOK's start path.
-WHEEL_LOG_HOOK = (b'        rb=/mnt/mmc/.rockbox\n',
+WHEEL_LOG_HOOK = (b'        # card folder .$1\'s binary $2 in demo\'s place, its log $2.log beside it\n',
                   b'        w=/mnt/data/q2-wheel.log\n'
                   b'        [ -f $w ] && (\n'
                   b'            i=0\n'
@@ -391,7 +394,7 @@ WHEEL_LOG_HOOK = (b'        rb=/mnt/mmc/.rockbox\n',
                   # renamed first: a flush after this makes a new file for the next boot
                   b'            mv -f $w $w.m && cat $w.m >> $c && sync && rm -f $w.m\n'
                   b'        ) &\n'
-                  b'        rb=/mnt/mmc/.rockbox\n')
+                  b'        # card folder .$1\'s binary $2 in demo\'s place, its log $2.log beside it\n')
 # The byte in bluealsa's AAC capability holding the 44.1 kHz bit; see docs/internals.md.
 BLUEALSA = 'usr/bin/bluealsa'
 # Its launcher: keep the A2DP transport open 5 s after hciplayer closes the PCM (a stop, a skip, a cold start), so
@@ -1879,7 +1882,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-Wshadow','-Wimplicit-int-conversion','-Wconditional-uninitialized','-Wmissing-variable-declarations',
          '-Wvla','-Wundef']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'flat.c', 'clock.c', 'queue_menu.c', 'np_marks.c', 'rotate.c', 'netservice.c', 'addon_bar.c', 'side_seek.c', 'language.c', 'bidi_text.c', 'card_theme.c', 'card_rules.c', 'sleep_row.c', 'samplerate.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'flat.c', 'clock.c', 'queue_menu.c', 'np_marks.c', 'rotate.c', 'netservice.c', 'addon_bar.c', 'side_seek.c', 'language.c', 'bidi_text.c', 'card_theme.c', 'card_rules.c', 'sleep_row.c', 'samplerate.c', 'shortcut_pick.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""
@@ -2021,7 +2024,7 @@ def stock_header(context, ranges, themes, dev=0, repo=REPO):
     # iPod's image hook leaves the settings icons' category colours alone (navigation.c settings_icon).
     names = ''.join(n.removesuffix('.png') + '\\0' for n in SETTINGS_ICONS)
     header.append(f'#define SETTINGS_ICON_NAMES "{names}"')
-    header.append(f'#define ROCKBOX_FLAG "{ROCKBOX_FLAG}"')  # Home's Rockbox row, for S90play
+    header.append(f'#define TAKEOVER_FLAG "{TAKEOVER_FLAG}"')  # a takeover app's id, for S90play
     header.append(f'#define APP_UID {APP_UID}')  # card apps' uid (app_user.c), the card's at each mount
     # About: the stock firmware's version on its own row, and this build's on the CFW. Version row.
     header += [f'#define STOCK_VERSION "{STOCK_VERSION}"', f'#define Q2POD_VERSION "{VERSION}{f" dev {dev}" if dev else f" beta {BETA}" if BETA else ""}"',

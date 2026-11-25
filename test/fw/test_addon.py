@@ -43,7 +43,7 @@ class App(C.Structure):
                 *((n, C.c_int) for n in ('qr', 'game', 'audio', 'view', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop',
                                          'nowifi', 'row', 'wifi', 'wifi_off')),
                 *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play')), ('baricon', C.c_char * 56),
-                ('barword', C.c_char * 12), ('barw', C.c_int), ('root', C.c_int)]
+                ('barword', C.c_char * 12), ('barw', C.c_int), ('root', C.c_int), ('takeover', C.c_int)]
 
 
 class Ap(C.Structure):
@@ -794,7 +794,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar switch playkept playing\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar switch playkept playing takeover\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -2603,10 +2603,10 @@ def test_a_game_starts_from_a_library_or_streaming_row_too(fw, row, press):
 
 
 def test_the_shortcut_finds_a_game_whose_row_is_elsewhere(fw):
-    g = CardGame(fw, snake=b'name=Snake\ngame=1\nrow=library\n', tools=b'name=Tools\nrow=games\n')
-    opened = fw.fn('addon_game_open', C.c_int, C.c_char_p)
-    assert opened(b'tools') == -1 and not g.on()  # in Games, but no game
-    assert opened(b'snake') == 1 and g.on() == g.PID
+    g = CardGame(fw, snake=b'name=Snake\ngame=1\nrow=library\n', tools=b'name=Tools\nrow=games\nhidden=1\n')
+    opened = fw.fn('addon_open_app', C.c_int, C.c_char_p)
+    assert opened(b'tools') == -1 and opened(b'nothere') == -1 and not g.on()  # hidden, or no such app
+    assert opened(b'snake') == 0 and g.on() == g.PID
 
 
 @pytest.mark.parametrize('manifest, drops', [(b'name=Snake\ngame=1\n', True), (b'name=Snake\ngame=1\nroot=1\n', False)])
@@ -6746,43 +6746,71 @@ def test_hostile_rules_files(fw):
 
 
 
-def shortcut(fw, value):
-    """IPOD SHORTCUT in config.ini, every other key its default; Home's shortcut row's click."""
-    Config(fw, SHORTCUT=value)
+def shortcut(fw, app):
+    """IPOD SHORTCUT the card app with id app, every other key its default; Home's shortcut row's click."""
+    Config(fw, SHORTCUT=b'0', SHORTCUT_APP=app)
     return fw.fn('home_shortcut_open', C.c_int, C.c_void_p, C.c_void_p)
 
 
-def test_the_groovebox_shortcut_starts_the_card_game_with_the_sound(fw):
-    card(fw, groovebox=b'name=Groovebox\ngame=1\naudio=1\n')
+def test_a_card_game_shortcut_starts_it_with_the_sound(fw):
+    card(fw, beats=b'name=Beats\ngame=1\naudio=1\n')
     fw.mock('fw_fork', lambda *_: 77)
     fw.mock('fw_socket', lambda *_: 9)
     seen = toasts(fw)
-    assert shortcut(fw, b'10')(None, None) == 0 and seen == []
+    assert shortcut(fw, b'beats')(None, None) == 0 and seen == []
     gm = fw.var('addon__gm', Game)
-    assert (gm.pid, gm.audio, gm.sock, gm.path) == (77, 1, 9, b'/tmp/q2-groovebox.input.sock')
+    assert (gm.pid, gm.audio, gm.sock, gm.path) == (77, 1, 9, b'/tmp/q2-beats.input.sock')
     assert fw.calls('player_stop') and fw.calls('mclSetMute') and fw.calls('device_set_volume')  # the jack readied, dac_take
 
 
-@pytest.mark.parametrize('folder, said', [({}, b'Groovebox is not on the card'),
-                                          ({'groovebox': b'name=Groovebox\n'}, b"Groovebox can't start from the card")])
-def test_the_groovebox_shortcut_says_when_no_card_game_is_it(fw, folder, said):
-    """No .groovebox, or one whose q2app isn't a game's: the binary is there, the row shows, the tap says so."""
+@pytest.mark.parametrize('folder, said', [({}, b'beats is not on the card'),
+                                          ({'beats': b'name=Beats\nhidden=1\n'}, b'Beats is not on the card')])
+def test_a_card_app_shortcut_says_when_the_card_has_no_such_app(fw, folder, said):
+    """No .beats, or a hidden one: named by its id until a scan has read its name."""
     card(fw, other=b'name=Other\ngame=1\n', **folder)
     fw.mock('fw_fork', lambda *_: 77)
     seen = toasts(fw)
-    assert shortcut(fw, b'10')(None, None) == 0
+    assert shortcut(fw, b'beats')(None, None) == 0
     assert seen == [said] and not fw.calls('fw_fork')
-    opened = fw.fn('addon_game_open', C.c_int, C.c_char_p)
-    assert opened(b'groovebox') == -1 and not fw.calls('fw_fork')
-    assert opened(b'other') == 1 and fw.calls('fw_fork') and not fw.calls('player_stop')  # a game without the sound
+
+
+def test_a_card_app_shortcut_opens_its_page(fw):
+    opened = shortcut(fw, b'foo')  # the settings read before the page's theme() reads them
+    fw.fn('accent', C.c_int)()
+    p = Page(fw, b'name=Foo\nrow=library\n', opens=False)
+    assert opened(None, None) == 0
+    assert p.pg.page == p.page and (p.top.op, p.top.title) == (b'menu', b'Foo')
 
 
 def test_a_card_game_that_can_t_fork_says_so(fw):
-    card(fw, groovebox=b'name=Groovebox\ngame=1\naudio=1\n')
+    card(fw, beats=b'name=Beats\ngame=1\naudio=1\n')
     fw.mock('fw_fork', lambda *_: -1)
     seen = toasts(fw)
-    assert shortcut(fw, b'10')(None, None) == 0
+    assert shortcut(fw, b'beats')(None, None) == 0
     assert seen == [b"It couldn't start"] and fw.var('addon__gm', Game).pid == 0 and fw.calls('player_stop')
+
+
+# takeover=1 (docs/boot.md#apps-that-take-over-the-device): the row leaves the app's id for S90play and ends demo.
+TAKEOVER = b'name=Rockbox\nrow=library\ntakeover=1\nwifi=0\nstop=0\n'
+
+
+def test_a_takeover_apps_row_leaves_its_id_and_ends_demo(fw):
+    world = card(fw, rockbox=TAKEOVER)
+    assert fw.fn('addon_libs', C.c_int)() == 1
+    fw.fn('addon_lib_open', C.c_int, C.c_void_p, C.c_void_p)(0, None)
+    assert world.files[host.tools_build.TAKEOVER_FLAG.encode()] == b'rockbox'
+    assert fw.calls('save_memoryplay_info') and not fw.calls('fw_fork')  # the hand-over, not a game's start
+    assert b'kill -9 $PPID' in world.of('system')[-1][0]
+
+
+def test_a_takeover_app_gone_from_the_card_says_so_and_stays(fw):
+    world = card(fw, rockbox=TAKEOVER)
+    assert fw.fn('addon_libs', C.c_int)() == 1
+    del world.files[b'/mnt/mmc/.rockbox/q2-rockbox']
+    seen = toasts(fw)
+    fw.fn('addon_lib_open', C.c_int, C.c_void_p, C.c_void_p)(0, None)
+    assert seen == [b"It isn't on the card"] and host.tools_build.TAKEOVER_FLAG.encode() not in world.files
+    assert not fw.calls('save_memoryplay_info')
 
 
 @pytest.mark.parametrize('status, stops', [(3, 1), (1, 0)])

@@ -238,7 +238,8 @@ typedef struct {
     unsigned lyric_song, lyric_rows_song;
     /* The Display settings, read from config.ini on first use, and the display page's value labels.
      */
-    int settings_read, accent, minimal_accent, home, battery, home_rockbox, home_groovebox, theme,
+    int settings_read, accent, minimal_accent, home, battery, home_app,
+        theme,                               /* home_app: as last laid out */
         shortcut, rounded, light, light_day, /* light_day: Auto's answer for now (LIGHT=2) */
         keep_lit,                            /* Smart Awake (#57, keep_lit_poll) */
         np_centred,                          /* Centred Now Playing (ringnav_ui_load) */
@@ -588,6 +589,10 @@ int *option_slot(const theme_t *T, int setting);
 unsigned red_map(unsigned c, unsigned tone, unsigned glyph, int light);
 int setting(int i);
 int shortcut(void);
+const char *shortcut_app(void);
+extern const char *const shortcut_names[];
+void shortcut_set(int v, const char *id);
+int shortcut_is_app(void), shortcut_app_there(void), ipod_home_shown(void);
 unsigned tone_of(const unsigned *a, int tone);
 extern const char *const accent_names[];
 extern const char *const np_pages[];
@@ -652,6 +657,11 @@ void battery_tick(int level, int cable);
 unsigned battery_log(char *out, unsigned size);
 int battery_history(void *ctx, event_t *event);
 void battery_paint(widget_t *w, canvas_t *canvas);
+
+/* shortcut_pick.c: Display's Shortcut picker (navigation.c ringnav_display), and its row's label
+ * written again (navigation.c setting_text) */
+void shortcut_rows(widget_t *view);
+void setting_text(int i);
 
 /* system.c */
 void power_poll(void);

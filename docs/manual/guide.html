@@ -327,7 +327,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
     <li><b>Library:</b> your music in Artists, Albums, Songs, Genres, Era and other lists, plus Playlists, Ratings, Shuffle and Games (<a href="#browse">The Library</a>).</li>
     <li><b>Cover Flow:</b> your albums as covers (<a href="#cf">Cover Flow</a>).</li>
     <li><b>Folder:</b> the folders on the card. If an OTG drive is connected, select SD or OTG first.</li>
-    <li><b>Shortcut:</b> Rockbox if it is on the card. If not, Favourites. To change it, use <b>Shortcut</b> in <a href="#appearance">Appearance</a>. <b>None</b> removes the row.</li>
+    <li><b>Shortcut:</b> Favourites. To change it, use <b>Shortcut</b> in <a href="#appearance">Appearance</a>. It can also open a card app or game. <b>None</b> removes the row.</li>
     <li><b>Streaming:</b> TIDAL, Spotify, your card apps, Tidal Downloads, Internet Radio, AirPlay and Configuration (<a href="#c6">Chapter 6</a>).</li>
     <li><b>Settings:</b> shows <b>Playback</b> and <b>System</b> where the list was, as on an iPod.</li>
   </ul>
@@ -1090,7 +1090,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
       <tr><td>Status Bar</td><td>Theme (default) agrees with your theme. Or Minimal, Modern or Classic: that bar in all themes.</td></tr>
       <tr><td>Rounded Corners</td><td>Minimal and Modern. On: pill-shaped bars and rounded tiles. Off: full-width bars and square tiles.</td></tr>
       <tr><td>Home</td><td>Split (default): the menu adjacent to the cover. Full: only the menu. Carousel: the Shanling home carousel of eight cards. The wheel moves between them, and Centre opens one.</td></tr>
-      <tr><td>Shortcut</td><td>The shortcut row on Home: Rockbox, Favourites, Shuffle, Rated Albums, Playlists, Artists, Albums, Games, Podcasts, Audiobooks, Groovebox (after you install it) or None.</td></tr>
+      <tr><td>Shortcut</td><td>The shortcut row on Home. Push it to see a list: Favourites, Shuffle, Rated Albums, Playlists, Artists, Albums, Games, Podcasts, Audiobooks and None, then the card apps, then the card games. Select one.</td></tr>
       <tr><td>Battery</td><td>Icon (default), Percent, Icon + Percent (not in Classic) or Percent Inside.</td></tr>
       <tr><td>Time in Title</td><td>On: the title bar shows the time. Off: it shows the page name, and Home shows Q2 Pod. In Classic, it always shows the page name, and On adds the time.</td></tr>
       <tr><td>Show Wordmark</td><td>On (default): the Home title shows Q2 Pod, where an iPod shows iPod. Off: it stays empty.</td></tr>
@@ -1239,7 +1239,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
     </tbody>
   </table>
   <ul>
-    <li><b>Rockbox</b> becomes what the Q2 starts, thus the first push tells you this. Push again to install. Its themes show when Rockbox is installed, and go with it.</li>
+    <li><b>Rockbox</b> shows in Library → Apps. Its themes show when Rockbox is installed, and go with it.</li>
     <li><b>When you remove Spotify</b>, its login stays. <b>Erase Spotify Data</b> (<a href="#stream-config">Configuration</a>) erases it.</li>
     <li><b>Card apps</b> show in Streaming or Library → Apps, and games in Library → Games. USB storage stops them until it ends: close a game first. An app that syncs music updates your library when nothing plays. If one does not start, select <b>Stop</b> and its name, then open it.</li>
     <li><b>Space:</b> the card must have space for the download, the unpacked files, and 64 MB more.</li>
@@ -1252,16 +1252,16 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   <ol class="steps">
     <li>Download <code>rockbox.zip</code> from github.com/DiamondBond/q2-rockbox/releases.</li>
     <li>Unzip it to the card’s root. It adds a <code>.rockbox</code> folder.</li>
-    <li>Start the Q2. Rockbox starts.</li>
+    <li>Start the Q2. Select <b>Rockbox</b> in Library → Apps.</li>
   </ol>
   <p>For the ported themes, unzip the release from github.com/DiamondBond/q2-rockbox-themes/releases to the card. Then, in Rockbox, select <b>Settings → Theme Settings → Browse Theme Files</b>.</p>
   <table>
     <thead><tr><th>To</th><th>Do this</th></tr></thead>
     <tbody>
       <tr><td>Start Q2 Pod one time</td><td>Hold Play/Pause while you start the Q2.</td></tr>
-      <tr><td>Always start Q2 Pod</td><td>Set <b>System settings → Power → Boot to: Q2 Pod</b>. To start Rockbox, select <b>Rockbox</b> on Home.</td></tr>
+      <tr><td>Always start Rockbox</td><td>Set <b>System settings → Power → Boot to: Rockbox</b>. Without it, the Q2 starts Q2 Pod.</td></tr>
       <tr><td>Copy music through USB</td><td>Start Q2 Pod with Play/Pause held, then connect the USB cable.</td></tr>
-      <tr><td>Use Bluetooth headphones</td><td>Connect them in Q2 Pod, then select <b>Rockbox</b> on Home. Set the volume in Rockbox. It keeps it for the next time. When Rockbox shuts down, Q2 Pod starts again, with its own volume.</td></tr>
+      <tr><td>Use Bluetooth headphones</td><td>Connect them in Q2 Pod, then select <b>Rockbox</b> in Library → Apps. Set the volume in Rockbox. It keeps it for the next time. When Rockbox shuts down, Q2 Pod starts again, with its own volume.</td></tr>
       <tr><td>Start again from a frozen or unreadable screen</td><td>Hold Play/Pause for 15 seconds.</td></tr>
     </tbody>
   </table>

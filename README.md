@@ -121,7 +121,7 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
 <table>
   <tr valign="top">
     <td width="200"><b><a href="https://github.com/DiamondBond/q2-rockbox">Rockbox</a></b></td>
-    <td>The open source jukebox firmware, as a separate player. Once installed, the Q2 starts in Rockbox.</td>
+    <td>The open source jukebox firmware, as a separate player. Runs from Library → Apps; Boot to in Power starts it at power-on.</td>
     <td width="60"></td>
   </tr>
   <tr valign="top">

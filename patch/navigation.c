@@ -894,8 +894,8 @@ int load_rows(menu_t *m, widget_t *w) {
     return 1;
 }
 
-/* The Theme picker's rows, while it shows. ponytail: compared, never dereferenced; the picker is
- * its only caller in use. */
+/* The Theme or Shortcut picker's rows, while it shows. ponytail: compared, never dereferenced; a
+ * picker is its only caller in use. */
 static widget_t *theme_view __attribute__((section(".scratch")));
 
 /* A row holding stock's "select" check image: a CHOICE picker's current option. */
@@ -3826,9 +3826,7 @@ static void bar_sync(widget_t *bar) {
     accent(); /* reads the settings */
     /* Now Playing's row on Home, as a song loads or the last goes */
     coverflow_home_sync();
-    if (st.home_rockbox != rockbox_available() ||
-        (shortcut() == SHORTCUT_GROOVEBOX && st.home_groovebox != groovebox_available()))
-        coverflow_home_layout();
+    if (shortcut() == SHORTCUT_APP && st.home_app != shortcut_app_there()) coverflow_home_layout();
     /* Classic's battery: the set's body, which Percent Inside keeps */
     const theme_t *T = theme(), *B = bar_theme();
     /* The look's rows off the row layout's, y 0 in every set's row. A relayout puts them back
@@ -6052,7 +6050,7 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
  * Display, themes and System
  **************************************************************************************************/
 
-static void setting_text(int i) {
+void setting_text(int i) {
     static const char *const home[] = { N_("Home: Split"), N_("Home: Full"), N_("Home: Carousel") },
                              *const battery[] = { N_("Battery: Icon"), N_("Battery: Percent"),
                                                   N_("Battery: Icon + Percent"),
@@ -6156,6 +6154,23 @@ static void theme_preset(const theme_t *T, int live) {
     }
 }
 
+/* The Display sub-page the next display_page is to be (DISPLAY_*), 0 for Display itself. */
+enum {
+    DISPLAY_APPEARANCE = 1,
+    DISPLAY_COVERFLOW,
+    DISPLAY_CONTROLS,
+    DISPLAY_THEMES,
+    DISPLAY_HIDE,
+    DISPLAY_SHORTCUT
+};
+static int display_sub __attribute__((section(".scratch")));
+static int display_open(void *ctx, event_t *event) {
+    display_sub = (int)(long)ctx;
+    navigator_to("systemset/display_page");
+    display_sub = 0;
+    return 0;
+}
+
 void restart_confirm(int setting, int value);
 static int setting_click(void *ctx, event_t *event) {
     int i = (int)(long)ctx;
@@ -6166,22 +6181,12 @@ static int setting_click(void *ctx, event_t *event) {
     const theme_t *T = theme();
     int *value = option_slot(T, i), was = *value;
     const char *key = option_key(T, i);
-    /* Rockbox, Favorites, Shuffle, Rated Albums, Playlists, Artists, Albums, Games, Podcasts,
-     * Audiobooks, Groovebox (skipped unless the card has it; Rockbox is always offered), None */
-    static const int shortcut_next[] = {
-        3, 2, 6, 5, 7, 4, 8, 1, 9, SHORTCUT_GROOVEBOX, SHORTCUT_NONE, 0
-    };
-    _Static_assert(sizeof shortcut_next / sizeof *shortcut_next == SETTING_N_SHORTCUT,
-                   "one per shortcut");
     /* Graphite, ..., Plum, Green, then Ivory (masks skip it: Modern's to Graphite, Classic's to its
      * own Classic Blue) */
     static const int accent_next[] = { 1, 2, 3, 4, 5, 6, 8, 0, MINIMAL_ACCENT };
     _Static_assert(sizeof accent_next / sizeof *accent_next == ACCENT_N, "one per ACCENTS row");
-    if (i == 4) {
-        *value = shortcut_next[shortcut()];
-        if (*value == SHORTCUT_GROOVEBOX && !groovebox_available())
-            *value = shortcut_next[SHORTCUT_GROOVEBOX];
-    } else if (i) {
+    if (i == 4) return display_open((void *)DISPLAY_SHORTCUT, event); /* its picker */
+    if (i) {
         const option_t *o = option_of(T, i);
         unsigned mask = o && o->values ? o->values : ~0u;
         do
@@ -6400,16 +6405,6 @@ int ringnav_np_info(widget_t *win) {
     return result;
 }
 
-/* The Display sub-page the next display_page is to be (DISPLAY_*), 0 for Display itself. */
-enum { DISPLAY_APPEARANCE = 1, DISPLAY_COVERFLOW, DISPLAY_CONTROLS, DISPLAY_THEMES, DISPLAY_HIDE };
-static int display_sub __attribute__((section(".scratch")));
-static int display_open(void *ctx, event_t *event) {
-    display_sub = (int)(long)ctx;
-    navigator_to("systemset/display_page");
-    display_sub = 0;
-    return 0;
-}
-
 static void setting_row(widget_t *view, int i) {
     static const char *const icons[] = {
         "system_display",    "playset_covermode", "system_powermanager", "system_display",
@@ -6434,14 +6429,10 @@ static void setting_row(widget_t *view, int i) {
  * and have no chevron, since they change in place. ponytail: stock's page opened over itself; its
  * own rows' state is never touched on a sub-page. */
 int ringnav_display(widget_t *win, void *ctx) {
-    static const char *const titles[] = { 0,
-                                          N_("Appearance"),
-                                          N_("Cover Flow"),
-                                          N_("Controls"),
-                                          N_("Theme"),
-                                          N_("Hide") },
-                             *const sub_icons[] = { 0, "system_display", "playset_covermode",
-                                                    "playset_folderjump" };
+    static const char *const
+        titles[] = { 0,           N_("Appearance"), N_("Cover Flow"), N_("Controls"),
+                     N_("Theme"), N_("Hide"),       N_("Shortcut") },
+        *const sub_icons[] = { 0, "system_display", "playset_covermode", "playset_folderjump" };
     static const char *const cf_icons[] = { "playset_covermode", "playset_covermode",
                                             "system_update", "playset_covermode" };
     static const char *const hold_icon[] = { "playset_folderjump" },
@@ -6474,6 +6465,11 @@ int ringnav_display(widget_t *win, void *ctx) {
                 list_row(view, t == st.theme ? "select" : "unselect", theme_pick, (void *)(long)t),
                 themes[t].name);
         }
+        theme_view = view;
+        return result;
+    }
+    if (sub == DISPLAY_SHORTCUT) { /* shortcut_pick.c's rows, opened on the chosen one */
+        shortcut_rows(view);
         theme_view = view;
         return result;
     }
@@ -6549,15 +6545,15 @@ static void boot_row(widget_t *view) {
     if (!view || !rockbox_available()) return;
     char value[16];
     void *f = fopen(BOOT_TARGET, "rb");
-    boot_rockbox = 1;
+    boot_rockbox = 0; /* missing or invalid: Q2 Pod, as S90play reads it */
     if (f) {
-        unsigned n = fread(value, 1, 5, f);
-        int q2pod = n == 5 && !memcmp(value, "q2pod", 5);
+        unsigned n = fread(value, 1, 7, f);
+        int rockbox = n == 7 && !memcmp(value, "rockbox", 7);
         /* Shell command substitution strips all trailing newlines. */
-        while (q2pod && (n = fread(value, 1, sizeof value, f)))
+        while (rockbox && (n = fread(value, 1, sizeof value, f)))
             for (unsigned i = 0; i < n; ++i)
-                if (value[i] != '\n') q2pod = 0;
-        boot_rockbox = !q2pod || ferror(f);
+                if (value[i] != '\n') rockbox = 0;
+        boot_rockbox = rockbox && !ferror(f);
         fclose(f);
     }
     widget_t *label = list_row(view, "system_powermanager", 0, 0);
@@ -8668,36 +8664,28 @@ static void resume_poll(void) {
     }
 }
 
-/* Home's Rockbox row (docs/boot.md#rockbox-from-home), bound by coverflow_home: a click leaves
- * Q2 Pod for Rockbox. demo cannot start it itself: Rockbox needs the screen, the keys and ALSA. So
- * demo leaves S90play's flag and ends; S90play sees it, runs Rockbox and starts demo again when
- * Rockbox exits. Bluetooth's daemons are not demo's children and keep the headphones connected, so
- * Rockbox finds them and plays there (q2-rockbox's pcm-alsa). The queue is saved as power-off
- * saves it, charging is handed back as Rockbox expects it at boot, the
- * watchdog (checkappprocess.sh, which reboots once demo is gone) and hciplayer (which holds the
- * DAC's PCM) are stopped, and demo is killed outright, so no exit handler can hang it. */
-int rockbox_open(void *ctx, event_t *event) {
-    void *flag = !rockbox_available() ? (void *)0 : fopen(ROCKBOX_FLAG, "w");
-    if (!flag) {
-        toast(tr("Rockbox is not on the card"));
-        return 0;
-    }
-    fclose(flag);
+/* A takeover app's row (addon.c takeover, docs/boot.md#apps-that-take-over-the-device), its id in
+ * S90play's flag: demo ends for the app. demo cannot start it itself: such an app needs the
+ * screen, the keys and ALSA. So demo ends; S90play sees the flag, runs the app and starts demo
+ * again when it exits. Bluetooth's daemons are not demo's children and keep the headphones
+ * connected, so the app finds them and plays there. The queue is saved as power-off saves it,
+ * charging is handed back as at boot, the watchdog (checkappprocess.sh, which reboots once demo is
+ * gone) and hciplayer (which holds the DAC's PCM) are stopped, and demo is killed outright, so no
+ * exit handler can hang it. */
+void ringnav_hand_over(void) {
     playback_save();
     save_memoryplay_info();
     player_stop();
     radio_stop();
     addon_stop(); /* the card apps' loops run on past demo: each asked to end */
     if (st.charge_held) switch_charge_enable(1);
-    /* Rockbox's volume is pcm-alsa's software mixer alone, so the headset's absolute volume, left
-     * at the Q2's, would cap it: open it to the maximum volume limit. Demo syncs it back on return.
-     */
+    /* An app's software mixer would be capped by the headset's absolute volume, left at the Q2's:
+     * open it to the maximum volume limit. Demo syncs it back on return. */
     if (pod_value(POD_BT_LINK) && g_bluetoothflag && bt_linkstatus &&
         (unsigned)btctl_transport_get_volume() <= 127)
         btctl_transport_set_volume(((g_maxvolume < 100 ? g_maxvolume : 100) * 127 + 50) / 100);
     ringnav_clean_end(); /* the watchdog would outlive demo's kill; nothing to report */
     spot_kill("killall checkappprocess.sh; killall -9 hciplayer; ", "; sync; kill -9 $PPID");
-    return 0;
 }
 
 /***************************************************************************************************

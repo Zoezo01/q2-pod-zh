@@ -1933,13 +1933,13 @@ def test_row_preview_is_classics_own_choice(fw, keys, on):
 
 
 @pytest.mark.parametrize('shortcut, card, row', [(None, 1, 1), (None, 0, 1), (0, 1, 1), (0, 0, 0), (2, 0, 1), (11, 1, 0), (11, 0, 0), (12, 1, 1)])
-def test_home_shows_its_shortcut_row_unless_it_is_none_or_a_missing_rockbox(fw, shortcut, card, row):
+def test_home_shows_its_shortcut_row_unless_it_is_none_or_a_missing_app(fw, shortcut, card, row):
     theme(fw, 0, **({} if shortcut is None else {'SHORTCUT': shortcut}))
     def stat(version, path, info, *_):
         C.c_uint.from_address(info + 20).value = 0o100755
         return 0 if card else -1
     fw.mock('fw___xstat', stat)
-    assert bool(fw.fn('ipod_home_rockbox', C.c_int)()) == bool(row)
+    assert bool(fw.fn('ipod_home_shown', C.c_int)()) == bool(row)
 
 
 @pytest.mark.parametrize('shortcut, page, context', [

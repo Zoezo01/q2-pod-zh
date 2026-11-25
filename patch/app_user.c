@@ -7,10 +7,10 @@
  * mounted without that (q2mount's option refused), apps run as root as before, so they can still
  * write it.
  * ponytail: this guards against a buggy app, not a hostile one: root=1 is the app's own word, an
- * app can rewrite what root runs or flashes from the card (.rockbox/rockbox, a root=1 app's run,
- * Network Update's update.tar), and root kills the pid an app's own pid file names (addon.c
- * stop_cmd takes one pid above 1 from it). An app that ran as root earlier in the same boot leaves
- * /tmp files it can no longer replace until a restart clears /tmp. */
+ * app can rewrite what root runs or flashes from the card (.rockbox/rockbox, a root=1 app's run, a
+ * takeover=1 app's q2-<id>, Network Update's update.tar), and root kills the pid an app's own pid
+ * file names (addon.c stop_cmd takes one pid above 1 from it). An app that ran as root earlier in
+ * the same boot leaves /tmp files it can no longer replace until a restart clears /tmp. */
 #include "offsets.inc"
 #include "peq.h"
 #include "stock.h" /* APP_UID (tools/build.py) */

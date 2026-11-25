@@ -1186,7 +1186,7 @@ def test_stock_header_is_c(tmp_path, monkeypatch):
     (tmp_path/'stock.h').write_text(stock_h())
     (tmp_path/'h.c').write_text(f'''#include "stock.h"
 const int h_ints[] = {{RING_STEP, THEME_N, THEME_KEYS, Q2POD_DEV}};
-const char *const h_strings[] = {{ROCKBOX_FLAG, STOCK_VERSION, Q2POD_VERSION, Q2POD_TAG, Q2POD_REPO, Q2POD_UA}};
+const char *const h_strings[] = {{TAKEOVER_FLAG, STOCK_VERSION, Q2POD_VERSION, Q2POD_TAG, Q2POD_REPO, Q2POD_UA}};
 const char *const h_zones[] = TIMEZONE_NAMES;
 const char *const h_cities[] = TIMEZONE_CITIES;
 const int h_order[] = TIMEZONE_ORDER;
@@ -1207,7 +1207,7 @@ const unsigned long h_sizes[] = {{sizeof h_zones / sizeof *h_zones, sizeof h_cit
     zones, cities, order, icons, lit, rounds, bold = array(ctypes.c_ulong, 'h_sizes', 7)
     assert array(ctypes.c_int, 'h_ints', 4) == [build.RING_STEP, len(themes), len(theme.theme_keys(themes)), 0]
     assert [s.decode() for s in array(ctypes.c_char_p, 'h_strings', 6)] == [
-        build.ROCKBOX_FLAG, 'V1.36', build.VERSION, build.VERSION, build.REPO, f'Q2Pod/{build.VERSION} (https://github.com/DiamondBond/q2-pod)']
+        build.TAKEOVER_FLAG, 'V1.36', build.VERSION, build.VERSION, build.REPO, f'Q2Pod/{build.VERSION} (https://github.com/DiamondBond/q2-pod)']
     assert [s.decode() for s in array(ctypes.c_char_p, 'h_zones', zones)] == [zone for _, zone in build.TIMEZONES]
     # each row's city, its label after the offset
     cities = [s.decode() for s in array(ctypes.c_char_p, 'h_cities', cities)]

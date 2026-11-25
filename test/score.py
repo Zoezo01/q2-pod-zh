@@ -46,7 +46,7 @@ SINKS = r'\b(?:system|popen|execl|execlp|execle|execv|execvp|execve|posix_spawn|
 # (test/remote.py). Any other shell-out is fed a file name, tag, URL or response and wants its test: one more in
 # a function here, or one in a function this table doesn't name, counts as fed, so a new one can't arrive unread.
 CONST = {'netupdate.c:install': 3, 'netupdate.c:sh_worker': 2, 'addon.c:game_kill': 1, 'spotify.c:spot_launch': 1,
-    'spotify.c:spot_stop': 1, 'spotify.c:spot_poll': 1, 'navigation.c:rockbox_open': 1, 'radio.c:radio_halt': 1,
+    'spotify.c:spot_stop': 1, 'spotify.c:spot_poll': 1, 'navigation.c:ringnav_hand_over': 1, 'radio.c:radio_halt': 1,
     'system.c:reboot_record': 1, 'system.c:logo_sync': 1, 'remote.c:serve': 1}
 # Stock's own system() calls whose command a hook here builds: no sink in the source to find.
 HOOKS = ('folder_delete.c:ringnav_folder_rm', 'onlinematch.c:ringnav_lyric_save', 'onlinematch.c:ringnav_lyric_drop',

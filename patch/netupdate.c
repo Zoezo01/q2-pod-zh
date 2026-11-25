@@ -32,8 +32,8 @@ enum { SH_OK, SH_NET, SH_SPACE, SH_CARD, SH_MISSING, SH_BAD, SH_CANCELLED, SH_BU
 /* repo: its GitHub owner/name; id: the repo's name less "q2-", for the card folder .<id>, the tag
  * and file list; keep: unzip -x patterns an update never writes (the user's); bin: the app's
  * binary, present without a tag file meaning a manual install, and moved after every other file:
- * power-on runs Rockbox's. dropped: gone from the list but installed, so it can only be removed.
- * game: listed under [Games], so on the App Store's Games tab. */
+ * a card app is there once its binary is. dropped: gone from the list but installed, so it can only
+ * be removed. game: listed under [Games], so on the App Store's Games tab. */
 typedef struct {
     char name[32], id[16], repo[80], dir[17], bin[40], latest[32], dropped, game;
     const char *keep;
@@ -1084,10 +1084,8 @@ static void sh_text(int r) {
         snprintf(s, sizeof s, tr("Downloading %d%%"), sh.percent);
     else if (busy)
         t = tr(stages[sh.stage]);
-    else if (armed && sh_state(i) == ST_INSTALLED)
+    else if (armed)
         t = tr("Press again to remove");
-    else if (armed) /* docs/boot.md#rockbox */
-        t = tr("Starts at power-on. Press again to install");
     else { /* its GitHub owner, as an app's developer: 39 bytes at most, as GitHub's names are */
         int k = (int)(strstr(apps[i].repo, "/") - apps[i].repo);
         snprintf(s, sizeof s, "%.*s", k < 39 ? k : 39, apps[i].repo);
@@ -1157,8 +1155,6 @@ static int sh_wait(const void *unused) {
         snprintf(s, sizeof s, tr("Needs %u MB more space"), sh.need), toast(s);
     else if ((job == JOB_INSTALL || job == JOB_REMOVE) && r)
         toast(tr(said[r]));
-    else if (job == JOB_INSTALL && is(i, "rockbox"))
-        toast(tr("Rockbox is ready. Find it on Home"));
     else if (job == JOB_INSTALL && is(i, "themes"))
         toast(tr("Rockbox Themes are ready in Rockbox's Theme Settings"));
     else if (job == JOB_INSTALL) /* addon_where's place, translated there */
@@ -1183,10 +1179,9 @@ static void sh_start(int job, int i) {
         timer_add(sh_wait, (void *)0, 500);
 }
 
-/* Install and Update at once; Installed's Remove and Rockbox's first Install (it becomes the
- * power-on default) on a second press of the same row. Pressed again, the running install cancels.
- * Check for Updates checks now (loading the list, with none yet), unless the last whole check is
- * under SH_RECHECK_MS old: then it says that check's count again. */
+/* Install and Update at once; Installed's Remove on a second press of the same row. Pressed again,
+ * the running install cancels. Check for Updates checks now (loading the list, with none yet),
+ * unless the last whole check is under SH_RECHECK_MS old: then it says that check's count again. */
 static int sh_click(void *ctx, event_t *event);
 
 /* A press held for Smart Wi-Fi's link (need_link) by its app, ROW_CHECK for Check for Updates: made
@@ -1224,8 +1219,6 @@ static int sh_click(void *ctx, event_t *event) {
         sh_start(JOB_CHECK, 0), sh.manual = 1;
     else if (is(i, "themes") && !rockbox_available())
         toast(tr("Install Rockbox first"));
-    else if (is(i, "rockbox") && sh_state(i) == ST_INSTALL && !armed)
-        sh.armed = r + 1;
     else
         sh_start(JOB_INSTALL, i);
     sh_refresh();

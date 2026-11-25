@@ -13,6 +13,7 @@ from conftest import NAVIGATION_SOURCE, O, Config, Deques, Files, claim, high_ha
 from test_coverflow import SONGTABLE  # stock's songtable, as demo's CREATE TABLE text has it
 from test_games import run
 from test_navigation import clock
+from test_addon import card
 
 W_PARENT, EVT_CLICK, EVENT_TYPE, EVENT_KEY, EVENT_X = O['W_PARENT'], O['EVT_CLICK'], O['EVENT_TYPE'], O['EVENT_KEY'], O['EVENT_X']
 STOP = 11
@@ -459,20 +460,41 @@ def test_classic_accent_takes_classic_blue_after_green_and_skips_ivory(fw):
     assert [k for k, _ in writes(fw)] == ['CLASSIC_LIGHT_ACCENT'] * 4
 
 
-def test_shortcut_cycles_in_its_menu_order(fw):
-    ui = Ui(fw)
-    page = appearance(fw, ui, SHORTCUT=b'0')
-    seen = clicks_of(fw, ui, page, 'Shortcut', 11)
-    # Rockbox, Favourites, Shuffle, Rated Albums, Playlists, Artists, Albums, Games, Podcasts, Audiobooks, None, Rockbox
-    assert [v for v, _ in seen] == ['Favourites', 'Shuffle', 'Rated Albums', 'Playlists', 'Artists', 'Albums', 'Games',
-                                    'Podcasts', 'Audiobooks', 'None', 'Rockbox']
-    assert [w for _, w in seen] == [[('SHORTCUT', v)] for v in (3, 5, 4, 7, 1, 2, 6, 8, 9, 11, 0)]
+# The Shortcut row's picker: the fixed ones, then the card's apps by name, then its games by name.
+FIXED = ['Favourites', 'Shuffle', 'Rated Albums', 'Playlists', 'Artists', 'Albums', 'Games', 'Podcasts', 'Audiobooks', 'None']
 
 
-def test_shortcut_none_reads_as_none_and_goes_on_to_rockbox(fw):
+def shortcut_page(fw, ui, **config):
+    """A card of apps and games, then Appearance's Shortcut row: the picker over it."""
+    card(fw, zed=b'name=Zed\n', beats=b'name=Beats\ngame=1\n', alpha=b'name=alpha\nrow=library\n',
+         snake=b'name=Snake\ngame=1\nrow=library\n', secret=b'name=Secret\nhidden=1\n')
+    page = appearance(fw, ui, **config)
+    ui.click(button_of(page.view(), 'Shortcut'))
+    return page
+
+
+@pytest.mark.parametrize('config, chosen', [({}, 'Favourites'), ({'SHORTCUT': b'11'}, 'None'), ({'SHORTCUT': b'0'}, None),
+                                            ({'SHORTCUT': b'0', 'SHORTCUT_APP': b'snake'}, 'Snake')])
+def test_the_shortcut_picker_lists_fixed_ones_then_apps_then_games(fw, config, chosen):
     ui = Ui(fw)
-    page = appearance(fw, ui, SHORTCUT=b'11')
-    assert [(v, w) for v, w in clicks_of(fw, ui, page, 'Shortcut', 1)] == [('Rockbox', [('SHORTCUT', 0)])]
+    page = shortcut_page(fw, ui, **config)
+    assert len(page.pages) == 3 and page.title() == 'Shortcut'
+    names = FIXED + ['alpha', 'Zed', 'Beats', 'Snake']  # the hidden one left out
+    assert picks(page.view()) == [(n, 'select' if n == chosen else 'unselect') for n in names]
+
+
+@pytest.mark.parametrize('row, saved, app', [('Albums', 2, None), ('None', 11, None), ('Snake', 0, b'snake'), ('Zed', 0, b'zed')])
+def test_a_shortcut_pick_saves_it_and_goes_back(fw, row, saved, app):
+    ui = Ui(fw)
+    page = shortcut_page(fw, ui)
+    back = []
+    fw.mock('navigator_back', lambda *_: back.append(1) or 0)
+    (item,) = [item for item in page.view().children if item.labels()[0].text == row]
+    ui.click(item.children[0])
+    assert writes(fw) == [('SHORTCUT', saved)] and back == [1]
+    put = [tuple(C.string_at(a[k]) for k in (1, 2, 3)) for _, a in fw.calls('toolsWriteConfig')]
+    assert put == ([(b'IPOD', b'SHORTCUT_APP', app)] if app else [])
+    assert readings(page.pages[1].find('scroll_view_display'))['Shortcut'] == row
 
 
 def test_home_cycles_split_full_carousel(fw):
@@ -886,9 +908,9 @@ class Power:
 
 
 @pytest.mark.parametrize('saved, shown', [
-    (None, 'Rockbox'),  # no choice saved: the boot script's own default
-    (b'q2pod', 'Q2 Pod'), (b'q2pod\n', 'Q2 Pod'), (b'q2pod' + b'\n' * 40, 'Q2 Pod'),  # $(cat) drops trailing newlines
-    (b'rockbox', 'Rockbox'), (b'q2po', 'Rockbox'), (b'q2podx', 'Rockbox'), (b'q2pod\nx', 'Rockbox'), (b'\nq2pod', 'Rockbox'),
+    (None, 'Q2 Pod'),  # no choice saved: the boot script's own default
+    (b'rockbox', 'Rockbox'), (b'rockbox\n', 'Rockbox'), (b'rockbox' + b'\n' * 40, 'Rockbox'),  # $(cat) drops trailing newlines
+    (b'q2pod', 'Q2 Pod'), (b'rockbo', 'Q2 Pod'), (b'rockboxx', 'Q2 Pod'), (b'rockbox\nx', 'Q2 Pod'), (b'\nrockbox', 'Q2 Pod'),
 ])
 def test_boot_to_reads_what_the_boot_script_would(fw, saved, shown):
     ui = Ui(fw)
@@ -896,10 +918,10 @@ def test_boot_to_reads_what_the_boot_script_would(fw, saved, shown):
     assert page.boot().text == f'Boot to: {shown}'
 
 
-def test_boot_to_a_file_that_fails_to_read_is_rockbox(fw):
+def test_boot_to_a_file_that_fails_to_read_is_q2_pod(fw):
     ui = Ui(fw)
     fw.mock('fw_ferror', lambda *_: 1)
-    assert Power(fw, ui, {BOOT: b'q2pod'}).boot().text == 'Boot to: Rockbox'
+    assert Power(fw, ui, {BOOT: b'rockbox'}).boot().text == 'Boot to: Q2 Pod'
 
 
 def test_no_rockbox_no_boot_row(fw):
@@ -912,9 +934,9 @@ def test_boot_to_flips_and_saves_through_a_temporary_file(fw):
     page = Power(fw, ui, {})
     label = page.boot()
     ui.click(label.parent)
-    assert label.text == 'Boot to: Q2 Pod' and page.files.files == {BOOT: b'q2pod'}
-    ui.click(label.parent)
     assert label.text == 'Boot to: Rockbox' and page.files.files == {BOOT: b'rockbox'}
+    ui.click(label.parent)
+    assert label.text == 'Boot to: Q2 Pod' and page.files.files == {BOOT: b'q2pod'}
     assert {C.string_at(a[0]) for _, a in fw.calls('fw_fopen')} >= {(BOOT + '.tmp').encode()}
 
 
@@ -935,7 +957,7 @@ def test_boot_to_after_rockbox_left_the_card(fw):
     page.card['card'] = False
     label = page.boot()
     ui.click(label.parent)
-    assert label.text == 'Boot to: Rockbox' and page.files.files == {}
+    assert label.text == 'Boot to: Q2 Pod' and page.files.files == {}
     assert [p[3] for p in page.prompts.seen] == ['Rockbox is not on the card']
 
 

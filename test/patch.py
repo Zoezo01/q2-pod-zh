@@ -5622,7 +5622,7 @@ for config,preset in (({},0),({**C,K:'1'},1),({**C,K:'2'},2),({**C,K:'3','HOME':
         want=ACCENTS[preset][3 if name.endswith('text_color') else 2]
         assert style_color(m,red,name)[1]==(red if preset==O['CRIMSON'] else color_t(want)),(config,name)
     assert style_color(m,grey)[1]==grey
-    assert len(m.config_reads)==19,m.config_reads  # every key, once, on first use
+    assert len(m.config_reads)==20,m.config_reads  # every key, once, on first use
     passed()
 # Real paint order, no persistent widget styles: normal, metadata, disabled alpha,
 # recycled text, touch hiding, Home siblings, and every accent.
@@ -5684,7 +5684,7 @@ passed()
 
 m=Machine(); style_color(m,red)
 # config_value passes its default in decimal: SHORTCUT's SETTING_N_SHORTCUT (12) is out of range, so no shortcut
-assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','12'),('/mnt/data/config.ini','IPOD','ROUNDED','1'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','0')]+[('/mnt/data/config.ini','IPOD',key,v) for key,v in (('STATUSBAR','0'),('SHOWQ2POD','1'),('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]; passed()
+assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','12'),('/mnt/data/config.ini','IPOD','ROUNDED','1'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','0'),('/mnt/data/config.ini','IPOD','SHORTCUT_APP','rockbox')]+[('/mnt/data/config.ini','IPOD',key,v) for key,v in (('STATUSBAR','0'),('SHOWQ2POD','1'),('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]; passed()
 # theme()/scheme(): the active built-in and its scheme, settings read on first use. THEME out of
 # range is Minimal; Classic's stored Ivory and an out-of-range CLASSIC_LIGHT_ACCENT are Classic Blue, on Cobalt's
 # tones; Modern's stored Ivory and an out-of-range ACCENT are Graphite's scheme; a missing MINIMAL_ACCENT is Graphite, a stored Ivory
@@ -5697,16 +5697,16 @@ for config,name,want in (({},'Minimal',0),({'MINIMAL_ACCENT':'7'},'Minimal',7),(
                          ({'THEME':'2','ACCENT':'1'},'Modern',1),({'THEME':'2','ACCENT':'8'},'Modern',8)):
     k=Machine(); k.config=dict(config); k.seed={}
     t=k.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
-    assert k.text(k.get(t))==name and len(k.config_reads)==19,config
+    assert k.text(k.get(t))==name and len(k.config_reads)==20,config
     s=k.call(address=payload_syms['scheme'],args=(0,0,0,0),gap=0)&0xffffffff
     flags=k.u.mem_read(s+4,1)[0]  # scheme_t: tones @0, flags @4
     assert k.get(s)==payload_syms['accents']+20*want and flags==(1 if name=='Minimal' and want==7 else 2 if want==1 else 0),(config,flags)
 passed()
 # A paint before any config read draws a built-in theme, never zeroed scratch.
 k=Machine(); k.config=dict(THEME='1'); kw,_=k.page_list(5,extent=1000); assert k.config_reads==[]
-k.paint(kw); assert len(k.config_reads)==19 and k.bands[0][4]==color_t(0x08a6e7),hex(k.bands[0][4])  # Classic Blue's band's top row: the dark half's, no light rim
+k.paint(kw); assert len(k.config_reads)==20 and k.bands[0][4]==color_t(0x08a6e7),hex(k.bands[0][4])  # Classic Blue's band's top row: the dark half's, no light rim
 k=Machine(); k.config=dict(THEME='2',ACCENT='4'); kw,_=k.page_list(5,extent=1000); assert k.config_reads==[]
-k.paint(kw); assert len(k.config_reads)==19 and [k.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[4][i]) for i in (4,0,1)]
+k.paint(kw); assert len(k.config_reads)==20 and [k.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[4][i]) for i in (4,0,1)]
 k=Machine(); k.config={}; kw,_=k.page_list(5,extent=1000); k.paint(kw)
 assert not k.bands and k.rounded[-1]['color']==color_t(O['MINIMAL_FILL']); passed()
 # THEME=1 is Classic, on its own CLASSIC_LIGHT_ACCENT, whose stored value outside
@@ -5714,7 +5714,7 @@ assert not k.bands and k.rounded[-1]['color']==color_t(O['MINIMAL_FILL']); passe
 for config,want in (({},4),({'CLASSIC_LIGHT_ACCENT':'2'},2),({'CLASSIC_LIGHT_ACCENT':'7'},4),({'ACCENT':'2'},4)):
     k=classic_light(Machine()); k.config.update(config)
     t=k.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
-    assert k.text(k.get(t))=='Classic' and len(k.config_reads)==19 and [r[2] for r in k.config_reads[13:]]==['STATUSBAR','SHOWQ2POD','CLASSIC_LIGHT_ACCENT','HOMELIB','ROWPREVIEW','ROWART'],config
+    assert k.text(k.get(t))=='Classic' and len(k.config_reads)==20 and [r[2] for r in k.config_reads[14:]]==['STATUSBAR','SHOWQ2POD','CLASSIC_LIGHT_ACCENT','HOMELIB','ROWPREVIEW','ROWART'],config
     s=k.call(address=payload_syms['scheme'],args=(0,0,0,0),gap=0)&0xffffffff
     assert k.get(s)==payload_syms['accents']+20*want,config
 passed()
@@ -6078,7 +6078,7 @@ assert [row_text(r) for r in m.nodes[hv]['children']]==['Hide Streaming','Hide F
 assert m.icons_set==['system_display','switch_off']*6,m.icons_set; passed()
 view=display_page(m,1); rows=setting_rows(m,view)
 kids=m.nodes[view]['children']; status_row,time_title,show_q2,rate,light,corners,shortcut,centred,hide=kids[1],kids[2],kids[3],kids[4],kids[5],kids[7],kids[9],kids[11],kids[12]
-assert row_text(shortcut)=='Shortcut: Rockbox'
+assert row_text(shortcut)=='Shortcut: Favourites'
 assert kids==[rows[3],status_row,time_title,show_q2,rate,light,rows[0],corners,rows[1],shortcut,rows[2],centred,hide] and m.nodes[rows[0]].get('visible',1)==1  # Theme, Status Bar, Time in Title, Show Wordmark, Show Sample Rate, Light Mode, Accent, Corners, Home, Shortcut, Battery, Centred Now Playing, Hide
 assert [row_text(r) for r in (show_q2,hide)]==['Show Wordmark: On','Hide'],[row_text(r) for r in (show_q2,hide)]
 assert [row_text(r) for r in (rate,kids[-1])]==['Show Sample Rate','Hide']  # the bar's rows, then the Hide page's row last
@@ -6408,7 +6408,7 @@ def title_value(r):  # (title, value) of a value row, or None
     v=[k['text'] for k in kids if k['name']=='_setting_value']
     return (kids[1]['text'],v[0]) if v else None
 assert [title_value(r) for r in dm.nodes[dv]['children']]==[('Theme','Classic'),('Status Bar','Theme'),('Time in Title','On'),('Show Wordmark','On'),('Show Sample Rate','Off'),('Light Mode','On'),
-                                                           ('Accent','Classic Blue'),('Home','Split'),('Shortcut','Rockbox'),('Battery','Icon'),('Library on Home','On'),('Row Preview','On'),('Row Art','On'),
+                                                           ('Accent','Classic Blue'),('Home','Split'),('Shortcut','Favourites'),('Battery','Icon'),('Library on Home','On'),('Row Preview','On'),('Row Art','On'),
                                                            None]  # Hide opens its page: no value
 assert not {'switch_on','switch_off'} & set(dm.icons_set); passed()
 # Controls' switches read On/Off as values under Classic.
@@ -6457,13 +6457,11 @@ f,ctx=m.handler(m.nodes[cf_refresh]['children'][0],O['EVT_CLICK']); m.mock('open
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.toasts[-1][3]=='Cover Flow rebuilds artwork next time'
 assert [m.text(c[1]) for c in m.calls if c[0]=='opendir@GLIBC_2.0']==['/mnt/mmc/.coverflow','/mnt/mmc/.sldp']
 assert did(m,'image_manager_unload_all') and m.nodes[refresh_label]['text']=='Refresh Cover Flow'; passed()
-# Shortcut: no key is Rockbox on a card with it, else Favourites.
-for card,first in ((True,'Rockbox'),(False,'Favourites')):
-    CONFIG.clear(); d=Machine(); d.rockbox_mode=0o100755 if card else 0
+# Shortcut: no key is Favourites, shown; 0 with no SHORTCUT_APP is the app rockbox, named by its id with no scan.
+for config,first,shown in (({},'Favourites',1),({'SHORTCUT':'0'},'rockbox',1)):
+    CONFIG.clear(); CONFIG.update(config); d=Machine(); CONFIG.clear(); d.rockbox_mode=0o100755
     assert d.text(d.call(address=payload_syms['ipod_home_shortcut'],args=(0,0,0,0),gap=0))==first
-    assert d.call(address=payload_syms['ipod_home_rockbox'],args=(0,0,0,0),gap=0)==1  # shown either way
-d.rockbox_mode=0o100755  # a card mounted after the first read: the default follows it
-assert d.text(d.call(address=payload_syms['ipod_home_shortcut'],args=(0,0,0,0),gap=0))=='Rockbox'
+    assert d.call(address=payload_syms['ipod_home_shown'],args=(0,0,0,0),gap=0)==shown
 passed()
 # Shortcut: Playlists (7) opens the Library's Playlists list, as stock's Home does (context 0: not Add to Playlist).
 CONFIG.clear(); CONFIG['SHORTCUT']='7'; d=Machine(); del CONFIG['SHORTCUT']
@@ -6509,19 +6507,19 @@ def carousel(on):
     if on: assert not m.nodes[art]['visible']
 shortcut_button=m.nodes[shortcut]['children'][0]
 sf,sc=m.handler(shortcut_button,O['EVT_CLICK'])
-# None ends the cycle: Home's row is hidden, the picker says so, and the carousel's card keeps the default's name.
-def shortcut_cycle(labels):
-    for label in labels:
-        m.call(address=sf,args=(sc,m.event,0,0),gap=0)
-        if label=='None':
-            assert m.nodes[m.nodes[shortcut_button]['children'][1]]['text']=='Shortcut: None'
-            assert m.nodes[named(m,home,'label_rockbox')]['text']==('Rockbox' if m.rockbox_mode else 'Favourites')
-            assert not m.nodes[named(m,home,'btn_rockbox')]['visible']
-        else: assert m.nodes[named(m,home,'label_rockbox')]['text']==label
-shortcut_cycle(('Favourites','Shuffle','Rated Albums','Playlists','Artists','Albums','Games','Podcasts','Audiobooks','None','Rockbox'))
-m.groovebox_mode=0o100755  # Groovebox on the card: the cycle offers it after Audiobooks
-shortcut_cycle(('Favourites','Shuffle','Rated Albums','Playlists','Artists','Albums','Games','Podcasts','Audiobooks','Groovebox','None','Rockbox'))
-m.groovebox_mode=0
+under=m.top; m.calls=[]; m.call(address=sf,args=(sc,m.event,0,0),gap=0)  # the row opens its picker, a Display sub-page
+assert m.opened[-1]==('systemset/display_page',None) and not [c for c in m.calls if c[0]=='write_int_config']
+m.stack.pop(); m.top=under  # the picker's page, as its press leaves it (navigator_back, mocked below)
+# A pick (shortcut_pick) saves it and Home's row names it at once; None hides the row, and the carousel's card keeps
+# the default's name.
+m.mock('navigator_back')
+for value,label in ((5,'Shuffle'),(4,'Rated Albums'),(7,'Playlists'),(1,'Artists'),(2,'Albums'),(6,'Games'),(8,'Podcasts'),
+                    (9,'Audiobooks'),(11,'None'),(3,'Favourites')):
+    m.calls=[]; m.call(address=payload_syms['shortcut_pick'],args=(value,m.event,0,0),gap=0)
+    assert [(w[1],m.text(w[3])) for w in m.calls if w[0]=='write_int_config']==[(value,'SHORTCUT')] and did(m,'navigator_back')
+    assert m.nodes[m.nodes[shortcut_button]['children'][1]]['text']=='Shortcut: '+label
+    assert m.nodes[named(m,home,'label_rockbox')]['text']==('Favourites' if label=='None' else label)
+    assert bool(m.nodes[named(m,home,'btn_rockbox')]['visible'])==(label!='None')
 home_bounds(False); carousel(False)
 writes=click(1); assert [(w[0],m.text(w[2])) for w in writes]==[(1,'HOME')] and texts()[1]=='Home: Full'
 home_bounds(True); carousel(False)
@@ -6600,22 +6598,19 @@ for value,name in ((1,'Percent'),(2,'Icon + Percent'),(3,'Percent Inside'),(0,'I
 passed()
 m,view,rows=display({'ACCENT':'2','HOME':'1','BATTERY':'2','SHORTCUT':'1'}); got=[m.nodes[m.nodes[m.nodes[r]['children'][0]]['children'][1]]['text'] for r in rows]; assert got==['Accent: Ivory','Home: Full','Battery: Icon + Percent','Theme: Minimal']; passed()
 m,view,rows=display({'BATTERY':'3'}); assert m.nodes[m.nodes[m.nodes[rows[2]]['children'][0]]['children'][1]]['text']=='Battery: Percent Inside'; passed()
-# Home's Rockbox row (docs/boot.md#rockbox-from-home): its click saves the queue as power-off does,
-# stops the player, leaves S90play's flag and kills demo; without Rockbox on the card it says so.
-m,names=rockbox(True)
-texts=[m.text(c[1]) for c in m.calls if c[0] in ('fopen','system')]  # the mark, Spotify's pid file (none), the shell
-assert texts==['/tmp/q2pod-rockbox','/tmp/q2-librespot',
+# A takeover app's hand-over (docs/boot.md#apps-that-take-over-the-device): it saves the queue as power-off does,
+# stops the player and kills demo (test/fw/test_addon.py has its flag).
+m,names=hand_over()
+texts=[m.text(c[1]) for c in m.calls if c[0] in ('fopen','system')]  # Spotify's pid file (none), the shell
+assert texts==['/tmp/q2-librespot',
                'killall checkappprocess.sh; killall -9 hciplayer; '
                          'killall -9 librespot aplay; rm -f /tmp/q2-librespot /tmp/q2-librespot.state /tmp/q2-librespot.out /tmp/q2-librespot.download; sync; kill -9 $PPID']
-assert [n for n in names if n in ('fclose','save_memoryplay_info','player_stop','system')]==['fclose','save_memoryplay_info','player_stop','system']; passed()
-m,names=rockbox(False)
-assert not {'fopen','player_stop','system'} & set(names)
-assert [m.text(c[1]) for c in m.calls if c[0]=='navigator_to_with_context']==['dialog/msginfo_dialog']; passed()
-# ipod_home_rockbox follows the card.
+assert [n for n in names if n in ('save_memoryplay_info','player_stop','system')]==['save_memoryplay_info','player_stop','system']; passed()
+# ipod_home_shown follows the card: Shortcut 0 with no SHORTCUT_APP is the app rockbox, its launcher there or not.
 m=Machine(); m.rockbox_mode=0; m.config['SHORTCUT']='0'
-assert m.call(address=payload_syms['ipod_home_rockbox'],args=(0,0,0,0),gap=0)==0
+assert m.call(address=payload_syms['ipod_home_shown'],args=(0,0,0,0),gap=0)==0
 m.rockbox_mode=0o100755
-assert m.call(address=payload_syms['ipod_home_rockbox'],args=(0,0,0,0),gap=0)==1; passed()
+assert m.call(address=payload_syms['ipod_home_shown'],args=(0,0,0,0),gap=0)==1; passed()
 # The wheel walks onto the new rows and Centre clicks them, as any fixed settings list.
 m,view,_=display({},sub=0)
 m.paint(view)
@@ -7037,9 +7032,9 @@ m.paint(view); assert CL_SEL(3) in [b[4] for b in m.bands] and CL_SEL(2) not in 
 m,view,rows=display({'THEME':'1','CLASSIC_LIGHT_ACCENT':'7'})
 assert [row_text(r) for r in m.nodes[view]['children']][:4]==['Theme: Classic','Status Bar: Theme','Time in Title: On','Show Wordmark: On']
 m,view,rows=display({'THEME':'2','ACCENT':'7'})
-assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Modern','Status Bar: Theme','Time in Title','Show Wordmark: On','Show Sample Rate','Light Mode: Off','Accent: Graphite','Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Centred Now Playing','Hide']
+assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Modern','Status Bar: Theme','Time in Title','Show Wordmark: On','Show Sample Rate','Light Mode: Off','Accent: Graphite','Rounded Corners','Home: Split','Shortcut: Favourites','Battery: Icon','Centred Now Playing','Hide']
 m,view,rows=display({'THEME':'4'})
-assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Minimal','Status Bar: Theme','Time in Title','Show Wordmark: On','Show Sample Rate','Light Mode: Off','Accent: Ivory','Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Centred Now Playing','Hide']
+assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Minimal','Status Bar: Theme','Time in Title','Show Wordmark: On','Show Sample Rate','Light Mode: Off','Accent: Ivory','Rounded Corners','Home: Split','Shortcut: Favourites','Battery: Icon','Centred Now Playing','Hide']
 passed()
 # Classic's stops painter: a 52 px selected row is the #94c7de top line, Classic Blue's six stops over the
 # 50 rows below it and the #004184 edge on its last, full width and square, its colours final
@@ -7254,7 +7249,7 @@ for mode,stored,want in ((1,'0',light_row),(2,'1',dark_row)):
 passed()
 # THEME=1: its Appearance is Theme and Classic's own options.
 m,view,rows=display({'THEME':'1'},setup=classic_light)
-assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Classic','Status Bar: Theme','Time in Title: On','Show Wordmark: On','Show Sample Rate: Off','Light Mode: On','Accent: Classic Blue','Home: Split','Shortcut: Rockbox','Battery: Icon','Library on Home: On','Row Preview: On','Row Art: On','Hide']; passed()
+assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Classic','Status Bar: Theme','Time in Title: On','Show Wordmark: On','Show Sample Rate: Off','Light Mode: On','Accent: Classic Blue','Home: Split','Shortcut: Favourites','Battery: Icon','Library on Home: On','Row Preview: On','Row Art: On','Hide']; passed()
 # Classic's Accent is Classic Blue (its own scheme, after the ACCENTS rows) by default and for a stored value
 # Classic does not offer (Ivory, 7) or cannot read (12). The row cycles the 8 accents in Classic's order,
 # then Classic Blue, each band its own gloss: Classic Blue's stops, the others derived from their tones.
@@ -7273,8 +7268,8 @@ passed()
 # key is read 15th, after CLASSIC_LIGHT_ACCENT, on unless chosen; Centre writes the next value under the theme's
 # key; the stored value picks the set the first system_bar boots: Off classic-light-text, On (or unreadable) classic-light.
 m,view,rows=display({},setup=classic_light); art=m.nodes[view]['children'][12]
-assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Classic','Status Bar: Theme','Time in Title: On','Show Wordmark: On','Show Sample Rate: Off','Light Mode: On','Accent: Classic Blue','Home: Split','Shortcut: Rockbox','Battery: Icon','Library on Home: On','Row Preview: On','Row Art: On','Hide']
-assert m.config_reads[13:19]==[('/mnt/data/config.ini','IPOD',k,v) for k,v in (('STATUSBAR','0'),('SHOWQ2POD','1'),('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]
+assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Classic','Status Bar: Theme','Time in Title: On','Show Wordmark: On','Show Sample Rate: Off','Light Mode: On','Accent: Classic Blue','Home: Split','Shortcut: Favourites','Battery: Icon','Library on Home: On','Row Preview: On','Row Art: On','Hide']
+assert m.config_reads[14:20]==[('/mnt/data/config.ini','IPOD',k,v) for k,v in (('STATUSBAR','0'),('SHOWQ2POD','1'),('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]
 assert art_boot({})==art_boot({'ROWART':'1'})==art_boot({'ROWART':'2'})==['classic-light_system_bar']
 assert art_boot({'ROWART':'0'})==['classic-light-text_system_bar']
 passed()
@@ -9727,7 +9722,7 @@ passed()
 CAPS='/tmp/q2-addon.caps'
 m=AppMachine(); stream_rows(m); caps=bytes(m.files[CAPS])
 assert caps.endswith(b'\n') and caps.count(b'\n')==1,caps
-assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'field',b'more',b'fav',b'now',b'fieldtext',b'wake',b'audio2',b'dim',b'gameview',b'eq',b'screen',b'volume',b'wifi',b'network',b'bar',b'switch',b'playkept',b'playing'},caps
+assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'field',b'more',b'fav',b'now',b'fieldtext',b'wake',b'audio2',b'dim',b'gameview',b'eq',b'screen',b'volume',b'wifi',b'network',b'bar',b'switch',b'playkept',b'playing',b'takeover'},caps
 m.files[CAPS]=bytearray(b'stale\n'); stream_rows(m); assert m.files[CAPS]==caps; passed()
 # Classic, Home's Split: the Streaming row slides Streaming's rows in, as the Library's: the page's own constructor fills the
 # list, what it sets on a window goes again, every row (stock's 70 px Tidal row and the added ones) takes Home's width and height,
@@ -9901,8 +9896,8 @@ assert not idle(a) and not idle(a) and any(c[0]=='reset_poweroptions_timer' for 
 # A card game with the sound (q2app audio=1): the output is handed over before the fork as for a station (player_stop,
 # the jack readied by dac_take) and the binary gets q2video's arguments: the device, and on Bluetooth or USB the
 # volume (h: the DAC's own); Play/Pause and the side buttons reach it; the DAC stays on and nothing ends it for
-# idling; the Shortcut opens it by id, -1 for an id no card game has.
-g=AppMachine(); card_app(g,'groovebox','name=Groovebox\ngame=1\naudio=1\n'); GB='/mnt/mmc/.groovebox/q2-groovebox'; GS2='/tmp/q2-groovebox.input.sock'
+# idling; the Shortcut opens it by id, -1 for an id no card app has.
+g=AppMachine(); card_app(g,'beats','name=Beats\ngame=1\naudio=1\n'); GB='/mnt/mmc/.beats/q2-beats'; GS2='/tmp/q2-beats.input.sock'
 def gn(name,*args): return g.call(address=payload_syms[name],args=(args+(0,0,0,0))[:4],gap=0,clear=False,count=5_000_000)
 def start(way):
     g.way=way; g.forked=0; g.execs=[]; g.calls=[]; gn('addon_game_start',0)  # the child
@@ -9926,8 +9921,8 @@ assert gevent(O['EVT_KEY_LONG'],O['KEY_PLAY'])==[]  # eaten: no Play-hold action
 g.word(syms['g_dacoff_time'],5); g.now+=120_001; g.waited=0; assert poll(g)==0 and g.get(syms['g_dacoff_time'])==0
 g.now+=120_001; assert poll(g)==0 and any(c[0]=='reset_poweroptions_timer' for c in g.calls)
 g.waited=4243; poll(g); assert gn('addon_game_front')==0 and gn('addon_game_audio')==0
-g.waited=0; assert signed(gn('addon_game_open',g.string('nothere')))==-1 and gn('addon_game_front')==0
-assert gn('addon_game_open',g.string('groovebox'))==1 and gn('addon_game_front')==1; passed()
+g.waited=0; assert signed(gn('addon_open_app',g.string('nothere')))==-1 and gn('addon_game_front')==0
+assert gn('addon_open_app',g.string('beats'))==0 and gn('addon_game_front')==1; passed()
 # Stock's Baidu Netdisk row (a Chinese cloud drive; list_baidu's icon) is gone from Streaming, destroyed; its
 # TIDAL row stays first.
 m=AppMachine(); view=m.node('scroll_view','scroll_view_streamsset')
@@ -11161,20 +11156,20 @@ m.row(1); assert m.labels()[8]=='Installed' and m.toasts[-1][3]=='Connect to Wi-
 m.row(3); m.row(3); assert m.labels()[8]=='Removing…'; shelf_job(m)
 assert m.toasts[-1][3]=='Spotify removed' and KILL in m.systems[-3] and m.systems[-2]=='sync' and KILL in m.systems[-1]  # spot_stop: before and after
 assert not {SPOT_TAG,SPOT_FILES,'/mnt/mmc/.spotify/run','/mnt/mmc/.spotify/librespot'}&set(m.files) and m.labels()[8]=='Install'; passed()
-# A stale check, stopped by a press (it needs no answer); then Rockbox from its release to "ready".
+# A stale check, stopped by a press (it needs no answer); then Rockbox from its release to "ready", on one press as any app.
 m.close(); m.wifi=3; m.now+=11*60*1000; apps_open(m); assert len(m.threads)==5
 m.row(2); assert m.toasts[-1][3]=='Stopped checking for updates'; shelf_job(m); assert len(m.threads)==5 and m.toasts[-1][3]=='Stopped checking for updates'; passed()
 m.close(); m.rockbox_mode=0; m.dirs.pop('/mnt/mmc/.spotify'); m.reply=(ROOT/'test/shelf/q2-rockbox.json').read_bytes()
 toasts=len(m.toasts); apps_open(m); shelf_job(m); assert len(m.toasts)==toasts  # the opening check: nothing to update, nothing said
 assert m.labels()==['App Store','Check for Updates','Checked just now','Rockbox','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Jellyfin','Install','Plex','Install','Podcasts','Install','Live Music Archive','Install','AirPlay','Install','Utilities','Install','Weather','Install','Books','Install','EQ Studio','Install','Mixtape','Install','Groovebox','Install','Videos','Install','Tailscale','Install','Languages','Install']  # not stopped: checked again
-m.row(1); assert m.labels()[4]=='Starts at power-on. Press again to install' and len(m.threads)==6
+assert len(m.threads)==6
 m.row(1); assert len(m.threads)==7 and m.labels()[4]=='Checking…'; m.row(1); shelf_job(m); assert m.toasts[-1][3]=='Download cancelled'
-m.free=10<<20; m.row(1); m.row(1); shelf_job(m)  # the zip (13018581 bytes) and 64 MB left over
+m.free=10<<20; m.row(1); shelf_job(m)  # the zip (13018581 bytes) and 64 MB left over
 assert m.toasts[-1][3]==f'Needs {(13018581+(54<<20)+(1<<20)-1)>>20} MB more space' and not [f for f in m.files if '.q2/staging/' in f]; passed()
 m.free=1<<32; m.staged=[('.rockbox/rockbox',b'ELF3.2'),('.rockbox/codecs/flac.codec',b'c'),('.rockbox/fonts/a b.fnt',b'f')]
 m.listing=''.join(f'{len(d):9}  10-06-2026 13:18   {f}\n' for f,d in m.staged)
-m.row(1); m.row(1); m.rockbox_mode=0o100755; m.moves=[]; shelf_job(m)  # Rockbox on the card by the end
-assert m.toasts[-1][3]=='Rockbox is ready. Find it on Home'
+m.row(1); m.rockbox_mode=0o100755; m.moves=[]; shelf_job(m)  # Rockbox on the card by the end
+assert m.toasts[-1][3]=='Rockbox is ready in Streaming'  # no q2app in this zip: any app's place without one
 assert [x for x in m.moves if x.startswith('/mnt/mmc/.rockbox/')][-1]=='/mnt/mmc/.rockbox/rockbox'  # the binary last
 assert m.moves[-2:]==['/mnt/mmc/.q2/apps/rockbox.files','/mnt/mmc/.q2/apps/rockbox.tag'] and m.files['/mnt/mmc/.q2/apps/rockbox.tag']==b'v3.2'
 assert m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2' and m.files['/mnt/mmc/.rockbox/fonts/a b.fnt']==b'f'
@@ -11465,9 +11460,9 @@ for radio,page in (('wifiswitch','systemset/wifi_page'),('btswitch','systemset/b
 m,rows,texts,icons,click=settings_page('power','scroll_view_powermanager')
 assert all(switch_image(m,rows[i])=='switch_off' for i in (1,3,4))  # 2, USB DAC Charging, is a value
 assert len(rows)==7 and icons==['system_powermanager','usb_chargeswitch','usb_chargeswitch','wifiset_wifi','system_carmode','system_powermanager','system_powermanager'] and all(m.nodes[r]['style']=='s_listitem_black' for r in rows)
-assert texts()==['Standby Limit: Off','Charge Limit (80%)','USB DAC Charging: Off','Smart Wi-Fi','system_carmode','Battery History','Boot to: Rockbox']
+assert texts()==['Standby Limit: Off','Charge Limit (80%)','USB DAC Charging: Off','Smart Wi-Fi','system_carmode','Battery History','Boot to: Q2 Pod']
 assert click(1)==[(1,'Q2POD','CHARGELIMIT')] and texts()[1]==f"Charge Limit ({O['CHARGE_STOP']}%)"
-assert click(1)==[(0,'Q2POD','CHARGELIMIT')] and texts()==['Standby Limit: Off','Charge Limit (80%)','USB DAC Charging: Off','Smart Wi-Fi','system_carmode','Battery History','Boot to: Rockbox']; passed()
+assert click(1)==[(0,'Q2POD','CHARGELIMIT')] and texts()==['Standby Limit: Off','Charge Limit (80%)','USB DAC Charging: Off','Smart Wi-Fi','system_carmode','Battery History','Boot to: Q2 Pod']; passed()
 # In-Vehicle Mode, System's stock row before (0x4d34c0): its byte, its key, and the state byte cleared.
 m.byte(syms['g_carmode_state'],1)
 assert click(4)==[(1,'SYSSET','CARMODE')] and m.u.mem_read(syms['g_carmode'],1)==b'\1' and m.u.mem_read(syms['g_carmode_state'],1)==b'\0' and switch_image(m,rows[4])=='switch_on'
@@ -11828,7 +11823,7 @@ for double in ('0','1'):
     assert not press(DOWN,0) and not press(UP,50) and press(DOWN,O['WAKE_MS']) and press(UP,50),double
 passed()
 m,rows,texts,*_=settings_page('power','scroll_view_powermanager',{'CHARGELIMIT':'1','WAKEDOUBLE':'1','VOLGUARD':'1','STANDBYLIMIT':'2'})
-assert texts()==[limits[1],f"Charge Limit ({O['CHARGE_STOP']}%)",'USB DAC Charging: Off','Smart Wi-Fi','system_carmode','Battery History','Boot to: Rockbox']
+assert texts()==[limits[1],f"Charge Limit ({O['CHARGE_STOP']}%)",'USB DAC Charging: Off','Smart Wi-Fi','system_carmode','Battery History','Boot to: Q2 Pod']
 m,rows,texts,*_=settings_page('display','scroll_view_display',{'WAKEDOUBLE':'1','VOLGUARD':'1'},stock_rows=3,sub=3)
 assert texts()[6:]==['Wake: Double Press','Volume Guard']
 assert m.get(payload_syms['wheel_guard'])==1; passed()

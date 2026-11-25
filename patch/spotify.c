@@ -293,7 +293,7 @@ void spot_kill(const char *before, const char *after) {
 }
 
 /* SPOT_IDLE_MS after playback ended with the browser shut, or Streaming's Stop Streaming Services
- * row: librespot and its restart loop killed, as Home's Rockbox row does, and the keys local
+ * row: librespot and its restart loop killed, as a takeover app's row does, and the keys local
  * music's. Streaming's Spotify row starts it again. */
 void spot_stop(void) {
     int sock = sp.sock;

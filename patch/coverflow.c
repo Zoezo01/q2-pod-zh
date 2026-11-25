@@ -688,9 +688,9 @@ void art_strike(const char *file) {
     }
     unlink(file);
 }
-/* A clean end (power-off, Restart, an update, Rockbox): the worker stops after the album it is on,
- * writing no note for the next, which the kill that follows would leave for art_strike, and this
- * one's goes; playlist_art.c's worker too. */
+/* A clean end (power-off, Restart, an update, a takeover): the worker stops after the album it is
+ * on, writing no note for the next, which the kill that follows would leave for art_strike, and
+ * this one's goes; playlist_art.c's worker too. */
 void coverflow_clean_end(void) {
     cf.cancel = 1;
     unlink(BUILDING);
@@ -4285,8 +4285,9 @@ static struct {
     int clipped;
     int playing; /* Now Playing's row shown, as last laid out (queue_loaded) */
 } home __attribute__((section(".scratch")));
-extern int ipod_home(void), ipod_home_rockbox(void), home_shortcut_open(void *, event_t *),
-    home_lib_on(void), row_preview_on(void), show_q2pod(void), library_search(void);
+extern int ipod_home(void), ipod_home_shown(void), shortcut_is_app(void),
+    home_shortcut_open(void *, event_t *), home_lib_on(void), row_preview_on(void),
+    show_q2pod(void), library_search(void);
 extern void library_rows(widget_t *list), stream_rows(widget_t *list);
 extern void home_pane_read(int *services, int *games, int *free_tenths);
 extern int library_count(const char *sql), msg_counting(void);
@@ -4930,8 +4931,8 @@ void coverflow_home_row(widget_t *surface, widget_t *row, int id, int painting) 
         if (kind == PANE_ROCKBOX) { /* the Shortcut row: the Games icon, its count only for Games;
                                      * the Podcasts and Audiobooks folders, Folder's icon */
             const char *s = ipod_home_shortcut();
-            kind = !tk_strcmp(s, "Games")                                     ? PANE_GAMES
-                   : !tk_strcmp(s, "Rockbox") || !tk_strcmp(s, "Groovebox")   ? PANE_ROCKBOX
+            kind = shortcut_is_app()                                          ? PANE_ROCKBOX
+                   : !tk_strcmp(s, "Games")                                   ? PANE_GAMES
                    : !tk_strcmp(s, "Shuffle")                                 ? PANE_SHUFFLE
                    : !tk_strcmp(s, "Podcasts") || !tk_strcmp(s, "Audiobooks") ? PANE_FOLDER
                                                                               : PANE_LIBRARY;
@@ -5135,24 +5136,24 @@ static void home_show(widget_t *w, int on) {
  * right panel; Full hides the art and widens the list, its rows to the theme's home_full_row;
  * Carousel hides the art and shows stock's cards (tools/ipod.py ipod_home) in the
  * lists' place, and leaving it, the main list. Now Playing with no song loaded (queue_loaded, as an
- * iPod's), Rockbox without the card's, and Folder and Streaming hidden in Appearance, are restacked
- * last, as the native layout includes hidden rows, and made insensitive, as hidden rows keep their
- * taps. Now Playing's row moves the list's count and selection with it (list_row_show): it comes
- * and goes while Home shows (bar_sync). */
+ * iPod's), a card app's Shortcut without the app, and Folder and Streaming hidden in Appearance,
+ * are restacked last, as the native layout includes hidden rows, and made insensitive, as hidden
+ * rows keep their taps. Now Playing's row moves the list's count and selection with it
+ * (list_row_show): it comes and goes while Home shows (bar_sync). */
 void coverflow_home_layout(void) {
     int mode = ipod_home(), full = mode == 1, carousel = mode == 2;
     const theme_t *T = theme();
     /* The art goes back to the panel; Split's next paint resumes the pan. */
     stop_timer(&home.drift);
     if (!home.list) return;
-    /* Now Playing, Folder, Rockbox and Streaming in their places (HOME_ROWS), then the hidden ones
-     * last, as the native layout includes hidden rows; hidden, they take no taps (Rockbox would
-     * take Streaming's). ponytail: Carousel keeps Now Playing's, Folder's and Streaming's cards, as
-     * it keeps the Shortcut's (below); Now Playing's card with nothing loaded opens nothing
-     * (ringnav_playing). Building the carousel's cards again would take it out. */
+    /* Now Playing, Folder, the Shortcut and Streaming in their places (HOME_ROWS), then the hidden
+     * ones last, as the native layout includes hidden rows; hidden, they take no taps (the Shortcut
+     * would take Streaming's). ponytail: Carousel keeps Now Playing's, Folder's and Streaming's
+     * cards, as it keeps the Shortcut's (below); Now Playing's card with nothing loaded opens
+     * nothing (ringnav_playing). Building the carousel's cards again would take it out. */
     static const char *const rows[] = { "btn_playing", "btn_folder", "btn_rockbox", "btn_stream" };
     static const unsigned char at[] = { 0, 3, 4, 5 };
-    int shown[] = { home.playing = queue_loaded(), !pod_value(POD_HIDE_FOLDER), ipod_home_rockbox(),
+    int shown[] = { home.playing = queue_loaded(), !pod_value(POD_HIDE_FOLDER), ipod_home_shown(),
                     !pod_value(POD_HIDE_STREAM) };
     for (int pass = 0; pass < 2; ++pass)
         for (int i = 0; i < 4; ++i) {
@@ -5165,9 +5166,9 @@ void coverflow_home_layout(void) {
     widget_t *rockbox = widget_lookup(home.win, "btn_rockbox", 1);
     if (rockbox) {
         widget_set_text_utf8(widget_lookup(home.win, "label_rockbox", 1), tr(ipod_home_shortcut()));
-        /* ponytail: the Shortcut card stays when the row hides (Shortcut: Rockbox, no Rockbox on
-         * the card; its tap says so), as the slide_menu lays out hidden cards too; removing it
-         * would mean re-adding it once the card has Rockbox */
+        /* ponytail: the Shortcut card stays when the row hides (a card app's, not on the card; its
+         * tap says so), as the slide_menu lays out hidden cards too; removing it would mean
+         * re-adding it once the card has the app */
         if (home.carousel[0])
             widget_set_text_utf8(widget_lookup(home.carousel[0], "label_rockbox", 1),
                                  tr(ipod_home_shortcut()));

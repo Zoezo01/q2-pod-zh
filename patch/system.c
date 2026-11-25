@@ -141,7 +141,7 @@ int ringnav_wifi_signal(void) {
  * cuts the power. The first UI loop pass starts it counting WDT_MS and every pass feeds it, so a
  * stall that long reboots instead. It counts on the RTC clock, through a suspend, so Standby stops
  * it before and starts it again after (ringnav_standby). Its close is a no-op, so a clean end
- * (ringnav_clean_end: power-off, Restart, a firmware update, Rockbox) stops it. libhardware2's
+ * (ringnav_clean_end: power-off, Restart, a firmware update, a takeover) stops it. libhardware2's
  * watchdog_start/stop/feed ioctls; no device, or a refused start, leaves stock's behaviour.
  * ponytail: the UI loop is the only feeder, so a stalled worker thread is not caught. */
 #define WDT_DEV "/dev/jz_watchdog"
@@ -298,7 +298,8 @@ static void state_poll(void) {
     blob_io(STATE_FILE, STATE_FILE ".tmp", s, (unsigned)n, 1); /* once a change: not each pass */
     memcpy(pw.state, s, n + 1);
 }
-/* A clean end: power-off, Restart, a firmware update, Rockbox. Nothing to report at the next boot.
+/* A clean end: power-off, Restart, a firmware update, a takeover. Nothing to report at the next
+ * boot.
  */
 void ringnav_clean_end(void) {
     /* every call's: an update's dialog is a clean end as it opens, and its reboot one more */

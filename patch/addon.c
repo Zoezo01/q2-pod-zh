@@ -11,7 +11,9 @@
  *            its row is: library, games, network or streaming; without it, Games for a game and
  *            Streaming for any other), wifi (0: it never uses the network, so Smart Wi-Fi keeps
  *            no radio on for it: addon_running, addon_offline; 1: it follows the Wi-Fi link,
- *            addon_wifi.c) and root (1: it runs as root; without it, as APP_UID, app_user.c);
+ *            addon_wifi.c), root (1: it runs as root; without it, as APP_UID, app_user.c) and
+ *            takeover (1: its row ends demo and S90play runs q2-<id> as root in its place, demo
+ *            starting again when it exits: takeover);
  *   run      its launcher, which copies the app to /tmp and runs it there in a restart loop, so
  *            the card is never kept busy, leaving the loop's pid in /tmp/q2-<id>;
  *   q2-<id>  the app;
@@ -101,7 +103,7 @@
 #define ADDON_CAPS                                                                                 \
     "playlist progress pages library goto sleep game audio sections art window urls sort field "   \
     "more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar switch "    \
-    "playkept playing"
+    "playkept playing takeover"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -130,8 +132,9 @@ typedef struct {
     /* its status file's bar= (bar_read): the word as read last, and file:// of the icon it names
      * (bar.png for 1, bar-<word>.png else) if one fits BAR_ICON_W x BAR_ICON_H; else "" */
     char baricon[56], barword[12];
-    int barw; /* the icon's width, for its slot in the bar */
-    int root; /* q2app's root=1: it runs as root, not as APP_UID (app_user.c) */
+    int barw;     /* the icon's width, for its slot in the bar */
+    int root;     /* q2app's root=1: it runs as root, not as APP_UID (app_user.c) */
+    int takeover; /* q2app's takeover=1: it runs in demo's place (takeover) */
 } app_t;
 enum { ROW_STREAMING, ROW_GAMES, ROW_LIBRARY, ROW_NETWORK }; /* as addon_scan's rows[] names them */
 
@@ -167,9 +170,9 @@ static app_t *slot(const char *id) {
     if (ap.n == APPS_MAX) return 0;
     app_t *a = &ap.a[ap.n++];
     tk_snprintf(a->id, sizeof a->id, "%s", id);
-    /* A .play /tmp kept from before demo started (a crash, a round trip to Rockbox) is taken as
-     * seen, not played again: the slot is made before this demo can start its app, and kept for
-     * demo's life, so a .play the app writes later is a new session (stream_poll).
+    /* A .play /tmp kept from before demo started (a crash, a round trip to an app that took over)
+     * is taken as seen, not played again: the slot is made before this demo can start its app, and
+     * kept for demo's life, so a .play the app writes later is a new session (stream_poll).
      * ponytail: an app that outlived demo and writes a new .play before this first scan has it
      * taken as seen too; telling them apart needs the file's mtime against demo's start. */
     char raw[PLAY_RAW];
@@ -204,6 +207,7 @@ static void slots_read(void) {
         a->view = number(raw, "gameview") == 1;
         a->hidden = number(raw, "hidden") == 1;
         a->root = number(raw, "root") == 1;
+        a->takeover = number(raw, "takeover") == 1;
         /* its row where row says, else as firmware without the key lists it: Games for a game,
          * Streaming for any other */
         static const char *const rows[] = { "streaming", "games", "library", "network" };
@@ -570,7 +574,7 @@ static int stream_start(const void *unused) {
  * the URL, which carries the app's token. Kept whether the app runs or not, so it reads the file
  * when it next does. Marked stopped, once, when another queue or player takes over, the player
  * stays stopped NOW_STOP_MS (not between tracks), another URL queue starts (any app's), or the apps
- * are stopped (addon_stop: Rockbox, Stop Streaming Services); then nothing until the queue plays
+ * are stopped (addon_stop: a takeover, Stop Streaming Services); then nothing until the queue plays
  * again. A restarted demo marks its last run's stopped (now_sweep). Nothing is written for a queue
  * before it first plays. */
 #define NOW_STEP_S 5
@@ -1240,17 +1244,6 @@ static int game_start(app_t *a, const char *uri, const char *ctx) {
     return 1;
 }
 
-/* Home's Shortcut (theme_engine.c home_shortcut_open): the card game with this id started as its
- * row would start it, wherever the row is (1 running, 0 not, with game_start's toast); -1 when no
- * card game has the id (no q2app with game=1 in its folder, one hidden, or no slot left). */
-int addon_game_open(const char *id) {
-    addon_scan();
-    for (int i = 0; i < ap.n; ++i)
-        if (ap.a[i].present && !ap.a[i].hidden && ap.a[i].game && !strcmp(ap.a[i].id, id))
-            return game_start(&ap.a[i], 0, 0);
-    return -1;
-}
-
 /* ringnav_input, every event: 1 when it is the game's (sent as its datagram) or a key it eats (the
  * hold that ended it, a key held into Now Playing's open); 0 for stock's: a music key of a game
  * without the sound or gameview=1, every event while Now Playing is over the game, and a key
@@ -1436,7 +1429,7 @@ int addon_bar_width(void) {
 }
 
 /* Smart Wi-Fi (smart_wifi.c smart_needed): an app started, or restarting after Retry, keeps the
- * radio on until it stops (by itself, Stop Streaming Services or Rockbox). One stopped for USB
+ * radio on until it stops (by itself, Stop Streaming Services or a takeover). One stopped for USB
  * storage counts once it starts again: the cable holds the radio meanwhile, and an app deleted from
  * the computer, which never starts again, holds nothing. One whose q2app says wifi=0 never uses the
  * network and never counts, nor does its page (addon_offline); a wifi=1 app follows the link, it
@@ -1475,7 +1468,7 @@ static void app_stop(app_t *a, int restart) {
     a->restart = restart, a->restart_at = time_now_ms();
 }
 
-/* Streaming's Stop Streaming Services, and Home's Rockbox row: each asked to end (its downloads
+/* Streaming's Stop Streaming Services, and a takeover app's row: each asked to end (its downloads
  * or queue saved). */
 void addon_stop(void) {
     char cmd[96];
@@ -1485,7 +1478,7 @@ void addon_stop(void) {
         a->launched = a->hold = a->relaunch = a->restart = 0;
         a->wifi_off = a->wifi;
     }
-    /* Rockbox's row kills demo next, /tmp kept; Stop Streaming Services stops a URL queue too */
+    /* a takeover kills demo next, /tmp kept; Stop Streaming Services stops a URL queue too */
     if (nw.live) now_write(1, nw.sec, nw.total);
 }
 
@@ -2717,11 +2710,26 @@ static int page_at(int k, const char *op, const char *args, const char *title, i
     return 1;
 }
 
-/* A row's press, wherever the row is: a game runs over the whole screen (1 when it runs), any other
- * app opens its page (1 when it opened, or said why not). */
+/* A takeover app's row (docs/boot.md#apps-that-take-over-the-device): demo leaves its id in
+ * S90play's flag and ends (ringnav_hand_over), and S90play runs its q2-<id>. */
+static int takeover(app_t *a) {
+    if (access(a->bin, 0) ||
+        !blob_io(TAKEOVER_FLAG, TAKEOVER_FLAG ".tmp", a->id, strlen(a->id), 1)) {
+        toast(tr("It isn't on the card"));
+        return 0;
+    }
+    ringnav_hand_over();
+    return 1;
+}
+
+/* A row's press, wherever the row is: a takeover app ends demo for itself, a game runs over the
+ * whole screen (1 when it runs), any other app opens its page (1 when it opened, or said why not).
+ */
 static int press(int slot) {
     app_t *a = &ap.a[slot];
-    return a->game ? game_start(a, 0, 0) : page_at(slot, "menu", "", a->name, 1);
+    return a->takeover ? takeover(a)
+           : a->game   ? game_start(a, 0, 0)
+                       : page_at(slot, "menu", "", a->name, 1);
 }
 
 /* An app's Streaming row (home.c ringnav_stream; ctx: its app's slot, addon_slot): a read that
@@ -2804,6 +2812,45 @@ void addon_open_id(const char *id) {
             page_at(i, "menu", "", ap.a[i].name, 1);
             return;
         }
+}
+
+/* Home's Shortcut (theme_engine.c): the present, unhidden app with this id, the card read again,
+ * or -1. addon_open_app presses its row (a Streaming row's waiting for Smart Wi-Fi's link, as
+ * addon_open does): -1 with none. addon_name_of names it as the last read found it (the card read
+ * once when nothing has read it yet: it is asked as Home paints), its id with none. addon_sorted
+ * puts the games' (game 1) or the other apps' slots in slots by name, for the Shortcut picker
+ * (shortcut_pick.c): how many. */
+static int app_of(const char *id) {
+    addon_scan();
+    for (int i = 0; i < ap.n; ++i)
+        if (ap.a[i].present && !ap.a[i].hidden && !strcmp(ap.a[i].id, id)) return i;
+    return -1;
+}
+int addon_open_app(const char *id) {
+    int i = app_of(id);
+    if (i >= 0 && ap.a[i].row == ROW_STREAMING)
+        addon_open((void *)(long)i, 0);
+    else if (i >= 0)
+        press(i);
+    return i < 0 ? -1 : 0;
+}
+const char *addon_name_of(const char *id) {
+    if (!ap.n) slots_read();
+    for (int i = 0; i < ap.n; ++i)
+        if (!strcmp(ap.a[i].id, id) && ap.a[i].name[0]) return ap.a[i].name;
+    return id;
+}
+int addon_sorted(int game, int *slots) {
+    int n = 0;
+    addon_scan();
+    for (int i = 0; i < ap.n; ++i) { /* by name: an insertion, as addon_scan's */
+        if (!ap.a[i].present || ap.a[i].hidden || ap.a[i].game != game) continue;
+        int k = n++;
+        for (; k && strcasecmp(ap.a[slots[k - 1]].name, ap.a[i].name) > 0; --k)
+            slots[k] = slots[k - 1];
+        slots[k] = i;
+    }
+    return n;
 }
 
 /* Whether path is in an app's folder, CARD/.<id>/, and id the app's. */

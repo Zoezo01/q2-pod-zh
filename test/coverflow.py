@@ -470,7 +470,8 @@ unsigned flat_page(void) { return light ? scheme()->paper : 0; }
 void hold_card_flat(canvas_t *c, const rect_t *r, int head, int over) {} /* flat.c's: no theme here takes it */
 static int square_art;
 int ipod_square_art(void) { return square_art; }
-int ipod_home_rockbox(void) { return 0; }
+int ipod_home_shown(void) { return 0; }
+int shortcut_is_app(void) { return 1; }
 int card_home; /* card_rules.c's: no card theme here */
 void card_rules_home(void *list) {}
 unsigned card_rules_art(const char **cover, unsigned key) { return key; }

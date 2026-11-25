@@ -448,7 +448,7 @@ def test_at_a_glance_takes_no_lock_rules(fw, card, t):
 # Home
 HOME_ROWS = [name for pg, name, *_ in ROWS if pg[1] == 'home_page']
 SIZES = ('style:normal:font_size', 'style:focused:font_size', 'style:disable:font_size', '_card_px')
-ROCKBOX = b'/mnt/mmc/.rockbox/rockbox'
+ROCKBOX = b'/mnt/mmc/.rockbox/q2-rockbox'  # Shortcut 0's app with no SHORTCUT_APP
 NOT_HOME = theme_file(b'page playing_page', b'hide img_cover', b'font scrlabel_title 30', b'page saverscreen_page',
                       b'hide clock_time')
 

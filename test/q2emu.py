@@ -210,7 +210,7 @@ class Machine:
         self.clock_minutes=False; self.marquee=False
         self.widget_timers=False  # widget_add_timer schedules (real_hscroll), else it is only recorded
         self.wall=(86400,86400)  # time's result, and the seconds localtime must be given
-        self.rockbox_mode=0o100755; self.groovebox_mode=0  # the launchers' binaries: Rockbox on the card, Groovebox not
+        self.rockbox_mode=0o100755  # Rockbox's binary and its card app's launcher on the card
         self.handlers[syms['__xstat@GLIBC_2.0']]='rockbox_stat'
         self.handlers[syms['strcmp@GLIBC_2.0']]='tk_strcmp'
         self.handlers[syms['memcpy@GLIBC_2.0']]='memcpy'
@@ -435,8 +435,7 @@ class Machine:
             if self.text(b) in self.scope_markers: self.word(c+20,0o100644); ret=0
             elif self.text(b) in ['/mnt/mmc/'+n for n,t in self.card if t==4] or self.text(b) in self.dirs: self.word(c+20,0o40755); ret=0  # a card folder
             elif self.text(b) in self.stats: self.word(c+64,self.stats[self.text(b)]); ret=0  # its mtime: info[16]
-            elif self.text(b)=='/mnt/mmc/.groovebox/q2-groovebox': self.word(c+20,self.groovebox_mode); ret=0 if self.groovebox_mode else -1
-            elif self.text(b)!='/mnt/mmc/.rockbox/rockbox': ret=-1  # Tidal Downloads' rows: no such files here
+            elif self.text(b) not in ('/mnt/mmc/.rockbox/rockbox','/mnt/mmc/.rockbox/q2-rockbox'): ret=-1  # Tidal Downloads' rows: no such files here
             else: self.word(c+20,self.rockbox_mode); ret=0 if self.rockbox_mode else -1
         elif name=='strlen@GLIBC_2.0': ret=len(self.raw(a))  # bytes: stock strips a path's UTF-8 name byte by byte
         elif name=='strrchr@GLIBC_2.0': i=self.text(a).encode().rfind(bytes([b&255])); ret=a+i if i>=0 else 0
@@ -1158,7 +1157,7 @@ class NavigationMachine(Machine):
                   'widget_remove_child','widget_destroy','window_manager_dispatch_window_event',
                   'widget_foreach','widget_on','playing_timer_start','access@GLIBC_2.0',
                   'remove@GLIBC_2.0','idle_add','netdisk_folder_clear','awake_screen',prefix='nav:')
-        self.rockbox_mode=0o100755; self.groovebox_mode=0  # the launchers' binaries: Rockbox on the card, Groovebox not
+        self.rockbox_mode=0o100755  # Rockbox's binary and its card app's launcher on the card
         self.handlers[syms['__xstat@GLIBC_2.0']]='rockbox_stat'
         self.handlers[syms['strcmp@GLIBC_2.0']]='tk_strcmp'
         for address in (0x53cf08,0x6989cc,0x69bb70,0x699784): self.handlers[address]='nav:'+hex(address)
@@ -3579,12 +3578,12 @@ class RockboxMachine(Machine):
         name=self.handlers.get(address,'')
         if not name.startswith('r:'): return super().hook(u,address,size,unused)
         name=name[2:].split('@')[0]; a=u.reg_read(UC_MIPS_REG_A0); self.calls.append((name,a))
-        self.returns(0x2000000 if name=='fopen' and self.text(a)=='/tmp/q2pod-rockbox' else 0)  # any other file is missing
-def rockbox(card):
-    m=RockboxMachine(); m.rockbox_mode=0o100755 if card else 0
+        self.returns(0)  # every file is missing
+def hand_over():
+    m=RockboxMachine()
     for n in ('fopen@GLIBC_2.2','fclose@GLIBC_2.2','system@GLIBC_2.0'): m.handlers[syms[n]]='r:'+n
     m.mock('save_memoryplay_info','player_stop','switch_charge_enable','navigator_to_with_context')
-    assert m.call(address=payload_syms['rockbox_open'],args=(0,m.event,0,0),gap=0)==0
+    m.call(address=payload_syms['ringnav_hand_over'],args=(0,0,0,0),gap=0)
     return m,[c[0] for c in m.calls]
 
 class SettingsMachine(Machine):
