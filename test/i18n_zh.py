@@ -461,6 +461,38 @@ ZH_GENERATED = {
 # codepoint array, theme names) plus its corrections. Run gen_zh_expect.py to
 # refresh the block above; it never touches what follows.
 ZH_OVERRIDES = {
+    # 1.9.2: the EQ band page's rows and values.
+    'Band On': '频段 开',
+    'Band Off': '频段 关',
+    'Channels Both': '声道 双声道',
+    'Channels Left': '声道 左声道',
+    'Channels Right': '声道 右声道',
+    'Type Peaking': '类型 峰值',
+    'Type Low shelf': '类型 低架滤波',
+    'Type High shelf': '类型 高架滤波',
+    'Channels': '声道',
+    'Band': '频段',
+    'Type': '类型',
+    'Gain': '增益',
+    'Frequency': '频率',
+    # 1.9.2: the new prompts, the sleep row, the EQ import answers and the hidden Hi-Res row.
+    'Hide Hi-Res': '隐藏 Hi-Res',
+    'Too long': '太长',
+    'Search is too long': '搜索内容过长',
+    'Shut Down': '关机',
+    'Restart': '重启',
+    'Delete': '删除',
+    'Reset to defaults': '恢复默认设置',
+    'Reset all bands? Confirm': '重置所有频段？确认',
+    'Import all': '导入全部',
+    'Import this page': '导入本页',
+    'Previous page': '上一页',
+    'Next page': '下一页',
+    'Eject before disconnecting': '断开前请先弹出',
+    'Connected': '已连接',
+    'OK to Disconnect': '可以断开连接',
+    'Songs': '单曲',
+    '; storage full': '；存储空间不足',
     # 1.9.1: the EQ picker's words and the auto-rate line's prefix.
     'Centre': '中间',
     'Auto (': '自动 (',
@@ -817,7 +849,15 @@ ZH_PATTERNS = [(re.compile(r'^Downloaded (\d+) of (\d+) songs?$'), r'已下载 \
                (re.compile(r'^Location: (.*)$'), r'位置: \1'),
                (re.compile(r'^L (-?[\d.]+) dB$'), r'左 \1 dB'),
                (re.compile(r'^R (-?[\d.]+) dB$'), r'右 \1 dB'),
-               (re.compile(r'^(\d+) of (\d+)$'), r'\1 / \2')]  # the row joins with stock's ASCII colon
+               (re.compile(r'^(\d+) of (\d+)$'), r'\1 / \2'),  # the row joins with stock's ASCII colon
+               (re.compile(r'^Sleep Timer: (\d+) min$'), r'睡眠定时：\1 分钟'),
+               (re.compile(r'^Sleep Timer: (\d+):(\d+)$'), r'睡眠定时：\1:\2'),
+               (re.compile(r'^Imported (\d+); (\d+) already saved; (\d+) failed(.*)$'),
+                r'已导入 \1 个；\2 个已存在；\3 个失败\4'),
+               (re.compile(r'^Frequency (\d+) Hz$'), r'频率 \1 Hz'),
+               (re.compile(r'^Gain ([-+]?[\d.]+) dB$'), r'增益 \1 dB'),
+               (re.compile(r'^Q ([\d.]+)$'), r'Q \1'),
+               (re.compile(r'^Band (\d+)$'), r'频段 \1')]
 for _k in ZH_SKIP:
     ZH.pop(_k, None)
 # The firmware tests compare ctypes bytes, the tools tests compare str.

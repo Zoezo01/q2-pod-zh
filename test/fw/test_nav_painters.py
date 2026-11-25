@@ -1245,8 +1245,8 @@ def test_a_confirms_second_cell_is_its_verb(fw, st, minimal):
     assert (ui.text(down.enter), ui.text(delete.enter)) == ('Shut Down', 'Delete')
     if minimal:  # no cell moved: only its text (the build's asset makes them 375 x 48 rows, tools/ipod.py)
         assert down.enter.box == delete.enter.box == (195, 250, 140, 50)
-    else:  # a longer verb, a wider cell
-        assert down.enter.box[2] > width > delete.enter.box[2]
+    else:  # a longer verb, a wider cell (the Chinese verbs are all two words: equal widths)
+        assert down.enter.box[2] >= width >= delete.enter.box[2]
 
 
 def test_shut_down_names_only_its_own_prompt(fw, st):

@@ -5251,7 +5251,7 @@ static widget_t *usb_cover(widget_t *win) {
         ok = hscroll_label_create(P(c, W_PARENT), I(c, W_X), I(c, W_Y), I(c, W_W), I(c, W_H));
         widget_set_name(ok, "usb_ok");
         widget_use_style(ok, "s_scrlabel_white24c");
-        widget_set_text_utf8(ok, "请先弹出再断开");
+        widget_set_text_utf8(ok, "断开前请先弹出");
         widget_set_visible(c, 0, 0);
     }
     return ok;
