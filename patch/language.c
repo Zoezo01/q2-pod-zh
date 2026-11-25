@@ -182,6 +182,7 @@ const char *tr(const char *en) {
 static const char *zh_asset(const char *en) {
     static const char *const rows[][2] = {
         { "Library", "音乐" }, { "Playback", "播放设置" }, { "System", "系统设置" },
+        { "Cancel", "取消" }, { "OK", "确定" }, /* 确认框的两个按钮 */
     };
     for (unsigned i = 0; en && i < sizeof rows / sizeof *rows; ++i)
         if (!strcmp(en, rows[i][0])) return rows[i][1];
