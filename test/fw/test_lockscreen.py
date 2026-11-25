@@ -937,7 +937,7 @@ def test_layout_follows_time_show_and_its_rows_follow_it(fw, layout, texts):
 def test_the_layout_row_steps_q2pod_locklayout_and_lays_the_rows_out_again(fw, layout):
     """A click saves the other layout and, a loop pass later on the page still in front, has stock's rows built
     again (Clock's comes or goes) with the wheel kept on Layout's row."""
-    picker = Picker(fw, [b'screensaver_default'], LOCKLAYOUT=str(layout))
+    Picker(fw, [b'screensaver_default'], LOCKLAYOUT=str(layout))
     page = fw.var('lockscreen__rows_win', C.c_void_p)
     layout_click = [click for _, click in handlers(fw, EVT_CLICK)][0]  # the first of the page's own rows
     n = len(fw.calls())
@@ -952,7 +952,6 @@ def test_the_layout_row_steps_q2pod_locklayout_and_lays_the_rows_out_again(fw, l
     assert win and C.CFUNCTYPE(C.c_int, C.c_void_p)(fn)(0) == RET_OK
     assert [args[0] for args in calls_since(fw, n, 'stock_saverrows_trampoline')] == [win] and not page.value
     assert [t for t in row_texts(fw, n) if t.startswith(ROWS)] == [DEFAULT_ROWS, GLANCE_ROWS][1 - layout]
-    assert picker
 
 
 def test_rows_again_skip_a_page_no_longer_in_front(fw):
