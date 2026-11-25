@@ -693,8 +693,7 @@ int qm_hold(void) {
     const char *name = top ? widget_get_prop_str(top, "name", "") : "";
     int playing = !tk_strcmp(name, "playing_page");
     if (st.rate_on && top == st.rate_on) { /* the picker's: the hold and its release do nothing */
-        char *key = play_key();
-        return hold_taken(key);
+        return hold_taken(play_key());
     }
     if (st.qm_dialog || qm.qm_timer || st.qm_playlist || !usable() ||
         (!playing && !allowed_top(top)) || window_manager_is_animating(wm) || pointer_down() ||
