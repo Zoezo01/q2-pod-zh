@@ -11927,7 +11927,8 @@ assert clock_click()==[(1,'Q2POD','LOCKCLOCK')] and m.nodes[label]['text']=='Clo
 assert clock_click()==[(0,'Q2POD','LOCKCLOCK')] and m.nodes[label]['text']=='Clock: Standard'; passed()
 m,_,_,label,_=lock_page({'LOCKCLOCK':'1'}); assert m.nodes[label]['text']=='Clock: Large'; passed()
 # Layout (Q2POD LOCKLAYOUT, Default unless 1) follows Time show, 78 high; a click saves the other and has the rows built again a
-# loop pass later: Clock under Default, Background and Shine under At a Glance, then Return Unlocks (Q2POD LOCKRETURN, On unless 0).
+# loop pass later: Clock under Default, Background and Classic Slider under At a Glance, then Return Unlocks (Q2POD LOCKRETURN, On
+# unless 0), and under At a Glance Wheel Unlocks (Q2POD LOCKWHEEL, Off unless 1).
 def layout_row(m,at):
     row=m.nodes[named(m,m.top,'scroll_view')]['children'][at]; button=m.nodes[row]['children'][0]
     return row,button,next(c for c in m.nodes[button]['children'] if 'text' in m.nodes[c])  # a switch's image follows its label
@@ -11938,15 +11939,16 @@ m.calls=[]; f,ctx=m.handler(button,O['EVT_CLICK']); assert m.call(address=f,args
 assert [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(1,'Q2POD','LOCKLAYOUT')] and m.nodes[label]['text']=='Layout: At a Glance'
 assert not [c for c in m.calls if c[0]=='stock_saverrows']; passed()  # not inside the row's own click
 m,_,_,_,_=lock_page({'LOCKLAYOUT':'1'}); row,button,label=layout_row(m,1)
-assert len(m.nodes[named(m,m.top,'scroll_view')]['children'])==9 and m.nodes[label]['text']=='Layout: At a Glance'  # no Clock
-assert [m.nodes[layout_row(m,i)[2]]['text'] for i in (2,3,4)]==['Background: Cover Colour','Shine','Return Unlocks']; passed()
-# Background steps its three values; Shine unset shows the theme's (Minimal's off) and its first click saves the other
+assert len(m.nodes[named(m,m.top,'scroll_view')]['children'])==10 and m.nodes[label]['text']=='Layout: At a Glance'  # no Clock
+assert [m.nodes[layout_row(m,i)[2]]['text'] for i in (2,3,4)]==['Background: Cover Colour','Classic Slider','Return Unlocks']
+assert m.nodes[layout_row(m,5)[2]]['text']=='Wheel Unlocks'; passed()  # off until set: the wheel stays the volume
+# Background steps its three values; Classic Slider is off until its click saves it on
 m,_,_,_,_=lock_page({'LOCKLAYOUT':'1'}); row,button,label=layout_row(m,2)
 for want in ('Background: Plain','Background: Blurred Cover','Background: Cover Colour'):
     m.calls=[]; f,ctx=m.handler(button,O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.nodes[label]['text']==want
 row,button,label=layout_row(m,3)
 m.calls=[]; f,ctx=m.handler(button,O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
-assert [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(1,'Q2POD','LOCKSHINE')]
+assert [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(1,'Q2POD','LOCKSLIDER')]
 assert [m.nodes[c].get('image') for c in m.nodes[button]['children'] if 'text' not in m.nodes[c]]==['switch_on']; passed()
 # Classic hides this page's toolbar: its switch is the list's first row, reading what stock's hidden img_switch shows; the row's click is
 # that image's, a loop pass later as stock rebuilds the list it's in. Stock's rows follow. Minimal keeps its toolbar and gets no row.

@@ -3160,10 +3160,10 @@ static int cf_art_log __attribute__((section(".scratch")));
 /* Display's Hide Duplicate Albums and Hide Duplicate Songs (CFDUPALBUMS, CFDUPSONGS): coverflow.c
  * music_albums and coverflow_cover_tracks. */
 static int cf_dups[2] __attribute__((section(".scratch")));
-/* The Lock Screen's Layout, Background, Shine and Return Unlocks (LOCKLAYOUT, LOCKGROUND,
- * LOCKSHINE, LOCKRETURN): lockscreen.c and lock_glance.c read them as each lock window opens,
- * Return Unlocks at each Return. */
-static int lock_rows[4] __attribute__((section(".scratch")));
+/* The Lock Screen's Layout, Background, Classic Slider, Return Unlocks and Wheel Unlocks
+ * (LOCKLAYOUT, LOCKGROUND, LOCKSLIDER, LOCKRETURN, LOCKWHEEL): lockscreen.c and lock_glance.c read
+ * them as each lock window opens, Return Unlocks at each Return and Wheel Unlocks at each tick. */
+static int lock_rows[5] __attribute__((section(".scratch")));
 static const struct {
     int *value;
     const char *key;
@@ -3206,8 +3206,9 @@ static const struct {
              { &sr_setting, "SAMPLERATE" },
              { &lock_rows[0], "LOCKLAYOUT" },
              { &lock_rows[1], "LOCKGROUND" },
-             { &lock_rows[2], "LOCKSHINE" },
-             { &lock_rows[3], "LOCKRETURN" } };
+             { &lock_rows[2], "LOCKSLIDER" },
+             { &lock_rows[3], "LOCKRETURN" },
+             { &lock_rows[4], "LOCKWHEEL" } };
 _Static_assert(sizeof pods / sizeof *pods == POD_COUNT, "a pods row per row");
 /* a row's choices: Artist albums and the lock screen's Background three, Standby limit four,
  * every other row two */
@@ -3218,12 +3219,10 @@ void pod_settings(void) {
     if (st.pod_read) return;
     for (unsigned i = 0; i < sizeof pods / sizeof *pods; ++i)
         if (pods[i].key) /* Artist albums defaults to Coverflow, Update Notifications, Receive
-                            Audio and Return Unlocks to On; Shine unset is -1, the theme's */
-            *pods[i].value =
-                config_value("Q2POD", pods[i].key, pod_choices(i),
-                             i == POD_LOCKSHINE ? -1
-                                                : i == POD_ARTIST_CF || i == POD_REMIND_DAILY ||
-                                                      i == POD_BT_RECEIVE || i == POD_LOCKRETURN);
+                            Audio and Return Unlocks to On */
+            *pods[i].value = config_value("Q2POD", pods[i].key, pod_choices(i),
+                                          i == POD_ARTIST_CF || i == POD_REMIND_DAILY ||
+                                              i == POD_BT_RECEIVE || i == POD_LOCKRETURN);
     st.pod_read = 1;
 }
 /* A pod_rows row's value (POD_*, one with a pods entry), read once from config.ini. */
@@ -3301,8 +3300,9 @@ static void pod_text(int i) {
         { N_("Layout: Default"), N_("Layout: At a Glance") },
         { N_("Background: Cover Colour"), N_("Background: Plain"),
           N_("Background: Blurred Cover") },
-        { N_("Shine") },
+        { N_("Classic Slider") },
         { N_("Return Unlocks") },
+        { N_("Wheel Unlocks") },
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) { /* the Sort card's words, as Cover Flow's page holds the row */
@@ -3315,7 +3315,6 @@ static void pod_text(int i) {
             : i == POD_CARMODE     ? g_carmode != 0
             : i == POD_COVERMODE   ? g_bigcovermode == 1
             : i == POD_FOLDERCOVER ? g_foldercover_flag != 0
-            : i == POD_LOCKSHINE   ? glance_shine() /* unset: the theme's */
             : pods[i].value        ? *pods[i].value
                                    : 0;
     const char *toggle = names[i][0] && !names[i][1] && i != POD_CF_REFRESH ? tr(names[i][0]) : 0;
@@ -3373,7 +3372,6 @@ static int pod_click(void *ctx, event_t *event) {
         write_int_config(g_foldercover_flag, "PLAYSET", "FOLDERCOVER");
     } else {
         int *value = pods[i].value;
-        if (i == POD_LOCKSHINE) *value = glance_shine(); /* unset, the theme's: from what shows */
         *value = (*value + 1) % pod_choices(i);
         write_int_config(*value, "Q2POD", pods[i].key);
         if (i == POD_SCAN_DURATIONS && !*value) durations_cancel();

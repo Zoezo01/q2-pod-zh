@@ -52,5 +52,4 @@
              big_jump_at="75" big_jump_ms="240" enter_albums="8" slide_ms="160" fold_near="50"/>
   </view>
   <!-- the Lock Screen's At a Glance: the shine across slide to unlock (patch/lock_glance.c), none -->
-  <view name="lock"><element name="slider" shine="0"/></view>
 </theme>

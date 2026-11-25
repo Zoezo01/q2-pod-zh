@@ -147,7 +147,6 @@ SCHEMA = {k.path: k for k in (
     key('pages.own.fill', 'page_fill', 'color', final=True),  # Classic's own full-screen pages (the lock screen's info page); 0: Home's pane's
     key('pages.quick.light_ground', 'qs_ground', 'color'),  # the flat Quick Settings' ground round its cards in the light half; 0: the paper
     key('pages.date.gap', 'date_gap', 'int', 20),  # the flat Set Date's px between its fields, the day where Classic's is; 0: Classic's places
-    key('lock.slider.shine', 'lock_shine', 'int', 1),  # At a Glance's shine across slide to unlock (lock_glance.c): 1 on, 0 none
     # the rows painter's pixel rows, top to bottom (final colours): the track, the played part over it; the volume
     # panel away from Now Playing and a card app's progress (paint_rows_bar)
     Key('playing.scrubber.dark_track', 'np_rows[0]', 'rows', 0, 0, (), 'live'),

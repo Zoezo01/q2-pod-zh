@@ -1,5 +1,5 @@
 """lock_glance.c (docs/internals.md#lock-screen): the Lock Screen's At a Glance layout on stock's lock window, in
-the theme's own look: what it shows and when, Background's ground behind the song, slide to unlock and its Shine,
+the theme's own look: what it shows and when, Background's ground behind the song, slide to unlock, Classic Slider and Wheel Unlocks,
 the knob under a finger and the unlock through stock's handler, and the clock's hold that flips the view."""
 import ctypes as C
 
@@ -259,7 +259,7 @@ def test_default_adds_nothing(fw, layout):
     fw.fn('lockscreen_init', C.c_int, C.c_void_p, C.c_void_p)(0x7700, 0x7800)
     assert fw.calls('hscroll_label_create') == [] and fw.calls('widget_factory_create_widget') == []
     fronted(fw)
-    assert touch(fw, DOWN, KNOB_X + 10, 250) == 0
+    assert touch(fw, DOWN, KNOB_X + 10, 250) == 0 and wheel(fw) == 0
 
 
 # The ground behind the song: Background.
@@ -380,7 +380,7 @@ def test_a_picture_has_a_flat_band_behind_the_clock(fw, mcl, now, light):
     assert len(seen) == 1 and boxes == [((0, 0, 375, 88), rgba(paper, 200 if light == '1' else 88), 0)]
 
 
-# Slide to unlock: flat in every theme, Shine on the words alone.
+# Slide to unlock: flat in every theme; Classic Slider's grey one and its shine on the words alone.
 
 WORDS_X = 72 + (303 - 72 - 4 - 150) // 2  # right of the knob's rest, the words 150 px wide (canvas_measure_text)
 
@@ -399,23 +399,28 @@ def test_the_slider_is_flat_in_the_theme_s_ink_and_on_colour(fw, mcl, now, theme
     assert not fw.fn('ui_ink_raw', C.c_uint, C.c_uint)(0)  # put back after the paint
 
 
-@pytest.mark.parametrize('theme, shiny', [('0', 0), ('1', 1), ('2', 0), ('3', 0)])
-def test_shine_is_the_theme_s_until_set(fw, mcl, now, theme, shiny):
-    """Never set, Shine is the theme's lock.slider.shine: Classic's alone."""
-    g = Glance(fw, mcl, theme=theme, queue=1)
-    assert len(g.timers.of(fw, 'shine')) == shiny and fw.fn('glance_shine', C.c_int)() == shiny
+@pytest.mark.parametrize('theme', THEMES)
+@pytest.mark.parametrize('saved', [None, '0', '1'])
+def test_classic_slider_is_off_until_set_and_alike_in_every_theme(fw, mcl, now, theme, saved):
+    g = Glance(fw, mcl, theme=theme, queue=1, **({} if saved is None else {'LOCKSLIDER': saved}))
+    assert len(g.timers.of(fw, 'shine')) == (saved == '1')
 
 
 @pytest.mark.parametrize('theme', THEMES)
-@pytest.mark.parametrize('saved', ['0', '1'])
-def test_a_saved_shine_wins_in_every_theme(fw, mcl, now, theme, saved):
-    g = Glance(fw, mcl, theme=theme, queue=1, LOCKSHINE=saved)
-    assert len(g.timers.of(fw, 'shine')) == int(saved)
+@pytest.mark.parametrize('light', ['0', '1'])
+def test_classic_slider_is_the_grey_slider_in_every_theme_and_half(fw, mcl, now, theme, light):
+    g = Glance(fw, mcl, theme=theme, queue=1, LIGHT=light, LOCKSLIDER='1')
+    lcd = Lcd(fw)
+    lcd.paint(fw, g['slider'])
+    assert lcd.boxes[:6] == [((0, 0, 303, 48), rgba(0xffffff, 51), 11), ((1, 1, 301, 46), rgba(0, 48), 10),
+                             ((4, 4, 66, 40), rgba(0x8a8a8a), 8), ((5, 5, 64, 38), rgba(0xf4f4f4), 7),
+                             ((6, 24, 62, 18), rgba(0xd6d6d6), 6), ((6, 24, 62, 6), rgba(0xd6d6d6), 0)]
+    assert lcd.texts[0][3] == rgba(0xffffff, 140) and lcd.boxes[6][1] == rgba(0x6b6b6b)
 
 
 def test_the_shine_crosses_the_words_alone_in_three_bands(fw, mcl, now):
-    g = Glance(fw, mcl, theme='1', queue=1)
-    ink = fw.fn('flip_if', C.c_uint, C.c_int, C.c_uint)(0, 0xffffff)
+    g = Glance(fw, mcl, queue=1, LOCKSLIDER='1')
+    ink = 0xffffff
     lcd = Lcd(fw)
     lcd.paint(fw, g['slider'])  # the words measured
     boxes = len(lcd.boxes)
@@ -425,12 +430,12 @@ def test_the_shine_crosses_the_words_alone_in_three_bands(fw, mcl, now):
     lcd.paint(fw, g['slider'])
     middle = WORDS_X - 60 + 140
     assert lcd.clips[0::2] == [(middle - w // 2, 0, w, 48) for w in (96, 60, 28)]
-    assert [t[3] for t in lcd.texts] == [rgba(ink, a) for a in (140, 205, 222, 255)]
+    assert [t[3] for t in lcd.texts] == [rgba(ink, a) for a in (140, 64, 80, 112)]
     assert len(lcd.boxes) == boxes  # nothing on the knob or the track
 
 
 def test_the_shine_repaints_only_near_the_words(fw, mcl, now):
-    g = Glance(fw, mcl, theme='1', queue=1)
+    g = Glance(fw, mcl, queue=1, LOCKSLIDER='1')
     Lcd(fw).paint(fw, g['slider'])
     painted = lambda: len([a for n, a in fw.calls() if n == 'widget_invalidate_force' and a[0] == g['slider']])
     for _ in range(40):  # past the words, 280 px on
@@ -441,7 +446,7 @@ def test_the_shine_repaints_only_near_the_words(fw, mcl, now):
 
 
 def test_the_shine_stops_dark_and_starts_lit(fw, mcl, now):
-    g = Glance(fw, mcl, theme='1', queue=1, lit=0)
+    g = Glance(fw, mcl, queue=1, lit=0, LOCKSLIDER='1')
     assert len(g.timers.of(fw, 'shine')) == 1 and len(g.timers.of(fw, 'tick')) == 1
     assert shine(fw) == RET_OK and tick(fw) == RET_OK  # the dark timers stop
     poll(fw)
@@ -618,15 +623,16 @@ def test_a_finger_moving_off_the_clock_lets_the_hold_go(fw, mcl, now, dx, dy, fl
     assert bool(g.timers.of(fw, 'fade_step')) == flips
 
 
-def test_every_lock_opens_on_the_song(fw, mcl, now):
-    """Flipped, unlocked and locked again: the next window shows the song."""
+def test_the_held_clock_s_view_is_the_next_lock_s(fw, mcl, now):
+    """Flipped, unlocked and locked again: the next window opens on the large clock (RAM alone: a restart forgets)."""
     ms = Ms(fw)
     g = Glance(fw, mcl, queue=1)
     fronted(fw)
     flip(fw, g, ms)
+    assert g.boxes()['time'][1] == 50
     g2 = Glance(fw, mcl, queue=1)
-    assert [a[0] for n, a in g2.win.calls('widget_set_visible') if n == 'view_playinfo'][-1:] in ([], [1])
-    assert g2.boxes()['time'][:2] == (36, 16)
+    tick(fw)
+    assert g2.boxes()['time'][1] == 50
 
 
 def test_the_queue_s_end_turns_back(fw, mcl, now):
@@ -639,3 +645,71 @@ def test_the_queue_s_end_turns_back(fw, mcl, now):
     g.queue(1)
     tick(fw)
     assert [a[0] for n, a in g.win.calls('widget_set_visible') if n == 'view_playinfo'][-1] == 1
+
+
+KEY_PREV, KEY_NEXT, KEY_DOWN, KEY_UP = 172, 173, 0x110, 0x114
+STEP = TRAVEL * 625 // 1000 // 3 + 1  # Wheel Unlocks: a tick's step, the third forward one past five eighths
+
+
+def wheel(fw, key=KEY_NEXT, kind=KEY_DOWN, wm=0x4400):
+    """A wheel tick's event with Wheel Unlocks on: glance_wheel's answer."""
+    return fw.fn('glance_wheel', C.c_int, C.c_void_p, C.c_uint, C.c_uint)(wm, kind, key)
+
+
+def test_three_ticks_forward_unlock_through_stock_s_own_handler(fw, mcl, now):
+    g = Glance(fw, mcl, queue=1)
+    fronted(fw)
+    for i in (1, 2):
+        assert wheel(fw) == 1 and wheel(fw, kind=KEY_UP) == 1 and knob(fw, g) == KNOB_X + i * STEP
+    assert g.timers.of(fw, 'unlock') == []
+    assert wheel(fw) == 1 and knob(fw, g) == KNOB_X + TRAVEL
+    assert run(fw, g, 'unlock') == RET_OK and [args[:2] for _, args in fw.calls('saver_unlock')] == [(0x7700, 0)]
+    assert wheel(fw) == 1 and len(g.timers.of(fw, 'unlock')) == 1  # unlocking: taken, nothing moves
+
+
+def test_a_tick_back_moves_the_knob_back_and_never_past_its_rest(fw, mcl, now):
+    g = Glance(fw, mcl, queue=1)
+    fronted(fw)
+    wheel(fw), wheel(fw, KEY_PREV)
+    assert knob(fw, g) == KNOB_X
+    wheel(fw, KEY_PREV)
+    assert knob(fw, g) == KNOB_X
+
+
+def test_ticks_short_of_the_end_go_back_a_second_after_the_last(fw, mcl, now):
+    g = Glance(fw, mcl, queue=1)
+    fronted(fw)
+    ms = Ms(fw)
+    wheel(fw), wheel(fw)
+    ms.now += 999
+    tick(fw)
+    assert knob(fw, g) == KNOB_X + 2 * STEP
+    ms.now += 1
+    tick(fw)
+    assert knob(fw, g) == KNOB_X and fw.calls('saver_unlock') == []
+
+
+def test_every_tick_taken_holds_the_screen_on(fw, mcl, now):
+    Glance(fw, mcl, queue=1)
+    fronted(fw)
+    wheel(fw), wheel(fw, kind=KEY_UP)
+    assert [args[:3] for _, args in fw.calls('reset_poweroptions_timer')] == [(1, 1, 1)] * 2
+
+
+@pytest.mark.parametrize('lit, front', [(0, 0x7700), (1, 0x9900)])
+def test_dark_or_under_a_prompt_the_wheel_is_the_volume(fw, mcl, now, lit, front):
+    g = Glance(fw, mcl, queue=1, lit=lit)
+    fronted(fw, front)
+    assert wheel(fw) == 0 and knob(fw, g) == KNOB_X
+
+
+@pytest.mark.parametrize('saved, taken', [(None, 0), ('0', 0), ('1', 1)])
+def test_wheel_unlocks_is_off_until_set(fw, mcl, now, saved, taken):
+    """Off (the default): lockscreen_input leaves the tick to stock, the volume as ever."""
+    Glance(fw, mcl, queue=1, **({} if saved is None else {'LOCKWHEEL': saved}))
+    fronted(fw)
+    fw.var('g_lockscreen_pageflag', C.c_ubyte).value = 1
+    e = C.create_string_buffer(0x40)
+    C.c_int.from_address(C.addressof(e) + O['EVENT_TYPE']).value = KEY_DOWN
+    C.c_int.from_address(C.addressof(e) + O['EVENT_KEY']).value = KEY_NEXT
+    assert fw.fn('lockscreen_input', C.c_int, C.c_void_p, C.c_void_p)(0x4400, C.addressof(e)) == taken

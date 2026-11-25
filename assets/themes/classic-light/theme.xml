@@ -172,5 +172,4 @@
     <element name="bump" px="0"/>
   </view>
   <!-- the Lock Screen's At a Glance: the shine across slide to unlock (patch/lock_glance.c), Classic's own -->
-  <view name="lock"><element name="slider" shine="1"/></view>
 </theme>

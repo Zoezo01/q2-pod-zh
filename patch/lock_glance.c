@@ -46,8 +46,10 @@ static const struct {
 #define GL_BLUR_PX 495 /* the blurred cover: a square this wide centred behind the screen */
 #define GL_HOLD_MS 1000
 #define GL_HOLD_SLOP 14
-#define GL_FADE_MS 160 /* each half of the flip */
-#define GL_OPEN_MS 16  /* the unlock, after the knob's release */
+#define GL_FADE_MS 160     /* each half of the flip */
+#define GL_OPEN_MS 16      /* the unlock, after the knob's release */
+#define GL_WHEEL_TICKS 3   /* Wheel Unlocks: the ticks forward that take the knob past GL_DONE */
+#define GL_WHEEL_REST 1000 /* ... and the knob goes back this long after a tick short of it */
 /* the shine's bands, outermost first: px wide, and how far each lifts the words' ink to full, of
  * 112 */
 static const unsigned char shine_w[] = { 96, 60, 28 }, shine_a[] = { 64, 80, 112 };
@@ -66,6 +68,7 @@ static struct {
      * under way (step) */
     widget_t *slider;
     int knob, shine, words_w, drag, drag_dx, step;
+    unsigned wheel_at; /* Wheel Unlocks: the last tick that moved the knob, 0 none since */
     unsigned shine_timer;
     /* the clock held with a queue turns the song's view to the picture's and back (flip): hold
      * while a finger rests there since (hold_x, hold_y); then the veil, a view over everything,
@@ -90,7 +93,7 @@ static int forget(void *ctx, event_t *event) {
     gl.count = gl.time = gl.ampm = gl.day = gl.date = gl.battery = gl.words = 0;
     gl.slider = gl.veil = 0;
     gl.full = 0;
-    gl.knob = gl.drag = gl.step = gl.hold = gl.fade = gl.sampled = 0;
+    gl.wheel_at = 0, gl.knob = gl.drag = gl.step = gl.hold = gl.fade = gl.sampled = 0;
     if (gl.blur) bitmap_destroy(gl.blur);
     gl.blur = 0;
     stop_timer(&gl.timer);
@@ -98,12 +101,6 @@ static int forget(void *ctx, event_t *event) {
     stop_timer(&gl.hold_timer);
     stop_timer(&gl.fade_timer);
     return 0;
-}
-
-/* Shine: the saved switch, else (never set) the theme's lock.slider.shine */
-int glance_shine(void) {
-    int v = pod_value(POD_LOCKSHINE);
-    return v < 0 ? theme()->lock_shine : v;
 }
 
 /* A face's name for script_face's FONT_*, 0 the system font */
@@ -358,7 +355,7 @@ static void sync(int force) {
     if (changed) widget_invalidate_force(gl.win, 0);
 }
 
-/* The shine that crosses slide to unlock (glance_shine): a step of GL_SHINE_STEP px each
+/* The shine that crosses slide to unlock (Classic Slider's): a step of GL_SHINE_STEP px each
  * GL_SHINE_MS while the screen is lit, the slider repainted only while a band is over the words
  * or has just left them. It stops with the screen, and glance_poll starts it again. */
 static int shine_lit(int at) {
@@ -385,6 +382,10 @@ static int tick(const void *info) {
         gl.timer = 0;
         return 0; /* RET_OK: a timer's end */
     }
+    if (gl.wheel_at && !gl.step && !gl.drag && time_now_ms() - gl.wheel_at >= GL_WHEEL_REST) {
+        gl.wheel_at = 0, gl.knob = 0; /* the wheel stopped short: a pocket's nudges never add up */
+        if (gl.slider) widget_invalidate_force(gl.slider, 0);
+    }
     sync(0);
     return 8; /* RET_REPEAT */
 }
@@ -403,7 +404,7 @@ void glance_poll(void) {
  * shade and slide hint hide (a label of its own shows stock's percent); its song card (stock shows
  * it only with a queue) takes the screen's width under the time; the time, date, the song's other
  * lines, the slider and the flip's veil are added. Time show off (stock's init hid view_timeinfo)
- * leaves the clock out. Every lock opens on the song. */
+ * leaves the clock out. The flip stays for the next lock. */
 void glance_init(widget_t *win, widget_t *img, int picture, void *full) {
     static const char *const hidden[] = { "view_timeinfo", "clock_time",  "clock_date",
                                           "label_battery", "img_battery", "pgbar_battery",
@@ -415,7 +416,7 @@ void glance_init(widget_t *win, widget_t *img, int picture, void *full) {
         if (w) widget_set_visible(w, 0, 0);
     }
     gl.win = win, gl.img = img, gl.picture = picture, gl.full = full;
-    gl.background = pod_value(POD_LOCKGROUND), gl.shiny = glance_shine();
+    gl.background = pod_value(POD_LOCKGROUND), gl.shiny = pod_value(POD_LOCKSLIDER);
     widget_on(img, EVT_DESTROY, forget, img);
     widget_t *top = P(img, W_PARENT), *card = widget_lookup(win, "view_playinfo", 1);
     gl.card = card;
@@ -455,7 +456,8 @@ void glance_init(widget_t *win, widget_t *img, int picture, void *full) {
     /* the flip's veil, over everything, last: it takes no touch */
     gl.veil = widget_factory_create_widget(widget_factory(), "view", top, 0, 0, GL_W, GL_H);
     if (gl.veil) widget_set_sensitive(gl.veil, 0);
-    gl.knob = gl.shine = gl.words_w = gl.drag = gl.step = gl.hold = gl.fade = gl.flip = 0;
+    /* gl.flip stays: the view the clock's hold left is the next lock's, until demo restarts */
+    gl.wheel_at = 0, gl.knob = gl.shine = gl.words_w = gl.drag = gl.step = gl.hold = gl.fade = 0;
     gl.mode = -1, gl.queue = -1, gl.resample = 1;
     if (gl.shiny) rearm(&gl.shine_timer, shine, GL_SHINE_MS);
     sync(1);
@@ -492,20 +494,33 @@ static void paint_picture(canvas_t *canvas) {
             (unsigned)(ipod_paper() ? GL_BAND_A_L : GL_BAND_A) << 24 | plain, 0);
 }
 
-/* The slider, flat: its track the labels' ink at GL_TRACK_A, the knob where the finger has it in
- * the theme's "on" colour with a plain arrow, the words right of the knob's rest in the ink,
- * fading as the knob leaves, and with Shine the same words in the ink nearer full inside its bands,
- * on the words alone. */
+/* The slider. Flat (Classic Slider off): its track the labels' ink at GL_TRACK_A, the knob where
+ * the finger has it in the theme's "on" colour with a plain arrow, the words right of the knob's
+ * rest in the ink, fading as the knob leaves. Classic Slider on, alike in every theme and either
+ * half (the user's pick, the one place the flat rule is lifted): a white rim round a see-through
+ * black track, a grey two-tone knob with a grey arrow, the words white, and the shine: the same
+ * words brighter inside its bands, the innermost brightest, on the words alone. */
 static void paint_slider(canvas_t *canvas) {
     const unsigned *words = gl.words ? widget_get_text(gl.words) : 0;
     unsigned n = 0, ink = flip_if(ipod_light(), 0xffffffu), on = flat_on();
     while (words && words[n]) ++n;
     int tw = G.right - G.x, th = G.track_h, kw = G.knob_w, kh = G.knob_h;
     int x = G.knob_in + gl.knob, y = (th - kh) / 2;
-    box(canvas, 0, 0, tw, th, GL_TRACK_A << 24 | ink, (unsigned)th / 2);
-    box(canvas, x, y, kw, kh, 0xff000000u | on, (unsigned)kh / 2);
+    if (gl.shiny) {
+        box(canvas, 0, 0, tw, th, 51u << 24 | 0xffffffu, 11); /* its rim */
+        box(canvas, 1, 1, tw - 2, th - 2, 48u << 24, 10);
+        box(canvas, x, y, kw, kh, 0xff8a8a8au, 8);
+        box(canvas, x + 1, y + 1, kw - 2, kh - 2, 0xfff4f4f4u, 7);
+        box(canvas, x + 2, y + kh / 2, kw - 4, kh / 2 - 2, 0xffd6d6d6u, 6);
+        box(canvas, x + 2, y + kh / 2, kw - 4, 6, 0xffd6d6d6u, 0);
+        ink = 0xffffffu;
+    } else {
+        box(canvas, 0, 0, tw, th, GL_TRACK_A << 24 | ink, (unsigned)th / 2);
+        box(canvas, x, y, kw, kh, 0xff000000u | on, (unsigned)kh / 2);
+    }
     int fade = gl.knob >= GL_WORDS_FADE ? 0 : 255 - gl.knob * 255 / GL_WORDS_FADE;
-    unsigned color = (unsigned)I(P(canvas, CANVAS_LCD), LCD_TEXT_COLOR), c = RGBA(ink) & 0xffffffu;
+    unsigned color = (unsigned)I(P(canvas, CANVAS_LCD), LCD_TEXT_COLOR),
+             c = gl.shiny ? ink : RGBA(ink) & 0xffffffu; /* the classic white is as it looks */
     int px = G.words_px;
     canvas_set_font(canvas, face_name(script_face(theme()->font[ROLE_INFO], words, (int)n, &px)),
                     (unsigned)px);
@@ -525,16 +540,21 @@ static void paint_slider(canvas_t *canvas) {
                                         I(canvas, CANVAS_Y), bw, th))
                 continue;
             canvas_set_clip_rect(canvas, clip);
-            unsigned a = GL_WORDS_A + (255u - GL_WORDS_A) * shine_a[b] / 112;
-            canvas_set_text_color(canvas, (a * (unsigned)fade / 255) << 24 | c);
+            canvas_set_text_color(canvas, (shine_a[b] * (unsigned)fade / 255) << 24 | c);
             canvas_draw_text(canvas, words, n, tx, ty);
             canvas_set_clip_rect(canvas, old);
         }
     }
     stock_canvas_set_text_color(canvas, color);
-    unsigned arrow = 0xff000000u | (bright_tone(on) ? flat_ink[1] : 0xffffffu);
     int cx = x + kw / 2, cy = y + kh / 2;
-    box(canvas, cx - 12, cy - 2, 14, 4, arrow, 0); /* a shaft and a head */
+    if (gl.shiny) { /* a shaft and a head */
+        box(canvas, cx - 14, cy - 3, 16, 6, 0xff6b6b6bu, 0);
+        for (int i = 0; i < 10; ++i)
+            box(canvas, cx + 2 + i, cy - 9 + i, 1, 19 - 2 * i, 0xff6b6b6bu, 0);
+        return;
+    }
+    unsigned arrow = 0xff000000u | (bright_tone(on) ? flat_ink[1] : 0xffffffu);
+    box(canvas, cx - 12, cy - 2, 14, 4, arrow, 0);
     for (int i = 0; i < 8; ++i) box(canvas, cx + 2 + i, cy - 7 + i, 1, 15 - 2 * i, arrow, 0);
 }
 
@@ -613,6 +633,28 @@ static int unlock(const void *info) {
     (void)info; /* a timer hands its own record, not the context */
     if (gl.win) saver_unlock(gl.win, (void *)0);
     return 0; /* RET_OK: this timer's end */
+}
+
+/* lockscreen_input, for a wheel tick with Wheel Unlocks on: 1 when At a Glance's lock window is in
+ * front with the screen lit, and stock never sees the tick, so it opens no volume panel; 0 for
+ * Default's window, a prompt over it, or the screen dark (the wheel is the volume there, as ever).
+ * Each tick's key-down moves the knob a step, forward on Next and back on Prev, sized so the
+ * GL_WHEEL_TICKS-th forward tick passes GL_DONE and unlocks as a slide let go there does. Short of
+ * it, the one-second tick puts the knob back GL_WHEEL_REST after the last tick (up to a second
+ * later). Every tick taken holds the screen on, as stock's own keys do. */
+int glance_wheel(widget_t *wm, unsigned type, unsigned key) {
+    if (!gl.img || !gl.slider || !g_backlight_status || window_manager_get_top_window(wm) != gl.win)
+        return 0;
+    reset_poweroptions_timer(1, 1, 1);
+    if (type != EVT_KEY_DOWN || gl.step || gl.drag) return 1;
+    int travel = G.right - G.x - G.knob_w - 2 * G.knob_in, done = travel * GL_DONE / 1000;
+    int at = gl.knob + (key == KEY_NEXT ? 1 : -1) * (done / GL_WHEEL_TICKS + 1);
+    gl.knob = at < 0 ? 0 : at > travel ? travel : at;
+    unsigned t = (unsigned)time_now_ms();
+    gl.wheel_at = t ? t : 1; /* 0 is none */
+    if (gl.knob >= done) gl.knob = travel, gl.step = 1, timer_add(unlock, (void *)0, GL_OPEN_MS);
+    widget_invalidate_force(gl.slider, 0);
+    return 1;
 }
 
 #define GL_POINTER_MOVE 0x101 /* the window manager's move; EVT_POINTER_FIRST is its down */

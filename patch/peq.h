@@ -434,8 +434,10 @@ enum {
     POD_SAMPLERATE, /* Appearance's Show Sample Rate (samplerate.c): the output's rate in the bar */
     POD_LOCKLAYOUT, /* the Lock Screen's Layout: 1 At a Glance (lock_glance.c), else Default */
     POD_LOCKGROUND, /* At a Glance's Background: 0 Cover Colour, 1 Plain, 2 Blurred Cover */
-    POD_LOCKSHINE,  /* At a Glance's Shine: -1 unset (the theme's lock.slider.shine), 0, 1 */
+    POD_LOCKSLIDER, /* At a Glance's Classic Slider: 1 the grey slider and its shine, 0 (default)
+                       flat */
     POD_LOCKRETURN, /* the Lock Screen's Return Unlocks: 1 (default) Return unlocks, 0 nothing */
+    POD_LOCKWHEEL, /* At a Glance's Wheel Unlocks: 1 the wheel moves the knob, 0 (default) volume */
     POD_COUNT
 };
 int pod_value(int i);
@@ -798,13 +800,13 @@ void lock_face(widget_t *w, const char *face, int px);
  * rebuilt */
 unsigned np_art_key(void);
 void ringnav_keep_row(widget_t *row);
-/* lock_glance.c: At a Glance's lock window, from lockscreen.c; Shine's value, the saved one else
- * the theme's */
+/* lock_glance.c: At a Glance's lock window, from lockscreen.c; a wheel tick with Wheel Unlocks on
+ */
 void glance_init(widget_t *win, widget_t *img, int picture, void *full);
 void glance_poll(void), glance_cover(widget_t *cover);
 int glance_paint(widget_t *w, canvas_t *canvas);
 int lockscreen_touch(widget_t *wm, event_t *e, unsigned type);
-int glance_shine(void);
+int glance_wheel(widget_t *wm, unsigned type, unsigned key);
 void info_poll(void);          /* lockscreen.c: the info screen's timer, with the screen lit */
 int xfade_page(widget_t *top); /* crossfade.c */
 int ipod_battery(void);        /* theme_engine.c: IPOD BATTERY, 0 Icon, else a percentage */

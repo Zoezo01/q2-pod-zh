@@ -190,7 +190,6 @@ typedef struct {
     unsigned page_fill[2]; /* Classic's own full-screen pages, final: [0] dark, [1] light; 0:
                               home_pane's */
     short date_gap;
-    short lock_shine;    /* At a Glance's shine across slide to unlock (lock_glance.c): 1 on */
     stops_t np_track[2]; /* Classic's progress bar's track (paint_scrubber), final: [0] dark, [1]
                             light; n 0: stock's plain bar */
     stops_t np_fill;     /* ... its played part under the theme's own scheme (Classic Blue), both

@@ -915,15 +915,16 @@ def calls_since(fw, since, name):
     return [args for n, args in fw.calls()[since:] if n == name]
 
 
-ROWS = ('Clock', 'Layout', 'Background', 'Shine', 'Return')
+ROWS = ('Clock', 'Layout', 'Background', 'Classic Slider', 'Return', 'Wheel')
 DEFAULT_ROWS = ['Layout: Default', 'Clock: Standard', 'Return Unlocks']
-GLANCE_ROWS = ['Layout: At a Glance', 'Background: Cover Colour', 'Shine', 'Return Unlocks']
+GLANCE_ROWS = ['Layout: At a Glance', 'Background: Cover Colour', 'Classic Slider', 'Return Unlocks', 'Wheel Unlocks']
 
 
 @pytest.mark.parametrize('layout, texts', [(None, DEFAULT_ROWS), ('0', DEFAULT_ROWS), ('1', GLANCE_ROWS)])
 def test_layout_follows_time_show_and_its_rows_follow_it(fw, layout, texts):
     """Layout (Q2POD LOCKLAYOUT, Default unless 1) comes after Time show, then Clock under Default, or Background
-    and Shine under At a Glance, then Return Unlocks under either, each 78 high and restacked under the last."""
+    and Classic Slider under At a Glance, then Return Unlocks under either and Wheel Unlocks under At a Glance, each
+    78 high and restacked under the last."""
     picker = Picker(fw, [b'screensaver_default'], **({'LOCKLAYOUT': layout} if layout else {}))
     assert [t for t in row_texts(fw) if t.startswith(ROWS)] == texts
     last = picker.rows[-1]

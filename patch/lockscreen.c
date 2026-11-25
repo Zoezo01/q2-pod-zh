@@ -326,6 +326,9 @@ int lockscreen_input(widget_t *wm, event_t *e) {
     if (type == EVT_POINTER_FIRST && vol) window_close(top);
     if (type >= EVT_POINTER_FIRST && type <= EVT_POINTER_ABORT)
         return lockscreen_touch(wm, e, type);
+    int keyed = type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG;
+    if (keyed && (key == KEY_PREV || key == KEY_NEXT) && pod_value(POD_LOCKWHEEL))
+        return glance_wheel(wm, type, key); /* 0 under Default or dark: the volume, as ever */
     return (type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG) &&
            key == KEY_RETURN && !pod_value(POD_LOCKRETURN) && (vol || lock);
 }
@@ -517,8 +520,9 @@ static widget_t *rows_win __attribute__((section(".scratch")));
 
 /* The Lock screen page's list (stock 0x4cff00), rebuilt whole when its switch turns: Time show and
  * About, then the picture grid with the switch on. Layout (navigation.c's POD_LOCKLAYOUT) follows
- * Time show, then Clock under Default, or Background and Shine under At a Glance, then Return
- * Unlocks, 78 high as stock's rows, and the built-ins' thumbnails are found for lockscreen_paint.
+ * Time show, then Clock under Default, or Background and Classic Slider under At a Glance, then
+ * Return Unlocks, and Wheel Unlocks under At a Glance, 78 high as stock's rows, and the built-ins'
+ * thumbnails are found for lockscreen_paint.
  */
 static widget_t *pod_row(widget_t *win, widget_t *view, int pod, int at) {
     static const char *const icons[] = { 0 };
@@ -538,8 +542,9 @@ int lockscreen_rows(widget_t *win) {
     if (!pod_value(POD_LOCKLAYOUT))
         pod_row(win, view, POD_LOCKCLOCK, at++);
     else
-        pod_row(win, view, POD_LOCKGROUND, at++), pod_row(win, view, POD_LOCKSHINE, at++);
-    pod_row(win, view, POD_LOCKRETURN, at);
+        pod_row(win, view, POD_LOCKGROUND, at++), pod_row(win, view, POD_LOCKSLIDER, at++);
+    pod_row(win, view, POD_LOCKRETURN, at++);
+    if (pod_value(POD_LOCKLAYOUT)) pod_row(win, view, POD_LOCKWHEEL, at);
     void *list = PICTURES;
     for (unsigned i = 0, n = list ? deque_size(list) : 0; i < n; ++i) {
         int id = wall_id(deque_at(list, i));
@@ -564,7 +569,7 @@ static int rows_again(const void *info) {
     }
     return 0; /* RET_OK: a timer's end */
 }
-/* pod_click on Layout's row: the rows again with Clock's, or Background's and Shine's, a loop pass
+/* pod_click on Layout's row: the rows again with Clock's, or At a Glance's own, a loop pass
  * later, not inside the row's own click. */
 void lockscreen_layout_turned(widget_t *win) {
     rows_win = win;
