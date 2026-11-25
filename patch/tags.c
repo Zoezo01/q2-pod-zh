@@ -46,7 +46,10 @@ void crash_note(const char *path, const char *file, const char *log, unsigned ev
     int got = fd < 0 ? 0 : read(fd, m, sizeof m - 1);
     if (fd >= 0) close(fd);
     m[got > 0 ? got : 0] = 0;
-    __isoc99_sscanf(m, "%*u %u", &pages);
+    const char *p = m;
+    while (*p && *p != ' ') ++p;
+    while (*p == ' ') ++p;
+    while (*p >= '0' && *p <= '9') pages = pages * 10 + (*p++ - '0');
     /* O_WRONLY | O_CREAT | O_CLOEXEC, and O_APPEND, or O_TRUNC for this demo's first line */
     fd = open(log, n[1] ? 0x80109 : 0x80301, 0644);
     if (fd < 0) return;
