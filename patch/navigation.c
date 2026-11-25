@@ -9600,7 +9600,7 @@ int ringnav(void *ctx, event_t *event) {
         return STOP;
     }
     widget_t *front = window_manager_get_top_window(window_manager());
-    if (usable() && field_key(front, key)) return STOP; /* before stock's track skip */
+    if (usable() && field_key(front, key)) return STOP;      /* before stock's track skip */
     if (usable() && store_tabs_key(front, key)) return STOP; /* the App Store's and Era's tabs */
     /* The restart toast's msginfo_dialog stops Previous and Next itself (0x49b7c8), for its 2 s of
      * the 3 s: the same key goes on. ponytail: the toast stays up its time; another key is still

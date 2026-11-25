@@ -500,7 +500,8 @@ static struct {
     int decade[ERA_DECADES], count[ERA_DECADES], n;
     era_t *v; /* the open decade's albums, oldest first, room for cap */
     unsigned m, cap;
-    int year[ERA_YEARS], ycount[ERA_YEARS], ny; /* the Years tab's, newest first, read at its open */
+    int year[ERA_YEARS], ycount[ERA_YEARS],
+        ny;            /* the Years tab's, newest first, read at its open */
     int tab, from, to; /* the page's tab (0 Decades, 1 Years); the open albums page's years */
 } era __attribute__((section(".scratch")));
 
@@ -603,10 +604,10 @@ static void *era_songs(void) {
 static int era_song_rows(void *sql) {
     return !sql || era_sql(sql, db_song_row_callback, 0) ? 0 : -1;
 }
-/* Shuffle's songs: the Library's music in the open page's ALBUM_GROUP groups, matched on ALBUM_GROUP's
- * keys, in one query, so only the decade's records are made, not the library's. Its order is about
- * to be shuffled, so era_songs' two queries an album would only cost time. An empty list without
- * albums (no decade to ask for); 0 if the query failed. */
+/* Shuffle's songs: the Library's music in the open page's ALBUM_GROUP groups, matched on
+ * ALBUM_GROUP's keys, in one query, so only the decade's records are made, not the library's. Its
+ * order is about to be shuffled, so era_songs' two queries an album would only cost time. An empty
+ * list without albums (no decade to ask for); 0 if the query failed. */
 static void *era_shuffle_songs(void) {
     char sql[2048];
     int n;
@@ -617,7 +618,8 @@ static void *era_shuffle_songs(void) {
                 "ifnull(album,'')<>''" ERA_NAMES "%s having y between %d and %d) g "
                 "on s.album=g.a COLLATE NOCASE and ifnull(s.albumsonger,'')=g.b COLLATE NOCASE and "
                 "(g.d is null or rtrim(s.fileurl,replace(s.fileurl,'/',''))=g.d))",
-                MUSIC_WHERE, ALBUM_YEAR, MUSIC_WHERE, era.from, era.to, ALBUM_GROUP, era.from, era.to);
+                MUSIC_WHERE, ALBUM_YEAR, MUSIC_WHERE, era.from, era.to, ALBUM_GROUP, era.from,
+                era.to);
     void *out = staged(era_song_rows, era.m ? sql : 0, &n);
     if (n < 0) deque_destroy(out), out = 0; /* rows then an error: not the decade's songs */
     return out;

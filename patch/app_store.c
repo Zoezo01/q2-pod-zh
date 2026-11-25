@@ -15,8 +15,9 @@
 #define SEG_H 30
 #define RIM 0x717171 /* Classic's rims: #8E8E8E on its paper, Light Mode's flip */
 #define BADGE 0xe0261b
-#define GAMES_X 120 /* Minimal's Games name, Apps' from 36: its second name, or past a longer first */
-#define NAME_GAP 34   /* Minimal: from a first name past GAMES_X to the second, its dot and room */
+#define GAMES_X                                                                                    \
+    120 /* Minimal's Games name, Apps' from 36: its second name, or past a longer first */
+#define NAME_GAP 34 /* Minimal: from a first name past GAMES_X to the second, its dot and room */
 
 /* The open page with tabs (the App Store, Era), its two names and its pick. ponytail: one such page
  * at a time; a strip per page if one ever opens over another. */
@@ -48,7 +49,9 @@ static int tab_go(const void *unused) {
 static int tab_touch(void *ctx, event_t *event) {
     int xy[2] = { I(event, EVENT_X), I(event, EVENT_Y) };
     widget_to_local(ctx, xy);
-    tab_want = xy[0] >= (theme()->painter[PAINT_SELECTION] == SEL_CARD ? (second_x ? second_x : GAMES_X) - 20 : 188);
+    tab_want = xy[0] >= (theme()->painter[PAINT_SELECTION] == SEL_CARD
+                             ? (second_x ? second_x : GAMES_X) - 20
+                             : 188);
     rearm(&tab_timer, tab_go, 0);
     return 0;
 }
@@ -151,7 +154,7 @@ static void paint_strip(widget_t *w, canvas_t *canvas) {
                 fill_box(canvas, &dot, rgba(0xffffff, 255), 3);
             }
             int tw = text_at(canvas, tr(names[i]), x, 0, h, 17,
-                            rgba(i == tab ? 0xffffff : 0x5c5c5c, 255), LEFT);
+                             rgba(i == tab ? 0xffffff : 0x5c5c5c, 255), LEFT);
             if (!i) x = second_x = x + tw + NAME_GAP > GAMES_X ? x + tw + NAME_GAP : GAMES_X;
         }
         if (n[0] + n[1]) {
