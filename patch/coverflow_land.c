@@ -520,19 +520,22 @@ int back_pose(shelf_t *f, int t, pose_t *p, const unsigned *tex) {
     int k = (ABS(t) + CF_ONE / 2) >> 16, at = k ? s->land_back_step * k : s->land_back_at;
     float e = land_ease((float)(bk.ms - at) / s->land_back_ms);
     if (k) {
-        p->xc += (int)(16 * ART_SIZE * s->land_back_out / 100 * (1 - e));
+        int out = 16 * ART_SIZE * s->land_back_out / 100;
+        p->xc += (int)((float)out * (1 - e));
         return 0;
     }
     if (e >= 1) return 0;
     int side = NP_IPOD_ART * 256, in = side * (256 - SLANT_FAR) / 512, rest = ART_SIZE * 256;
     float u = 1 - e;
-    int xl = (int)((float)(-8 * ART_SIZE) * e + (float)(bk.x / 16 - 16 * CF_CX) * u);
-    int xr = (int)((float)(8 * ART_SIZE) * e + (float)((bk.x + side) / 16 - 16 * CF_CX) * u);
+    int x0 = bk.x / 16 - 16 * CF_CX, x1 = (bk.x + side) / 16 - 16 * CF_CX;
+    int xl = (int)((float)(-8 * ART_SIZE) * e + (float)x0 * u);
+    int xr = (int)((float)(8 * ART_SIZE) * e + (float)x1 * u);
     int hl = (int)((float)rest * e + (float)side * u),
         hr = (int)((float)rest * e + (float)(side - 2 * in) * u);
     /* the shelf's line: top 256 top + (rest - h) horizon / 100, so at h 0 and its slope */
-    float y1 = (float)(256 * cfs.top + rest * cfs.horizon / 100), z1 = 256.f * cfs.horizon / 100;
-    cf_lift_y = (int)(y1 * e + (float)(bk.y + side / 2) * u);
+    int top = 256 * cfs.top + rest * cfs.horizon / 100, y0 = bk.y + side / 2;
+    float y1 = (float)top, z1 = 256.f * cfs.horizon / 100;
+    cf_lift_y = (int)(y1 * e + (float)y0 * u);
     cf_lift_hz = (int)(z1 * e + 128 * u);
     draw_quad(f, xl, xr, hl, hr, tex, 256);
     cf_lift_hz = 0;
