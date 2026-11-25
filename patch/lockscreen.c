@@ -329,8 +329,7 @@ int lockscreen_input(widget_t *wm, event_t *e) {
     int keyed = type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG;
     if (keyed && (key == KEY_PREV || key == KEY_NEXT) && pod_value(POD_LOCKWHEEL))
         return glance_wheel(wm, type, key); /* 0 under Default or dark: the volume, as ever */
-    return (type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG) &&
-           key == KEY_RETURN && !pod_value(POD_LOCKRETURN) && (vol || lock);
+    return keyed && key == KEY_RETURN && !pod_value(POD_LOCKRETURN) && (vol || lock);
 }
 
 void info_poll(void) {
