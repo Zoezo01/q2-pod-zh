@@ -289,6 +289,7 @@ def cover_window(fw, mcl, cover, **kw):
     bitmaps = Bitmaps(fw)
     made = bitmaps.made
     fw.mock('bitmap_get_line_length', lambda bm, *_: made[bm][2] if bm in made else cover.w * 4)
+    fw.mock('fw___xstat', lambda *_: -1)  # the player's cover file: none, not the host's, another test may write it
     return bitmaps, Glance(fw, mcl, **{'queue': 1, **kw})
 
 
