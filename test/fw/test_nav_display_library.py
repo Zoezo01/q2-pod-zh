@@ -321,10 +321,11 @@ STATE = {'THEME': 'theme', 'LIGHT': 'light', 'ACCENT': 'accent', 'ROUNDED': 'rou
 
 
 def appearance_titles(t):
-    """Appearance's rows under theme t: Theme, t's options in its theme.xml's order, the Hide page's row every theme
-    has, then Show Sample Rate."""
-    return ['Theme'] + [o['label'] if o['setting'] == 'SETTING_OWN' else PAYLOAD[o['setting']][0] for o in t['opts']] + \
-        ['Hide', 'Show Sample Rate']
+    """Appearance's rows under theme t: Theme, t's options in its theme.xml's order with Show Sample Rate after Show
+    Wordmark (last for a theme without it), then the Hide page's row every theme has."""
+    rows = ['Theme'] + [o['label'] if o['setting'] == 'SETTING_OWN' else PAYLOAD[o['setting']][0] for o in t['opts']]
+    at = rows.index('Show Wordmark') + 1 if 'Show Wordmark' in rows else len(rows)
+    return rows[:at] + ['Show Sample Rate'] + rows[at:] + ['Hide']
 
 
 def stored_key(t, o):
@@ -376,8 +377,8 @@ def test_appearance_lists_theme_then_minimals_options_in_its_order(fw):
     assert len(page.pages) == 2 and page.title() == 'Appearance'
     assert titles(page.view()) == appearance_titles(t)
     # no set_text: a row reads "Title: value", a switch its On or Off
-    switches = [PAYLOAD[o['setting']][0] for o in t['opts'] if o['setting'] in PAYLOAD and PAYLOAD[o['setting']][2]] + \
-        ['Show Sample Rate']
+    switches = [PAYLOAD[o['setting']][0] for o in t['opts'] if o['setting'] in PAYLOAD and PAYLOAD[o['setting']][2]]
+    switches = [r for r in appearance_titles(t) if r in switches or r == 'Show Sample Rate']
     assert switches and [row[0] for row in rows(page.view()) if row[1] is not None] == switches
     read = readings(page.view())
     # the running theme's name, and Accent at Minimal's own default, under its own key

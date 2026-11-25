@@ -6489,13 +6489,19 @@ int ringnav_display(widget_t *win, void *ctx) {
         return result;
     }
     if (sub == DISPLAY_APPEARANCE) {
-        /* Theme, then the active theme's options in order */
+        /* Theme, then the active theme's options in order, Show Sample Rate after the bar's rows
+         * (Show Wordmark ends them; at the end for a theme without it), and Hide last */
         const theme_t *T = theme();
         setting_row(view, SETTING_THEME);
-        for (int k = 0; k < T->n_opts; ++k) setting_row(view, T->opts[k].setting);
+        int rate = 0;
+        for (int k = 0; k < T->n_opts; ++k) {
+            setting_row(view, T->opts[k].setting);
+            if (T->opts[k].setting == SETTING_OWN + OWN_SHOWQ2POD && !rate++)
+                pod_rows(win, "scroll_view_display", POD_SAMPLERATE, 1, home_icons);
+        }
+        if (!rate) pod_rows(win, "scroll_view_display", POD_SAMPLERATE, 1, home_icons);
         widget_set_text_utf8(
             list_row_into(view, "system_display", display_open, (void *)DISPLAY_HIDE), tr("Hide"));
-        pod_rows(win, "scroll_view_display", POD_SAMPLERATE, 1, home_icons);
         return result;
     }
     if (sub == DISPLAY_HIDE) { /* Appearance's Hide page: Home's and the Library's hides */
