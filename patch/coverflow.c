@@ -5355,7 +5355,7 @@ void coverflow_home_top(void) {
 const char *coverflow_home_title(void) {
     widget_t *open = home_open();
     return !open                 ? show_q2pod() ? "Q2 Pod" : ""
-           : open == home.lib    ? "音乐"
+           : open == home.lib    ? "资料库"
            : open == home.stream ? "流媒体"
                                  : "设置";
 }

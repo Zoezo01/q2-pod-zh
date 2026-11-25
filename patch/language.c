@@ -181,7 +181,7 @@ const char *tr(const char *en) {
  * interface shows Library, Playback and System over them. */
 static const char *zh_asset(const char *en) {
     static const char *const rows[][2] = {
-        { "Library", "音乐" }, { "Playback", "播放设置" }, { "System", "系统设置" },
+        { "Library", "资料库" }, { "Playback", "播放设置" }, { "System", "系统设置" },
         { "Cancel", "取消" }, { "OK", "确定" }, /* 确认框的两个按钮 */
     };
     for (unsigned i = 0; en && i < sizeof rows / sizeof *rows; ++i)

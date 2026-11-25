@@ -207,7 +207,7 @@ ZH_GENERATED = {
     'Keeps settings': '保留设置',
     'LRCLIB stopped answering': 'LRCLIB 无响应',
     'Left': '左声道',
-    'Library': '音乐',
+    'Library': '资料库',
     'Library & Folders': '资料库与文件夹',
     'Library on Home': '主菜单显示资料库',
     'Light Mode: Auto': '浅色模式：自动',

@@ -3163,7 +3163,7 @@ def test_home_is_named_as_classics_and_shows_no_clock(fw, st, ui, wordmark, want
     assert len(fw.calls('widget_set_text')) == sets  # written once, an empty title too
 
 
-@pytest.mark.parametrize('slot, want', [(3, '设置'), (4, '音乐'), (5, '流媒体')])
+@pytest.mark.parametrize('slot, want', [(3, '设置'), (4, '资料库'), (5, '流媒体')])
 def test_home_lists_name_the_bar_in_chinese(fw, st, ui, slot, want):
     """An open Home list names the bar with coverflow_home_title()'s Chinese, which is UTF-8:
     widening each byte instead of each code point painted 设置 as è®¾ç½® on Minimal (V184A)."""

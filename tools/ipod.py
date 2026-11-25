@@ -316,7 +316,7 @@ def artist_tabs(root):
 # Home uses. Each also has its English as tr_text, after it, which a language pack translates (language.c).
 # The card labels are the Chinese interface's, as the row names of 1.6: 音乐.
 HOME_PAGE = 'home_page.bin'
-LIBRARY = {'name': 'label_library', 'text': '音乐', 'tr_text': 'Library'}
+LIBRARY = {'name': 'label_library', 'text': '资料库', 'tr_text': 'Library'}
 
 
 def home_card(menu, at, row, text):
