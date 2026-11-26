@@ -152,11 +152,6 @@ char *art_path(char *out, unsigned key, const char *suffix) {
     tk_snprintf(out, 512, ART_DIR "/%08x.jpg%s", key, suffix);
     return out;
 }
-/* Asks the image cache for a cover only once its file exists, the worker having written it. V1.32's
- * cache kept a failed load until a reboot; V1.36's keeps none, so this only spares the failed
- * loads. url is "file://" + the path. */
-static int art_exists(const char *url) { return !access(url + 7, 0); }
-
 /* name's key when it is "<key>.jpg" as art_path spells it: a cover or a "no art" marker. */
 static int art_name(const char *name, unsigned *key) {
     *key = 0;
@@ -182,7 +177,7 @@ int key_cmp(const void *a, const void *b) {
  * with the dentry cache cold (after a reboot) a lookup scans the folder from where the last one
  * ended, so in another order than the covers were built in (Random, a changed Sort) a lookup
  * scanned about half of it, and one for an album not built yet all of it. ponytail: a readdir
- * makes no dentries, so after a reboot a cover's first art_exists, as it comes on screen, still
+ * makes no dentries, so after a reboot a cover's first check, as it comes on screen, still
  * scans: one lookup a cover shown, not one an album at open. With Fast Navigation the half-copy
  * walk (coverflow_halves) still looks up each album's .half, and the file of each marker and of
  * each cover still waiting for a half, cold, once a boot. */
@@ -694,9 +689,9 @@ void art_strike(const char *file) {
     }
     unlink(file);
 }
-/* A clean end (power-off, Restart, an update, Rockbox): the worker stops after the album it is on,
- * writing no note for the next, which the kill that follows would leave for art_strike, and this
- * one's goes; playlist_art.c's worker too. */
+/* A clean end (power-off, Restart, an update, a takeover): the worker stops after the album it is
+ * on, writing no note for the next, which the kill that follows would leave for art_strike, and
+ * this one's goes; playlist_art.c's worker too. */
 void coverflow_clean_end(void) {
     cf.cancel = 1;
     unlink(BUILDING);
@@ -1258,9 +1253,7 @@ int coverflow_jump(widget_t *w, int from, int dir, unsigned *letter) {
     } else {
         while (to >= 0 && coverflow_group(to) == c) --to;
         if (to < 0) return from + 1; /* the last album, across the wrap */
-        c = coverflow_group(to);
-        while (to > 0 && coverflow_group(to - 1) == c) --to;
-        *letter = c;
+        to = coverflow_letter_first(to, letter);
     }
     return dir > 0 ? to - from : from - to;
 }
@@ -1880,6 +1873,9 @@ static int cf_top256 __attribute__((section(".scratch")));
 #define CF_SWING_T (CF_ONE * 45 / 100)
 /* the horizon every cover shares, and a cover h high (1/256 px)'s top row on it */
 #define CF_TOP256(h) (cf_top256 - (h) * cfs.horizon / 100)
+/* A cover drawn off the shelf's line (back_pose): its top at cf_lift_y - h cf_lift_hz / 256, both
+ * 1/256 px; cf_lift_hz 0, the shelf's. */
+int cf_lift_y, cf_lift_hz;
 
 int cf_floor(float x) {
     int i = (int)x;
@@ -2025,7 +2021,8 @@ static unsigned cf_paper;
 static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, int inset) {
     if (h < 16) return;
     unsigned *d = f->d + col;
-    int top = CF_TOP256(h), bottom = top + h, step = (ART_SIZE << 20) / (h >> 4);
+    int top = cf_lift_hz ? cf_lift_y - h * cf_lift_hz / 256 : CF_TOP256(h), bottom = top + h,
+        step = (ART_SIZE << 20) / (h >> 4);
     int ins = h * inset / (ART_SIZE * 256), clipped_top = top + ins, clipped_bottom = bottom - ins;
     int solid_top = f->solid_top[col], solid_bottom = f->solid_bottom[col];
     int y = clipped_top >> 8, end = (clipped_bottom + 255) >> 8,
@@ -2158,7 +2155,7 @@ static void draw_cover(shelf_t *f, int t, const unsigned *tex) {
     pose_t p;
     int side = t < 0 ? -1 : 1;
     arch_pose(t * side, &p);
-    draw_posed(f, &p, side, tex);
+    if (!back_pose(f, t, &p, tex)) draw_posed(f, &p, side, tex);
 }
 
 /* A cover whose near and far edges have left its pose, between xl and xr (1/16 px right of the
@@ -2363,7 +2360,10 @@ static int art_url(char *url, unsigned a) {
     if (!r) return 0;
     if (cf.scoped == PLAYLISTS) return playlist_art(I(r, REC_DISC), P(r, REC_TITLE), 0, url, 600);
     art_path(url + 7, album_key(r), "");
-    return art_exists(url);
+    /* Asks the image cache for a cover only once its file exists, the worker having written it.
+     * V1.32's cache kept a failed load until a reboot; V1.36's keeps none, so this only spares the
+     * failed loads. url is "file://" + the path. */
+    return !access(url + 7, 0);
 }
 
 /* Album a's art into pool slot i: its half copy when half will do and it has one (never a
@@ -2589,7 +2589,7 @@ static void fx_ring(int c, int n, const unsigned **ring) {
 
 /* The flip (docs/ipod.md#cover-flow), under Classic's painter: Centre on a cover turns it
  * about the vertical axis on the centre line, right edge toward the viewer, and it grows into the
- * tracks panel on its back, the side covers parting; Return runs the same frames backwards. The
+ * tracks panel on its back, the side covers parting; Return runs the same path backwards. The
  * shelf's frame, rendered once without the centre cover, holds the side covers. fl.frame and
  * fl.back live only while a turn runs (about 776 KB): at rest the panel stands over the shelf's
  * frame, parted, drawn as it is. */
@@ -2608,15 +2608,11 @@ cf_flip_t fl __attribute__((section(".scratch")));
 /* The flip's turn, or the landing from its click until its motion ends (coverflow_land.c). */
 int coverflow_turning(void) { return fl.dir != 0 || land_turning(); }
 
-/* The time's share of the turn (16.16) at ms of FLIP_MS: ease-in-out, .42, 0, .58, 1, at each
- * sixteenth of the time. Its own mirror, so backwards it's the same frames. */
-int coverflow_flip_eased(int ms) {
-    static const int eased[17] = { 0,     497,   2039,  4686,  8465,  13339, 19187, 25776, 32768,
-                                   39760, 46349, 52197, 57071, 60850, 63497, 65039, 65536 };
-    if (ms <= 0) return 0;
-    if (ms >= FLIP_MS) return CF_ONE;
-    int at = ms * 65536 / FLIP_MS, i = at >> 12;
-    return eased[i] + ((eased[i + 1] - eased[i]) * (at & 4095) >> 12);
+/* Where the turn stands (16.16, the cover's 0 to the panel's CF_ONE) at ms of FLIP_MS, dir 1 to
+ * the panel and -1 back: the landing's cubic ease-out either way, so it moves from the press. */
+int coverflow_flip_eased(int ms, int dir) {
+    int e = (int)(land_ease((float)ms / FLIP_MS) * CF_ONE);
+    return dir > 0 ? e : CF_ONE - e;
 }
 
 /* The frame at e (16.16, the cover's 0 to the panel's CF_ONE), BGRA8888 as the screen, from tex:
@@ -2771,7 +2767,7 @@ static int flip_paint(widget_t *w, canvas_t *canvas) {
         return 1;
     }
     int ms = (int)((unsigned)time_now_ms() - fl.t0);
-    int e = !fl.dir ? CF_ONE : coverflow_flip_eased(fl.dir > 0 ? ms : FLIP_MS - ms);
+    int e = !fl.dir ? CF_ONE : coverflow_flip_eased(ms, fl.dir);
     if (e != fl.drawn) {
         unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(fl.frame);
         const unsigned *tex[3] = { (const unsigned *)bitmap_lock_buffer_for_read(fx.frame),
@@ -2860,10 +2856,11 @@ void coverflow_paint(widget_t *w, canvas_t *canvas) {
 #if Q2POD_DEV
     unsigned gap_t1 = (unsigned)time_now_ms();
 #endif
-    int still = !th.on && !P(w, SLIDE_ANIMATOR) && !touched();
+    /* the way back's clock read before the test, which a changed frame cuts short */
+    int still = !th.on && !P(w, SLIDE_ANIMATOR) && !touched(), back = back_frame();
     if (!fx.drawn || c != fx.c || frac != fx.frac || lead != fx.lead || arch != fx.arch ||
-        mode != fx.mode || still != fx_still || mode == FX_FOLD ||
-        mode == FX_ENTRY) { /* the fold: the clock, the entry: passes */
+        mode != fx.mode || still != fx_still || mode == FX_FOLD || mode == FX_ENTRY ||
+        back) { /* the fold and the way back: the clock, the entry: passes */
         unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(fx.frame);
         if (!d) return;
         cf_still = still;
@@ -3162,6 +3159,7 @@ static int retitle(const void *unused) {
     return 0;
 }
 
+static void home_show(widget_t *w, int on);
 /* One child per album plus the cards (CARDS), moved by the wheel and by touch on the covers' view
  * (touch); the slide_menu itself takes no touch. With depth it spans the frame, so every step
  * repaints all of it, and its cfs.view_h square items with a negative spacer move one album per
@@ -3212,8 +3210,7 @@ static void covers(int dir) {
         changed(0, 0);
         widget_on(cf.covers, EVT_POINTER_DOWN, touch, 0); /* the rest: open_page */
     }
-    widget_set_visible(cf.covers, 1, 0);
-    widget_set_sensitive(cf.covers, 1);
+    home_show(cf.covers, 1);
     widget_invalidate_force(cf.page, 0);
 }
 
@@ -3446,13 +3443,7 @@ void coverflow_play(int row) {
     int cls = cf.scoped == PLAYLISTS ? 0xf001 : 0xff10;
     play_folder(cf.tracks, row, cls);
     if (cls == 0xf001) cover_load = playback_loads; /* its load, play_folder's */
-}
-
-/* A centred track list's artist for song: aa, the album artist, when set, else the song's own;
- * "" for none, and under a theme's own rows (centred 0). */
-static const char *track_by(const char *aa, void *song, int centred) {
-    const char *by = *aa || !centred ? aa : P(song, REC_ARTIST);
-    return by ? by : "";
+    back_arm();
 }
 
 /* Minimal's and Modern's album name over its songs (a page_title_h), between two short 1 px rules
@@ -3588,16 +3579,9 @@ void *coverflow_cover_tracks(void *r) {
 /* A label's face at px, in every state the labels style: bold, the theme's (bold itself), by its
  * text as theme_font has it; else stock's regular, as the theme's rows' second lines. */
 void panel_font(widget_t *label, int px, int bold) { /* shared with navigation.c */
-    static const char *const names[] = { "style:normal:font_name", "style:focused:font_name",
-                                         "style:disable:font_name" },
-                             *const sizes[] = { "style:normal:font_size", "style:focused:font_size",
-                                                "style:disable:font_size" };
     const char *face = bold ? theme_face(widget_get_text(label), -1, &px) : (const char *)0;
     font_weight_mark(label, bold && !face && caption_bold());
-    for (unsigned i = 0; i < sizeof names / sizeof *names; ++i) {
-        widget_set_prop_str(label, names[i], face ? face : "default");
-        widget_set_prop_int(label, sizes[i], px);
-    }
+    face_states(label, face ? face : "default", px);
 }
 
 static widget_t *panel_label(widget_t *parent, int x, int y, int w, int h, const char *s, int px,
@@ -3656,7 +3640,6 @@ int flip_capture(void) {
     return fb != 0;
 }
 
-static void flip_done(void);
 static int flip_tick(const void *unused);
 static void flip_start(int dir) {
     fl.dir = dir, fl.drawn = -1;
@@ -3781,7 +3764,7 @@ static int flip_close(const void *unused) {
     return 0;
 }
 
-static void flip_done(void) {
+void flip_done(void) {
     int to_panel = fl.dir > 0;
     fl.dir = 0;
     if (to_panel) {
@@ -3801,9 +3784,9 @@ static int playlist_query(void *r) { return getMusicByPlayList(I(r, REC_DISC)); 
 extern int music_records(void *list, int discovery); /* navigation.c: spoken tracks left out */
 static widget_t *page_under(void);
 /* ponytail: Classic's panel builds every row at once (about 3 KB each), so a longer playlist opens
- * in stock's list; a recycled pool of rows would lift it. At most 512, navigation's MAX_ENTRIES,
- * for the wheel to reach every row. */
-#define PANEL_ROWS 200
+ * in stock's list. 500, under navigation's MAX_ENTRIES (512) for the wheel to reach every row, as
+ * Photos' and Up Next's; past it ringnav would need rows it doesn't build. */
+#define PANEL_ROWS 500
 static int to_tracks(const void *unused) {
     cf.timer = 0;
     int n = 0;
@@ -3835,12 +3818,9 @@ static int to_tracks(const void *unused) {
     }
     cf.screen = TRACKS;
     if (flip_open(r, n)) return 0;
-    if (cf.covers) { /* none in the text list; stock's hit test skips insensitive, not hidden,
-                      * widgets, and the covers' view over the list would take its taps and swipes
-                      */
-        widget_set_visible(cf.covers, 0, 0);
-        widget_set_sensitive(cf.covers, 0);
-    }
+    /* none in the text list; stock's hit test skips insensitive, not hidden, widgets, and the
+     * covers' view over the list would take its taps and swipes */
+    if (cf.covers) home_show(cf.covers, 0);
     /* the album over its tracks, all centred, but under a theme's own rows; there, in a list with
      * lengths, each track's artist (the album artist when the album has one) leads its line */
     int centred = theme()->page_title_h;
@@ -3863,7 +3843,10 @@ static int to_tracks(const void *unused) {
     for (int i = 0; i < n; ++i) {
         char duration[24], detail[300];
         void *song = deque_at(cf.tracks, (unsigned)i);
-        const char *by = track_by(aa, song, centred), *line = duration;
+        /* A centred track list's artist for song: aa, the album artist, when set, else the song's
+         * own; "" for none, and under a theme's own rows (centred 0). */
+        const char *by = *aa || !centred ? aa : P(song, REC_ARTIST), *line = duration;
+        by = by ? by : "";
         duration_text(duration, sizeof duration, song);
         if (*by && tall) {
             tk_snprintf(detail, sizeof detail, "%s%s%s", by, *duration ? " · " : "", duration);
@@ -4303,8 +4286,9 @@ static struct {
     int clipped;
     int playing; /* Now Playing's row shown, as last laid out (queue_loaded) */
 } home __attribute__((section(".scratch")));
-extern int ipod_home(void), ipod_home_rockbox(void), home_shortcut_open(void *, event_t *),
-    home_lib_on(void), row_preview_on(void), show_q2pod(void), library_search(void);
+extern int ipod_home(void), ipod_home_shown(void), shortcut_is_app(void),
+    home_shortcut_open(void *, event_t *), home_lib_on(void), row_preview_on(void),
+    show_q2pod(void), library_search(void);
 extern void library_rows(widget_t *list), stream_rows(widget_t *list);
 extern void home_pane_read(int *services, int *games, int *free_tenths);
 extern int library_count(const char *sql), msg_counting(void);
@@ -4366,10 +4350,6 @@ static void pane_invalidate(void) {
     int pane[4] = { HOME_SPLIT_W, 0, HOME_PW, client_h() }; /* rect_t, in the parent */
     widget_invalidate_force(P(home.art, W_PARENT), pane);
 }
-static void drift_place(void) {
-    if (pan_u() == home.du && pan_v() == home.dv) return;
-    pane_invalidate();
-}
 
 /* What a highlighted row shows in Split's pane (theme()->pane_icon_x): Now Playing's and the
  * Library's rows the cover, or with none the note and a count; the others their icon and
@@ -4421,7 +4401,7 @@ static int home_drift(const void *unused) {
     /* modulo a whole number of both axes' cycles, so it never wraps mid-cycle */
     home.drift_ms = (home.drift_ms + (step < DRIFT_MAX_STEP_MS ? step : DRIFT_MAX_STEP_MS)) %
                     (2u * DRIFT_X_MS * DRIFT_Y_MS);
-    drift_place();
+    if (pan_u() != home.du || pan_v() != home.dv) pane_invalidate();
     return 8; /* RET_REPEAT */
 }
 
@@ -4952,9 +4932,9 @@ void coverflow_home_row(widget_t *surface, widget_t *row, int id, int painting) 
         if (kind == PANE_ROCKBOX) { /* the Shortcut row: the Games icon, its count only for Games;
                                      * the Podcasts and Audiobooks folders, Folder's icon */
             const char *s = ipod_home_shortcut();
-            kind = !tk_strcmp(s, "游戏")                                 ? PANE_GAMES
-                   : !tk_strcmp(s, "Rockbox") || !tk_strcmp(s, "Groovebox") ? PANE_ROCKBOX
-                   : !tk_strcmp(s, "随机播放") ? PANE_SHUFFLE
+            kind = shortcut_is_app()                                          ? PANE_ROCKBOX
+                   : !tk_strcmp(s, "游戏")                                   ? PANE_GAMES
+                   : !tk_strcmp(s, "随机播放")                                 ? PANE_SHUFFLE
                    : !tk_strcmp(s, "Podcasts") || !tk_strcmp(s, "Audiobooks") ? PANE_FOLDER
                                                                               : PANE_LIBRARY;
         }
@@ -5157,24 +5137,24 @@ static void home_show(widget_t *w, int on) {
  * right panel; Full hides the art and widens the list, its rows to the theme's home_full_row;
  * Carousel hides the art and shows stock's cards (tools/ipod.py ipod_home) in the
  * lists' place, and leaving it, the main list. Now Playing with no song loaded (queue_loaded, as an
- * iPod's), Rockbox without the card's, and Folder and Streaming hidden in Appearance, are restacked
- * last, as the native layout includes hidden rows, and made insensitive, as hidden rows keep their
- * taps. Now Playing's row moves the list's count and selection with it (list_row_show): it comes
- * and goes while Home shows (bar_sync). */
+ * iPod's), a card app's Shortcut without the app, and Folder and Streaming hidden in Appearance,
+ * are restacked last, as the native layout includes hidden rows, and made insensitive, as hidden
+ * rows keep their taps. Now Playing's row moves the list's count and selection with it
+ * (list_row_show): it comes and goes while Home shows (bar_sync). */
 void coverflow_home_layout(void) {
     int mode = ipod_home(), full = mode == 1, carousel = mode == 2;
     const theme_t *T = theme();
     /* The art goes back to the panel; Split's next paint resumes the pan. */
     stop_timer(&home.drift);
     if (!home.list) return;
-    /* Now Playing, Folder, Rockbox and Streaming in their places (HOME_ROWS), then the hidden ones
-     * last, as the native layout includes hidden rows; hidden, they take no taps (Rockbox would
-     * take Streaming's). ponytail: Carousel keeps Now Playing's, Folder's and Streaming's cards, as
-     * it keeps the Shortcut's (below); Now Playing's card with nothing loaded opens nothing
-     * (ringnav_playing). Building the carousel's cards again would take it out. */
+    /* Now Playing, Folder, the Shortcut and Streaming in their places (HOME_ROWS), then the hidden
+     * ones last, as the native layout includes hidden rows; hidden, they take no taps (the Shortcut
+     * would take Streaming's). ponytail: Carousel keeps Now Playing's, Folder's and Streaming's
+     * cards, as it keeps the Shortcut's (below); Now Playing's card with nothing loaded opens
+     * nothing (ringnav_playing). Building the carousel's cards again would take it out. */
     static const char *const rows[] = { "btn_playing", "btn_folder", "btn_rockbox", "btn_stream" };
     static const unsigned char at[] = { 0, 3, 4, 5 };
-    int shown[] = { home.playing = queue_loaded(), !pod_value(POD_HIDE_FOLDER), ipod_home_rockbox(),
+    int shown[] = { home.playing = queue_loaded(), !pod_value(POD_HIDE_FOLDER), ipod_home_shown(),
                     !pod_value(POD_HIDE_STREAM) };
     for (int pass = 0; pass < 2; ++pass)
         for (int i = 0; i < 4; ++i) {
@@ -5187,9 +5167,9 @@ void coverflow_home_layout(void) {
     widget_t *rockbox = widget_lookup(home.win, "btn_rockbox", 1);
     if (rockbox) {
         widget_set_text_utf8(widget_lookup(home.win, "label_rockbox", 1), tr(ipod_home_shortcut()));
-        /* ponytail: the Shortcut card stays when the row hides (Shortcut: Rockbox, no Rockbox on
-         * the card; its tap says so), as the slide_menu lays out hidden cards too; removing it
-         * would mean re-adding it once the card has Rockbox */
+        /* ponytail: the Shortcut card stays when the row hides (a card app's, not on the card; its
+         * tap says so), as the slide_menu lays out hidden cards too; removing it would mean
+         * re-adding it once the card has the app */
         if (home.carousel[0])
             widget_set_text_utf8(widget_lookup(home.carousel[0], "label_rockbox", 1),
                                  tr(ipod_home_shortcut()));

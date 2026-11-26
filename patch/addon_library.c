@@ -231,7 +231,7 @@ static void library_take(const char *id) {
         return;
     }
     if (!strcmp(seq, last)) return; /* the one taken last is done already */
-    /* answered before demo restarted (Rockbox from Home): /tmp outlives taken[] */
+    /* answered before demo restarted (a takeover): /tmp outlives taken[] */
     char old[64];
     unsigned k = strlen(seq);
     state_read(libup.done, old, sizeof old);

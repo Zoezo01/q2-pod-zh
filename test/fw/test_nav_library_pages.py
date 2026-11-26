@@ -12,11 +12,12 @@ import struct
 import pytest
 
 import host
-from conftest import FNV_PRIME, O, Deques, Files, favdir_card, fnv1a, high_halves, in_fork, libc, ui_name, stock_stub
+from conftest import FNV_PRIME, O, Deques, Files, dir_readdir, favdir_card, fnv1a, high_halves, in_fork, libc, ui_name, stock_stub
 from conftest import Rows as HeldRows  # Rows here is Folder view's list
 from test_addon import Pg  # test_addon.py keeps the mirror
 from test_coverflow import SONGTABLE
 from test_nav_display_library import Ple  # playlists.c's editor state
+from test_nav_painters import i32 as signed
 from test_navigation import Sa, listen_key  # test_navigation.py keeps the mirror
 from test_tidal import HEARTS, urls_play
 
@@ -42,10 +43,6 @@ TICK = C.CFUNCTYPE(C.c_int, C.c_void_p)
 TYPES = {'window_create': 'window', 'list_item_create': 'list_item', 'hscroll_label_create': 'hscroll_label',
          'image_create': 'image', 'button_create': 'button', 'scroll_view_create': 'scroll_view',
          'list_view_create': 'list_view', 'label_create': 'label'}
-
-
-def signed(v):
-    return C.c_int(v).value
 
 
 class Ui:
@@ -1218,9 +1215,11 @@ class Heart:
             fw.fn('rate_bind', None, C.c_void_p)(self.win)
 
     def badge(self):
-        """The badge's digit, or None while it's hidden."""
-        badge = [w for w in self.ui.kids[self.win] if self.ui.kind[w] == 'hscroll_label_create'][0]  # before the picker's
-        return None if badge in self.ui.hidden else self.ui.text[badge]
+        """The fill's hearts as a digit, or None while it's hidden: rate_bind's overlay on the heart, and ra's
+        rate_shown (hearts plus 1, after its five pointers)."""
+        fill = [w for w in self.ui.kids[self.win] if self.ui.kind[w] == 'image_create' and w != self.heart][0]
+        shown = C.c_int.from_address(C.addressof(self.fw.var('ratings__ra', C.c_char)) + 5 * 8).value
+        return None if fill in self.ui.hidden else str(shown - 1)
 
     def panel(self):
         return self.ui.lookup(self.win, 'rate_panel', 0)
@@ -1881,14 +1880,7 @@ class Card(Files):
         self.dirs[0x3100 + len(self.ents)] = names
         return 0x3100 + len(self.ents)
 
-    def readdir(self, d, *_):
-        if not self.dirs[d]:
-            return 0
-        ent = C.create_string_buffer(268)
-        name = self.dirs[d].pop(0).encode()
-        C.memmove(C.addressof(ent) + 11, name, len(name))
-        self.ents.append(ent)
-        return C.addressof(ent)
+    readdir = dir_readdir
 
     def paths(self, queue):
         return [field(r, 'path') for r in queue]
@@ -2879,7 +2871,7 @@ def test_era_lists_each_decade_with_its_albums(fw, ui):
     db = EraDb(fw, decades=[(b'1970', b'1'), (b'1990', b'3'), (b'2000', b'12')])
     call(fw, 'era_menu')
     page = ui.top()
-    assert ui.name[page] == 'era_page' and 'Era' in ui.shown(page)
+    assert ui.name[page] == 'era_page' and 'Era' not in ui.shown(page)  # the Decades and Years tabs in its place
     assert ui.rows(page) == [('70s', '1 album'), ('90s', '3 albums'), ('2000s', '12 albums')]
     assert db.asked[-1].startswith('select year/10*10,count(*)')
     call(fw, 'era_menu')
@@ -2964,6 +2956,34 @@ def test_a_decade_query_groups_only_the_names_dated_in_it(fw, ui):
     assert [(album, year) for album, _, year, _ in rows] == [('Mixed', 1991), ('The Wall', 1991), ('HITS', 1992), ('Dated', 1995)]
     lib.execute('create index songtable_album on songtable(album collate nocase)')  # as a library has after any scan
     assert lib.execute(sent).fetchall() == rows
+
+
+def test_the_years_tab_lists_each_year_newest_first_and_a_year_opens_its_albums(fw, ui):
+    """Next opens Years: its query run on a real songtable counts albums per year as the decades do, newest first; a
+    year's row opens that year's albums."""
+    db = EraDb(fw, decades=[(b'1990', b'3')], albums=ERA_ALBUMS)
+    call(fw, 'era_menu')
+    era, lib = ui.top(), era_library()
+    db.decades = None
+    run = db.run
+    def years(d, sql, *a):
+        if b'select year,count(*)' in C.string_at(sql):
+            db.decades = lib.execute(C.string_at(sql).decode()).fetchall()
+            db.decades = [tuple(str(v).encode() for v in r) for r in db.decades]
+        return run(d, sql, *a)
+    fw.mock('sqlite3_exec', years)
+    assert fw.fn('store_tabs_key', C.c_int, C.c_void_p, C.c_uint)(era, O['KEY_FWD_BTN']) == 1
+    assert ui.rows(era) == [('2022', '1 album'), ('2003', '1 album'), ('1995', '1 album'), ('1992', '1 album'),
+                            ('1991', '2 albums'), ('1981', '1 album'), ('1975', '1 album')]
+    ui.click(era, 4)
+    assert ui.name[ui.top()] == 'era_albums_page' and '1991' in ui.shown(ui.top())
+    assert 'having release_year between 1991 and 1991' in db.asked[-1]
+    asked = len(db.asked)
+    ui.close(ui.top())
+    fw.fn('store_tabs_key', C.c_int, C.c_void_p, C.c_uint)(era, O['KEY_BACK_BTN'])
+    assert ui.rows(era) == [('90s', '3 albums')]
+    fw.fn('store_tabs_key', C.c_int, C.c_void_p, C.c_uint)(era, O['KEY_FWD_BTN'])
+    assert len(ui.rows(era)) == 7 and len(db.asked) == asked  # the years are read once a page
 
 
 def test_a_decade_s_albums_stop_at_its_count(fw, ui):
@@ -3298,7 +3318,7 @@ def test_shuffle_songs_of_the_one_song_holding_its_place_is_now_playing(fw, ui, 
     playing = song(b'/m/book.flac')
     holding(fw, ui, mcl, st, playing)
     Library(fw, ui, [song(b'/m/book.flac')])
-    call(fw, 'shuffle_songs')
+    call(fw, 'sp_pick')  # 0: Shuffle Songs
     assert not ui.played and [C.string_at(c[1][0]) for c in fw.calls('navigator_switch_to_with_context')] == [b'playing_page']
 
 
@@ -3307,7 +3327,7 @@ def test_shuffle_songs_starts_anywhere_but_the_song_holding_its_place(fw, ui, so
     for _ in range(8):  # rand_below's picks: never the held one
         Library(fw, ui, [song(b'/m/book.flac'), song(b'/m/other.flac')])
         ui.played.clear()
-        call(fw, 'shuffle_songs')
+        call(fw, 'sp_pick')  # 0: Shuffle Songs
         assert ui.played[0][1] == 1
 
 

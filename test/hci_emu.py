@@ -49,7 +49,6 @@ class Thread:
         self.ret = None        # (v0, a3) to set on resume
         self.clear_tid = 0
         self.dead = False
-        self.resume = None     # callable run at wake (returns ret)
 
 
 class PCM:
@@ -434,13 +433,12 @@ class Emu:
             self.event('pcm_start', total=p.total)
         return n
 
-    def block_current(self, wake_at, ret, why, retry=False, resume=None):
+    def block_current(self, wake_at, ret, why, retry=False):
         t = self.cur
-        t.wait = (why,)
+        t.wait = why if isinstance(why, tuple) else (why,)  # a name, or the wait tuple itself
         t.wake_at = wake_at
         t.ret = ret
         t.retry = retry
-        t.resume = resume
         self.u.emu_stop()
         self.switching = True
 
@@ -719,15 +717,8 @@ class Emu:
             wake = None
             if timeout:
                 s, n = self.r32(timeout), self.r32(timeout + 4)
-                wake = (s * 10**9 + n) if cmd == 9 and not (0) else self.clock + s * 10**9 + n
-            t = self.cur
-            t.wait = ('futex', addr)
-            t.wake_at = wake
-            t.ret = (errno.ETIMEDOUT, 1)
-            t.retry = False
-            t.resume = None
-            self.u.emu_stop()
-            self.switching = True
+                wake = (s * 10**9 + n) if cmd == 9 else self.clock + s * 10**9 + n
+            self.block_current(wake, (errno.ETIMEDOUT, 1), ('futex', addr))
             return None
         if cmd in (1, 10):
             return self.fwake(addr, val)
@@ -803,9 +794,7 @@ class Emu:
             n = self.next_fd; self.next_fd += 1
             self.fds[n] = {'sock': c}
             return n
-        t = self.cur
-        t.wait = ('accept', fd); t.wake_at = None; t.ret = None; t.retry = False; t.resume = None
-        self.u.emu_stop(); self.switching = True
+        self.block_current(None, None, ('accept', fd))
         return None
     def sys_recv(self, fd, buf, n, flags):
         f = self.fds.get(fd)
@@ -850,7 +839,7 @@ class Emu:
         return None
 
     # ---- scheduler
-    def run(self, until=None, count=None):
+    def run(self, until=None):
         """Run until virtual time 'until' (seconds from boot), everything idle, or exit."""
         u = self.u
         limit = None if until is None else 10**12 + int(until * 1e9)

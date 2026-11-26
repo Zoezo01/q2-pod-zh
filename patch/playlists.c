@@ -457,11 +457,24 @@ done:
 }
 
 /* A confirm whose second cell says verb, under a theme that dresses it the tray (a row action's:
- * the prompt's own text isn't read) or the page. */
-int confirm_over(void *prompt, const char *verb, int tray) {
+ * the prompt's own text isn't read) or the page. A newline in text starts a second line: stock's
+ * two-line prompt, kind 2, which reads that line at its context's 0x208. */
+int confirm_over(const char *text, const char *verb, int tray) {
+    struct {
+        int kind, ms;
+        char text[0x400];
+    } prompt = { 1, 0, "" };
+    unsigned cut = 0;
+    while (text[cut] && text[cut] != '\n') ++cut;
+    tk_snprintf(prompt.text, sizeof prompt.text, "%s", text);
+    if (text[cut] && cut < 0x200) {
+        prompt.kind = 2;
+        prompt.text[cut] = 0;
+        tk_snprintf(prompt.text + 0x200, 0x200, "%s", text + cut + 1);
+    }
     st.confirm_verb = verb;
     st.confirm_tray = tray;
-    int answer = navigator_to_with_context("dialog/confirminfo_dialog", prompt);
+    int answer = navigator_to_with_context("dialog/confirminfo_dialog", &prompt);
     st.confirm_verb = (const char *)0;
     st.confirm_win = (void *)0;
     return answer;
@@ -472,12 +485,7 @@ int ringnav_playlist_delete(widget_t *win, event_t *event) {
     if (!list || row < 0 || (unsigned)row >= deque_size(list)) return 0;
     int id = I(deque_at(list, (unsigned)row), REC_ID);
     if (id < 0 || id >= 100) return 0;
-    struct {
-        int kind, ms;
-        char text[0x400];
-    } prompt = { 1, 0, "" };
-    tk_snprintf(prompt.text, sizeof prompt.text, "%s", "删除播放列表？");
-    if (confirm_over(&prompt, "删除", 1) != 10) return 0;
+    if (confirm_over("删除播放列表？", "删除", 1) != 10) return 0;
     char sql[256];
     if (pl_db(&db)) goto done;
     if (sqlite3_exec(db, "begin immediate", 0, 0, 0)) goto done;
@@ -559,8 +567,28 @@ void qm_select(void) {
 
 /* Stock playlist rows use the queue in add mode 2. Guard their final dispatch as well. */
 #define PLAYLIST_PICK ((int (*)(void *, event_t *))0x4b4840)
+static int pl_at(widget_t *button);
+/* An album's songs (qm_own_songs, taken as the picker opened: qm_songs) into the picked playlist,
+ * in qm_collect's order, every one selected, through batch_add_file as the editor's add; then the
+ * toast and the picker's close, as stock's pick. ponytail: an album's tracks, so no cap; stock's
+ * add runs on the UI thread. */
+static int pl_add_songs(widget_t *button, void *songs) {
+    void *lists = P(p_deque_playlist, 0);
+    int at = pl_at(button);
+    void *r = lists && (unsigned)at < deque_size(lists) ? deque_at(lists, (unsigned)at) : 0;
+    unsigned n = songs ? deque_size(songs) : 0;
+    if (r && n) {
+        batch_init_selectrecord((int)n);
+        for (unsigned i = 0; i < n; ++i) batch_set_selectitem((int)i);
+        batch_add_file(0xf001, 0xf00b, songs, P(p_vector_select_record, 0), I(r, REC_DISC));
+    }
+    toast(r && n ? "已加入播放列表" : "无法保存播放列表");
+    if (r && n) window_close(window_of(button));
+    return 0;
+}
 int qm_playlist_pick(void *ctx, event_t *event) {
     char click[0x30];
+    if (qm_own_songs()) return pl_add_songs(ctx, qm_songs());
     if (!qm_record()) {
         toast("队列未更改");
         return 0; /* a STOP would leave the list's scroll_view holding its grab */
@@ -573,6 +601,7 @@ int qm_playlist_pick(void *ctx, event_t *event) {
 
 int qm_playlist_gone(void *ctx, event_t *event) {
     st.qm_playlist = 0;
+    qm_songs_free();
     return 0;
 }
 
@@ -689,9 +718,6 @@ static void pl_row(widget_t *item) {
  * does) and it finds its widget by handler, as nothing stock names. The row is the action, whatever
  * scrolled: no index reaches stock. */
 static void pl_rows(widget_t *win);
-static int pl_page(widget_t *win) {
-    return win && !tk_strcmp(widget_get_prop_str(win, "name", ""), "playlist_page");
-}
 static widget_t *pl_target(widget_t *parent, unsigned fn) {
     for (unsigned i = 0, n = parent ? widget_count_children(parent) : 0; i < n; ++i)
         if (click_bound(widget_get_child(parent, i), (void *)fn))
@@ -713,7 +739,7 @@ static int pl_due(const void *info) {
     int action = (int)(long)P(info, TIMER_CTX);
     char click[0x30];
     pl_timer = 0;
-    if (!pl_page(win)) return 0;
+    if (!(win && !tk_strcmp(widget_get_prop_str(win, "name", ""), "playlist_page"))) return 0;
     widget_t *w = pl_find(win, action);
     /* Import writes every song of every list it reads: the art's build steps aside (its reads
      * would make each insert wait), and the rebuild that follows asks again */
@@ -725,7 +751,6 @@ static int pl_due(const void *info) {
 }
 /* The latest row clicked in a pass is the one that runs. */
 static int pl_click(void *action, event_t *event) {
-    (void)event;
     stop_timer(&pl_timer);
     pl_timer = timer_add(pl_due, action, 0);
     return 0;
@@ -986,7 +1011,6 @@ void playlists_edit(int edit) {
 
 /* Stock leaves its mode set for a page gone in it (held Return, to Home); its art's builds stop. */
 static int pl_gone(void *win, event_t *event) {
-    (void)event;
     if (win == pl_cf_win) {
         stop_timer(&pl_cf_timer);
         pl_cf_win = 0;

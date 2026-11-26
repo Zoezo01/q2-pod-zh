@@ -1,6 +1,6 @@
 /* Now Playing's marks in the flat look (flat_pages): More, the play mode and the heart are stock's
  * images, which stay its state and take its touch but go unseen (opacity 0), and are drawn on
- * their parent, under its children (the heart's rating badge stays over it), in the flat look's
+ * their parent, under its children (the heart's rating fill stays over it), in the flat look's
  * glyphs (tools/art.py np_*), plain in the half's ink. An image with no glyph of its own is drawn
  * as it is. np_theme hands a local page's over (np_marks_page) as the page opens and at a theme
  * change, radio.c its heart, and navigation.c's background paint draws them. */
@@ -12,7 +12,6 @@
 static widget_t *np_mark[NP_MARKS];
 static unsigned np_marked; /* how many: with none a paint looks no further */
 static int np_mark_gone(void *w, event_t *event) {
-    (void)event;
     for (unsigned i = 0; i < NP_MARKS; ++i)
         if (np_mark[i] == w) np_mark[i] = (void *)0, --np_marked;
     return 0;

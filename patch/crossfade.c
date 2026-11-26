@@ -337,36 +337,27 @@ static void take(int n) {
         if (n == value() && night_on()) return;
         /* shown at once, saved as the rest (xfade_save) */
         night_set(night_on() ? night_on() : 1, NS_COOL - n * NS_STEP);
-        refresh();
-        return;
-    }
-    if (xf.ctx == 2) {
+    } else if (xf.ctx == 2) {
         n = n < RS_MIN ? 0 : n > RS_MAX ? RS_MAX : (n + 2) / 5 * 5; /* the nearest five */
         if (n == resume_min()) return;
         xf.rs_min = n;
-        refresh();
-        return;
+    } else if (xf.ctx) {
+        wheel_set_pct(n); /* rounds and clamps; refresh snaps the slider to the ten */
+    } else {
+        n = n < 0 ? 0 : n > XF_MAX ? XF_MAX : n;
+        if (n == value()) return;
+        xf.on = n > 0;
+        if (n) xf.seconds = n < XF_MIN ? XF_MIN : n;
     }
-    if (xf.ctx) {
-        wheel_set_pct(n); /* rounds and clamps */
-        refresh();        /* and snaps the slider to the ten */
-        return;
-    }
-    n = n < 0 ? 0 : n > XF_MAX ? XF_MAX : n;
-    if (n == value()) return;
-    xf.on = n > 0;
-    if (n) xf.seconds = n < XF_MIN ? XF_MIN : n;
     refresh();
 }
 
 static int toggle(void *ctx, event_t *event) {
     if (!switched()) return 0;
-    if (xf.ctx == 3) {
+    if (xf.ctx == 3)
         night_set((night_on() + 1) % 3, night_kelvin()); /* Off, On, Auto */
-        refresh();
-        return 0;
-    }
-    xf.on = !xf.on;
+    else
+        xf.on = !xf.on;
     refresh();
     return 0;
 }

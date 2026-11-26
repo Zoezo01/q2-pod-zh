@@ -73,17 +73,15 @@ int meta(const char *s, const char *key, char *out, unsigned n) {
     return 1;
 }
 
-/* n bytes of s into out (size bytes), line breaks as spaces, short of a UTF-8 sequence cut at the
- * end. */
-static void tag_text(char *out, unsigned size, const char *s, unsigned n) {
-    if (n > size - 1) n = size - 1;
+/* out's first n bytes in place, short of a UTF-8 sequence cut at the end (meta has already left out
+ * any line break). */
+static void tag_text(char *out, unsigned n) {
     unsigned k = n;
-    while (k && ((unsigned char)s[k - 1] & 0xc0) == 0x80) --k; /* its last sequence's lead */
-    if (k && (unsigned char)s[k - 1] >= 0xc0) {
-        unsigned lead = (unsigned char)s[k - 1], whole = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : 2;
+    while (k && ((unsigned char)out[k - 1] & 0xc0) == 0x80) --k; /* its last sequence's lead */
+    if (k && (unsigned char)out[k - 1] >= 0xc0) {
+        unsigned lead = (unsigned char)out[k - 1], whole = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : 2;
         if (n - (k - 1) < whole) n = k - 1;
     }
-    for (unsigned i = 0; i < n; ++i) out[i] = s[i] == '\n' || s[i] == '\r' ? ' ' : s[i];
     out[n] = 0;
 }
 
@@ -94,7 +92,7 @@ int tag_line(const char *s, const char *key, char *out, unsigned n) {
     unsigned k = strlen(key);
     while (*s == ' ') ++s;
     if (strncmp(s, key, k) || (s[k] != ' ' && s[k] != ':') || !meta(s, key, out, n)) return 0;
-    tag_text(out, n, out, strlen(out));
+    tag_text(out, strlen(out));
     return 1;
 }
 
@@ -158,6 +156,15 @@ static long long now_ms(void) {
     return (long long)t.sec * 1000 + t.nsec / 1000000;
 }
 
+/* The flag file at path mapped, or 0 while it doesn't exist. */
+static volatile int *flag_at(const char *path) {
+    int fd = open(path, 0); /* O_RDONLY */
+    if (fd < 0) return 0;
+    void *p = mmap(0, sizeof(int), 1, 1, fd, 0); /* PROT_READ, MAP_SHARED */
+    close(fd);
+    return p != (void *)-1 ? p : 0;
+}
+
 static void *writer(void *unused) {
     short buf[2 * CHUNK];
     long written = 0, delay;
@@ -165,22 +172,8 @@ static void *writer(void *unused) {
         0; /* demo's MONO_FILE, looked for every hundredth chunk till it appears */
     volatile int *swap_on = 0;
     for (int end = 0, tries = 0; !end;) {
-        if (!swap_on && !(tries % 100)) {
-            int fd = open(SWAP_FILE, 0);
-            if (fd >= 0) {
-                void *p = mmap(0, sizeof *swap_on, 1, 1, fd, 0);
-                close(fd);
-                if (p != (void *)-1) swap_on = p;
-            }
-        }
-        if (!mono_on && !(tries % 100)) {
-            int fd = open(MONO_FILE, 0); /* O_RDONLY */
-            if (fd >= 0) {
-                void *p = mmap(0, sizeof *mono_on, 1, 1, fd, 0); /* PROT_READ, MAP_SHARED */
-                close(fd);
-                if (p != (void *)-1) mono_on = p;
-            }
-        }
+        if (!swap_on && !(tries % 100)) swap_on = flag_at(SWAP_FILE);
+        if (!mono_on && !(tries % 100)) mono_on = flag_at(MONO_FILE);
         ++tries;
         unsigned got = 0;
         while (got < sizeof buf) {

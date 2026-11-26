@@ -176,7 +176,7 @@ int card_theme_sets(int i) {
 }
 
 /* The count off: the copy has run CT_TRY_MS, or the run ends cleanly (ringnav_clean_end:
- * power-off, Restart, a firmware update, Rockbox), so those are no failed start. */
+ * power-off, Restart, a firmware update, a takeover), so those are no failed start. */
 void card_theme_ran(void) {
     if (ct.try_at) unlink(CT_TRY), ct.try_at = 0;
 }

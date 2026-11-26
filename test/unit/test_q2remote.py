@@ -1068,13 +1068,19 @@ def test_input_key(inputs):
                                   ('sh', q.event_writer('/dev/in', q.key_events(165), 60000000).encode())]
 
 
-@pytest.mark.parametrize('args,message', [
-    (['play', '0'], r'^key duration must be 1..60000 ms$'),
-    (['play', '60001'], r'^key duration must be 1..60000 ms$'),
+@pytest.mark.parametrize('command,args,message', [
+    ('key', ['play', '0'], r'^key duration must be 1..60000 ms$'),
+    ('key', ['play', '60001'], r'^key duration must be 1..60000 ms$'),
+    ('swipe', ['1', '2', '3', '4', '19'], r'^swipe duration must be 20..10000 ms$'),
+    ('swipe', ['1', '2', '3', '4', '10001'], r'^swipe duration must be 20..10000 ms$'),
+    ('wheel', ['1', '--step-ms', '-1'], r'^--step-ms must be 0..1000$'),
+    ('wheel', ['1', '--step-ms', '1001'], r'^--step-ms must be 0..1000$'),
+    ('wheel', ['1001'], r'^wheel travel must be -1000..1000 ticks$'),
+    ('wheel', ['-1001'], r'^wheel travel must be -1000..1000 ticks$'),
 ])
-def test_input_key_errors(inputs, args, message):
+def test_input_errors(inputs, command, args, message):
     with pytest.raises(ValueError, match=message):
-        q.main(['key', *args])
+        q.main([command, *args])
     assert not inputs.scripts
 
 
@@ -1090,16 +1096,6 @@ def test_input_swipe(inputs):
     for script, ms in zip(inputs.scripts, (300, 20, 10000)):
         assert script == ('sh', q.event_writer('/dev/in', q.touch_batches(q.swipe_points(1, 2, 3, 4, ms))).encode())
     assert inputs.kinds == ['tap'] * 3
-
-
-@pytest.mark.parametrize('args,message', [
-    (['1', '2', '3', '4', '19'], r'^swipe duration must be 20..10000 ms$'),
-    (['1', '2', '3', '4', '10001'], r'^swipe duration must be 20..10000 ms$'),
-])
-def test_input_swipe_errors(inputs, args, message):
-    with pytest.raises(ValueError, match=message):
-        q.main(['swipe', *args])
-    assert not inputs.scripts
 
 
 # playback.c's wheel_apply in sixteenths of a unit, (WHEEL_TICK_UNITS * WHEEL_FINE * 50 + pct / 2) / pct.
@@ -1138,18 +1134,6 @@ def test_input_wheel_step(inputs):
 def test_input_wheel_zero_is_nothing(inputs):
     assert q.main(['wheel', '0']) == 0
     assert not inputs.scripts and not inputs.kinds
-
-
-@pytest.mark.parametrize('args,message', [
-    (['1', '--step-ms', '-1'], r'^--step-ms must be 0..1000$'),
-    (['1', '--step-ms', '1001'], r'^--step-ms must be 0..1000$'),
-    (['1001'], r'^wheel travel must be -1000..1000 ticks$'),
-    (['-1001'], r'^wheel travel must be -1000..1000 ticks$'),
-])
-def test_input_wheel_errors(inputs, args, message):
-    with pytest.raises(ValueError, match=message):
-        q.main(['wheel', *args])
-    assert not inputs.scripts
 
 
 @pytest.mark.parametrize('argv', [

@@ -84,6 +84,8 @@ def notes():
 - **网络更新装的是本仓库的中文固件**，不会再被英文版覆盖掉汉化。
 - 自制功能照旧：一键补全封面与歌词、酷狗封面优先、状态栏「正在播放 / 播放暂停」。完整记录见仓库的 [更新日志](https://github.com/Zoezo01/q2-pod-zh/blob/main/docs/changelog-zh.md)。
 
+> **建议直接用上游版本 + 语言包**：上游从 1.9.1 起已支持语言包（含中文），下载见 [q2-langs](https://github.com/DiamondBond/q2-langs)。如无特殊需求，建议使用上游版本加语言包，能及时更新到最新内容；本版本是个人定制，更新没有那么及时。
+
 ''' + '\n---\n\n'.join(sections) + f'''
 ## 刷机
 

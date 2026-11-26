@@ -904,29 +904,17 @@ def test_no_database_no_pass(fw, st):
     assert not lib.run(12) and lib.copy() is None
 
 
-# Rockbox from Home (docs/boot.md#rockbox-from-home).
-def rockbox(fw, there=True):
-    def stat(version, path, info, *_):
-        C.c_uint.from_address(info + 20).value = 0o100755
-        return 0 if there else -1
-    fw.mock('fw___xstat', stat)
-    return Files(fw, {})
+# A takeover app's hand-over (docs/boot.md#apps-that-take-over-the-device); test_addon.py has its flag.
+def hand_over(fw):
+    fw.fn('ringnav_hand_over', None)()
 
 
-def test_no_rockbox_toasts_and_stays(fw, st):
-    seen = toasts(fw)
-    card = rockbox(fw, there=False)
-    assert fw.fn('rockbox_open', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 0
-    assert len(seen) == 1 and not fw.calls('fw_system') and not card.files and not fw.calls('save_memoryplay_info')
-
-
-def test_rockbox_leaves_its_flag_and_ends_demo(fw, power):
-    card = rockbox(fw)
+def test_the_hand_over_ends_demo(fw, power):
+    Files(fw, {})
     power('wdt').value = 6
     ran = []
-    fw.mock('fw_system', lambda cmd, *_: ran.append(C.string_at(cmd)))  # the command is built on rockbox_open's stack
-    fw.fn('rockbox_open', C.c_int, C.c_void_p, C.c_void_p)(None, None)
-    assert host.tools_build.ROCKBOX_FLAG in card.files  # S90play runs Rockbox on it
+    fw.mock('fw_system', lambda cmd, *_: ran.append(C.string_at(cmd)))  # the command is built on the hand-over's stack
+    hand_over(fw)
     cmd = ran[-1]
     assert cmd.endswith(b'kill -9 $PPID') and b'checkappprocess.sh' in cmd and b'hciplayer' in cmd
     assert fw.calls('save_memoryplay_info')  # the queue kept as power-off keeps it
@@ -935,10 +923,10 @@ def test_rockbox_leaves_its_flag_and_ends_demo(fw, power):
 
 
 @pytest.mark.parametrize('held, enabled', [(1, [1]), (0, [])])
-def test_rockbox_gets_charging_back(fw, st, held, enabled):
-    rockbox(fw)
+def test_the_hand_over_gives_charging_back(fw, st, held, enabled):
+    Files(fw, {})
     st('charge_held').value = held
-    fw.fn('rockbox_open', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    hand_over(fw)
     assert [c[1][0] for c in fw.calls('switch_charge_enable')] == enabled
 
 
@@ -951,21 +939,21 @@ def bt_link(fw, link=b'1', codec=1, way=1):
 
 
 @pytest.mark.parametrize('limit, level', [(100, 127), (60, 76), (150, 127), (0, 0)])
-def test_rockbox_opens_the_headsets_volume_to_the_limit(fw, st, limit, level):
-    rockbox(fw)
+def test_the_hand_over_opens_the_headsets_volume_to_the_limit(fw, st, limit, level):
+    Files(fw, {})
     bt_link(fw)
     fw.var('g_maxvolume', C.c_ubyte).value = limit
     fw.mock('btctl_transport_get_volume', lambda *_: 40)
-    fw.fn('rockbox_open', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    hand_over(fw)
     assert [c[1][0] for c in fw.calls('btctl_transport_set_volume')] == [level]
 
 
 @pytest.mark.parametrize('link, current', [(b'0', 40), (b'1', 128), (b'1', -1)])
-def test_rockbox_leaves_a_headset_without_absolute_volume(fw, st, link, current):
-    rockbox(fw)
+def test_the_hand_over_leaves_a_headset_without_absolute_volume(fw, st, link, current):
+    Files(fw, {})
     bt_link(fw, link)
     fw.mock('btctl_transport_get_volume', lambda *_: current)
-    fw.fn('rockbox_open', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    hand_over(fw)
     assert not fw.calls('btctl_transport_set_volume')
 
 
@@ -3315,6 +3303,120 @@ def test_a_touch_on_a_prompt_starts_below_the_pull_downs_band(fw, stock_bytes, f
     start = C.c_int.from_address(C.addressof(fw.var('fw_ctx_g_pressdown_y', C.c_char)))
     fw.mock('stock_input_trampoline', lambda wm, e, *_: setattr(start, 'value', C.c_int.from_address(e + O['EVENT_Y']).value) or 7)
     assert keys(O['EVT_POINTER_FIRST'], 0, y=y) == 7 and start.value == want
+
+
+def lock_screen(fw, stock_bytes, *fronts, power=0, unlocks=None):
+    """The lit lock screen (stock's saverscreen_page), with windows over it; unlocks Return Unlocks' saved value
+    (Q2POD LOCKRETURN, None: never set, On)."""
+    Config(fw, **({} if unlocks is None else {'LOCKRETURN': unlocks}))
+    ui = Ui(fw)
+    ui.window('saverscreen_page')
+    over = [ui.window(name, 'dialog') for name in fronts]
+    keys = Input(fw, stock_bytes, ui)
+    fw.var('g_lockscreen_pageflag', C.c_ubyte).value = 1
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    fw.var('g_poweroff_state', C.c_ubyte).value = power
+    return ui, over, keys
+
+
+@pytest.mark.parametrize('unlocks, stock', [(None, 3), (1, 3), (0, 0)])
+def test_return_on_the_lit_lock_screen_is_return_unlocks(fw, stock_bytes, unlocks, stock):
+    """Return Unlocks On (the default): stock's lock window takes Return as Back and closes. Off: Return does
+    nothing there, and only a slide unlocks."""
+    _, _, keys = lock_screen(fw, stock_bytes, unlocks=unlocks)
+    keys(DOWN, KEY_RETURN), keys(LONG, KEY_RETURN, 10), keys(UP, KEY_RETURN, 10)
+    assert keys.stock == [(DOWN, KEY_RETURN), (LONG, KEY_RETURN), (UP, KEY_RETURN)][:stock]
+
+
+@pytest.mark.parametrize('power', [1, 0])
+def test_return_over_a_prompt_on_the_lock_screen_is_the_prompts(fw, stock_bytes, power):
+    """Shut Down? (power 1) or the card's scan prompt (power 0) over the lock window keeps Return, Return Unlocks
+    off or not."""
+    _, _, keys = lock_screen(fw, stock_bytes, 'confirminfo_dialog', power=power, unlocks=0)
+    keys(DOWN, KEY_RETURN), keys(UP, KEY_RETURN, 10)
+    assert keys.stock == [(DOWN, KEY_RETURN), (UP, KEY_RETURN)]
+
+
+def test_return_over_the_lock_screen_s_volume_is_dropped_with_return_unlocks_off(fw, stock_bytes):
+    """The panel is in front before it is the key target: its Return could still reach the lock window."""
+    _, _, keys = lock_screen(fw, stock_bytes, 'volume_dialog', unlocks=0)
+    keys(DOWN, KEY_RETURN), keys(UP, KEY_RETURN, 10)
+    assert keys.stock == []
+
+
+def test_return_over_the_volume_away_from_the_lock_screen_is_stock_s(fw, stock_bytes):
+    """With no lock window up the wheel's volume panel takes Return as stock has it, Return Unlocks off or not."""
+    _, _, keys = lock_screen(fw, stock_bytes, 'volume_dialog', unlocks=0)
+    fw.var('g_lockscreen_pageflag', C.c_ubyte).value = 0
+    keys(DOWN, KEY_RETURN), keys(UP, KEY_RETURN, 10)
+    assert keys.stock == [(DOWN, KEY_RETURN), (UP, KEY_RETURN)]
+
+
+@pytest.mark.parametrize('power, want', [(1, 1), (0, 0)])
+def test_shut_down_over_the_lock_screen_takes_the_wheel_and_centre(fw, stock_bytes, power, want):
+    """usable() said no on the lock flag before it looked for the held power key's prompt."""
+    lock_screen(fw, stock_bytes, 'confirminfo_dialog', power=power)
+    assert fw.fn('usable', C.c_int)() == want
+
+
+@pytest.mark.parametrize('lock, closes', [(1, True), (0, False)])
+def test_a_touch_on_the_lock_screen_puts_the_volume_away_and_goes_on(fw, stock_bytes, lock, closes):
+    """The wheel's volume panel sits over the slider; the same touch may then slide."""
+    _, (vol,), keys = lock_screen(fw, stock_bytes, 'volume_dialog')
+    fw.var('g_lockscreen_pageflag', C.c_ubyte).value = lock
+    closed = []
+    fw.mock('window_close', lambda w, *_: closed.append(w) or 0)
+    keys(O['EVT_POINTER_FIRST'], 0, x=40, y=290)
+    assert closed == ([vol.p] if closes else []) and keys.stock == [(O['EVT_POINTER_FIRST'], 40)]
+
+
+def glance_lock(fw, stock_bytes, *fronts):
+    """The lit lock screen in At a Glance's layout (lock_glance.c glance_init on stock's window), windows over it."""
+    ui, over, keys = lock_screen(fw, stock_bytes)
+    lock = ui.top
+    img = lock.add(W(ui, 'image', 'img_screensaver', h=320))
+    fw.mock('widget_factory_create_widget', lambda f, kind, parent, x, y, w, *_: ui.by[parent].add(W(ui, 'view', x=x, y=y, w=w)).p)
+    fw.mock('hscroll_label_create', lambda parent, *_: ui.by[parent].add(W(ui, 'hscroll_label')).p)
+    fw.fn('glance_init', None, C.c_void_p, C.c_void_p, C.c_int, C.c_void_p)(lock.p, img.p, 0, None)
+    over = [ui.window(name, 'dialog') for name in fronts]
+    return ui, lock, over, keys
+
+
+KNOB_AT = {'x': 319 - 258, 'y': 60}  # the panel's place of the knob's middle on the screen (60, 258)
+
+
+def test_at_a_glance_takes_the_lock_screen_s_touches(fw, stock_bytes):
+    """Its slider moves with the finger itself: stock's swipe-to-unlock and pull-down never see the touch."""
+    _, _, _, keys = glance_lock(fw, stock_bytes)
+    keys(O['EVT_POINTER_FIRST'], 0, **KNOB_AT), keys(0x101, 0, 10, x=61, y=200), keys(0x103, 0, 10, x=61, y=200)
+    assert keys.stock == []
+
+
+def test_at_a_glance_the_touch_that_puts_the_volume_away_goes_on_to_slide(fw, stock_bytes):
+    ui, lock, (vol,), keys = glance_lock(fw, stock_bytes, 'volume_dialog')
+    closed = []
+    fw.mock('window_close', lambda w, *_: closed.append(w) or 0)
+    fw.mock('time_now_ms', lambda *_: 0)
+    keys(O['EVT_POINTER_FIRST'], 0, **KNOB_AT)
+    ui.top = lock  # closed
+    keys(0x101, 0, 10, x=61, y=300), keys(0x103, 0, 10, x=61, y=300)
+    assert closed == [vol.p] and keys.stock == []
+    unlock = C.cast(fw.lib.lock_glance__unlock, C.c_void_p).value
+    assert [ms for fn, _, ms in ui.timers.values() if fn == unlock] == [16]  # slid past 62.5%: unlocking
+
+
+def test_at_a_glance_s_shut_down_keeps_its_own_touches(fw, stock_bytes):
+    """A prompt over the lock screen (Shut Down?) is stock's to touch."""
+    _, _, _, keys = glance_lock(fw, stock_bytes, 'confirminfo_dialog')
+    keys(O['EVT_POINTER_FIRST'], 0, **KNOB_AT)
+    assert keys.stock == [(O['EVT_POINTER_FIRST'], KNOB_AT['x'])]  # the key's place is the event's x
+
+
+def test_at_a_glance_s_touches_need_the_lock_screen_up(fw, stock_bytes):
+    _, _, _, keys = glance_lock(fw, stock_bytes)
+    fw.var('g_lockscreen_pageflag', C.c_ubyte).value = 0
+    keys(O['EVT_POINTER_FIRST'], 0, **KNOB_AT)
+    assert keys.stock == [(O['EVT_POINTER_FIRST'], KNOB_AT['x'])]
 
 
 @pytest.mark.parametrize('lit', [0, 1])

@@ -164,7 +164,7 @@ LIBC = {
     # Internet Radio (radio.c): q2video started and waited for, and its key socket
     'fork': ('int', 'void'), 'execl': ('int', 'const char *, const char *, ...'), 'exit': ('void', 'int'),
     'setenv': ('int', 'const char *, const char *, int'),  # addon.c: a card game's Q2_POPUP, in the child
-    # Home's Rockbox row (navigation.c rockbox_open)
+    # a takeover app's hand-over (navigation.c ringnav_hand_over)
     'system': ('int', 'const char *'),
     'waitpid': ('int', 'int, int *, int'), '__errno_location': ('int *', 'void'), 'socket': ('int', 'int, int, int'), 'close': ('int', 'int'),
     'connect': ('int', 'int, const void *, unsigned'),
@@ -184,7 +184,7 @@ LIBC = {
 }
 
 # The payload's C beside navigation.c (build.py compile_payload), in link order; test/fw builds the same set.
-UI_SOURCES = ['peq.c', 'peq_ui.c', 'coverflow.c', 'coverflow_thumb.c', 'coverflow_letters.c', 'coverflow_loader.c', 'coverflow_land.c', 'playlist_art.c', 'library_scope.c', 'scrobble.c', 'photos.c', 'games.c', 'visualizer.c', 'playback.c', 'upnext.c', 'spotify.c', 'addon.c', 'addon_library.c', 'addon_eq.c', 'addon_wifi.c', 'app_user.c', 'radio.c', 'tidal.c', 'netupdate.c', 'app_store.c', 'onlinematch.c', 'crossfade.c', 'nightshift.c', 'headset.c', 'lockscreen.c', 'chapters.c', 'lyrics.c', 'xiph.c', 'airplay.c']
+UI_SOURCES = ['peq.c', 'peq_ui.c', 'coverflow.c', 'coverflow_thumb.c', 'coverflow_letters.c', 'coverflow_loader.c', 'coverflow_land.c', 'playlist_art.c', 'library_scope.c', 'scrobble.c', 'photos.c', 'games.c', 'visualizer.c', 'playback.c', 'upnext.c', 'spotify.c', 'addon.c', 'addon_library.c', 'addon_eq.c', 'addon_wifi.c', 'addon_playing.c', 'app_user.c', 'radio.c', 'tidal.c', 'netupdate.c', 'app_store.c', 'onlinematch.c', 'crossfade.c', 'nightshift.c', 'headset.c', 'lockscreen.c', 'lock_glance.c', 'chapters.c', 'lyrics.c', 'xiph.c', 'airplay.c']
 
 # Stock functions the payload uses as values, not only calls: they keep stock's own address.
 STOCK_BY_ADDRESS = {'btrecvA2dpFunc', 'db_song_row_callback', 'taglib_file_new', 'stock_search',

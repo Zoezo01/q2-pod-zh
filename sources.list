@@ -9,13 +9,13 @@ DiamondBond/q2-rockbox-themes Rockbox Themes
 DiamondBond/q2-librespot Spotify
 group-a-study/q2-deezer Deezer
 group-a-study/q2-soulseek Soulseek
-group-a-study/q2-filebrowser File Browser
+DiamondBond/q2-filebrowser File Browser
 andsuor/q2-subsonic Subsonic
 A4Link/q2-jellyfin Jellyfin
 lampsonlnguyen/q2-plex Plex
 m-d-e-v/q2-podcasts Podcasts
 harpmudd/q2-lma Live Music Archive
-group-a-study/q2-airplay AirPlay
+DiamondBond/q2-airplay AirPlay
 lampsonlnguyen/q2-utilities-app Utilities
 lampsonlnguyen/q2-weather Weather
 lampsonlnguyen/q2-books Books
@@ -40,6 +40,12 @@ js-surya/q2-sixtrack Six Track
 Carbon-66/q2-challengerdeep Challenger Deep
 Carbon-66/q2-hero Q2 Hero
 lampsonlnguyen/q2-pico8 PICO-8
+# lampsonlnguyen/q2-dailyred Daily Red
+Carbon-66/q2-vortex Vortex
+Carbon-66/q2-wordle Wordle
+Carbon-66/q2-connectfour Connect Four
+Carbon-66/q2-tictactoe Tic-Tac-Toe
+Carbon-66/q2-chesscheckers Chess & Checkers
 # Languages last, behind [Apps]: firmware 1.9.0 and older, which has no language support, never reads it.
 [Apps]
 DiamondBond/q2-langs Languages

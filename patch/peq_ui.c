@@ -127,20 +127,17 @@ static void eq_slot(char *path, unsigned n, const char *key) {
     snprintf(path, n, EQ_OUTPUTS "/%s", key);
 }
 static void owner_set(const char *key) {
-    char file[sizeof eq_owner] = { 0 }, path[256];
+    char file[sizeof eq_owner] = { 0 };
     snprintf(file, sizeof file, "%s", key);
     memcpy(eq_owner, file, sizeof file);
-    eq_slot(path, sizeof path, "owner");
     mkdir(EQ_OUTPUTS, 0700);
-    peq_save_file(path, "Q2OWNER", file, sizeof file);
+    peq_save_file(EQ_OUTPUTS "/owner", "Q2OWNER", file, sizeof file);
 }
 static void owner_read(void) {
     struct {
         char magic[8], key[sizeof eq_owner];
     } file = { { 0 }, { 0 } };
-    char path[256];
-    eq_slot(path, sizeof path, "owner");
-    void *f = fopen(path, "rb");
+    void *f = fopen(EQ_OUTPUTS "/owner", "rb");
     if (!f) return;
     unsigned n = fread(&file, 1, sizeof file, f);
     fclose(f);
@@ -185,12 +182,10 @@ static int eq_file(eq_state *now) {
 /* Turned off: the output keeps its latest EQ, and what plays from here on belongs to none. Simple
  * can't hold unsaved gains here: the row is on Advanced, and tab_to won't leave them behind. */
 void eq_output_forget(void) {
-    char path[256];
     eq_state now;
     if (!eq_owner[0]) owner_read();
     eq_file(&now);
-    eq_slot(path, sizeof path, "owner");
-    unlink(path);
+    unlink(EQ_OUTPUTS "/owner");
     eq_owner[0] = 0;
 }
 static void e3_done(void);

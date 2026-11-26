@@ -2284,7 +2284,7 @@ def visualizer_check(tmp):
         lib.vis_bands((C.c_float * (2 * n))(*pcm), rate, out)
         return list(out)
     assert levels([0.0] * (2 * n)) == [0.0] * bands  # silence rests
-    edge = lambda b: int(40 * 400 ** (b / bands) * n / rate + 0.5)  # the C band_bin
+    edge = lambda b: int(40 * 400 ** (b / bands) * n / rate + 0.5)  # visualizer.c's vis_bands edge
     for k in (12, 100, 300):  # a sine exactly on bin k, in both channels
         pcm = [math.sin(2 * math.pi * k * i / n) for i in range(n) for _ in (0, 1)]
         got, want = levels(pcm), max(b for b in range(bands) if edge(b) <= k)
@@ -2574,16 +2574,16 @@ def scrobble_check(tmp):
 
 def games_check(tmp):
     """Games (games.c): every bundled Sudoku and 200 shuffled ones have one solution, clues stay,
-    conflicts and completion; saves' magic and checksum; Vortex's paddle, bricks, lives, levels,
+    conflicts and completion; saves' magic and checksum; Bricks' paddle, bricks, lives, levels,
     speed cap, no tunnelling and determinism; Snake's turns, growth, collisions and food."""
     import random
     lib = compile_host(tmp, 'games.so', ROOT/'patch/games.c')
     class Sudoku(C.Structure):
         _fields_ = [('magic', C.c_uint), ('cell', C.c_ubyte * 81), ('cur', C.c_ubyte), ('pad', C.c_ubyte * 2), ('sum', C.c_uint)]
-    class Vortex(C.Structure):
+    class Bricks(C.Structure):
         _fields_ = [(k, C.c_int) for k in ('state', 'lives', 'level', 'score', 'pa', 'x', 'y', 'vx', 'vy')] + \
                    [('brick', C.c_ushort * 3), ('pad', C.c_ushort)]
-    assert C.sizeof(Sudoku) == 92 and C.sizeof(Vortex) == 44
+    assert C.sizeof(Sudoku) == 92 and C.sizeof(Bricks) == 44
     def solutions(g, limit=2):
         g = list(g); rows, cols, boxes = [0] * 9, [0] * 9, [0] * 9
         for i, v in enumerate(g):
@@ -2638,51 +2638,51 @@ def games_check(tmp):
     raw = bytearray(bytes(s))
     for i in range(92):
         b = bytearray(raw); b[i] ^= 4; t = Sudoku.from_buffer_copy(b); assert not lib.games_ok(C.byref(t), 92, 0x31445553), i
-    # Vortex
+    # Bricks
     def speed(v): return round(math.hypot(v.vx, v.vy))
-    v = Vortex(); lib.vortex_new(C.byref(v))
+    v = Bricks(); lib.bricks_new(C.byref(v))
     assert (v.state, v.lives, v.level, v.score, v.pa, list(v.brick)) == (0, 3, 0, 0, 768, [0xffff] * 3)
-    lib.vortex_step(C.byref(v), -800); assert v.pa == 992
-    lib.vortex_step(C.byref(v), 100); assert v.pa == 68
-    lib.vortex_step(C.byref(v), 700); assert v.pa == 768 and v.state == 0 and abs(v.x) < 1 << 16 and v.y < 0
+    lib.bricks_step(C.byref(v), -800); assert v.pa == 992
+    lib.bricks_step(C.byref(v), 100); assert v.pa == 68
+    lib.bricks_step(C.byref(v), 700); assert v.pa == 768 and v.state == 0 and abs(v.x) < 1 << 16 and v.y < 0
     assert speed(v) == 0
-    lib.vortex_launch(C.byref(v)); assert v.state == 1 and abs(speed(v) - (2 << 16)) < 64
+    lib.bricks_launch(C.byref(v)); assert v.state == 1 and abs(speed(v) - (2 << 16)) < 64
     def until(test, limit=2000):
         for _ in range(limit):
             if test(): return
-            lib.vortex_step(C.byref(v), 0)
-        raise AssertionError('Vortex never got there')
+            lib.bricks_step(C.byref(v), 0)
+        raise AssertionError('Bricks never got there')
     until(lambda: v.score)  # the outer ring's top brick, the ball sent back out
     assert v.score == 10 and v.brick[2] == 0xffff & ~(1 << 12) and v.brick[:2] == [0xffff] * 2 and v.vy < 0
     until(lambda: v.vy > 0)  # the paddle sends it back in
     assert v.state == 1 and v.lives == 3
     until(lambda: v.score == 30)  # the brick behind the one gone, ring 1
     assert v.brick[1] == 0xffff & ~(1 << 12)
-    lib.vortex_step(C.byref(v), 512)  # the paddle away: a life lost, aiming again
+    lib.bricks_step(C.byref(v), 512)  # the paddle away: a life lost, aiming again
     until(lambda: v.state != 1)
     assert v.state == 0 and v.lives == 2
     for lives in (1, 0):
-        lib.vortex_launch(C.byref(v)); v.brick[0] = v.brick[1] = v.brick[2] = 0  # through the centre, past the paddle
+        lib.bricks_launch(C.byref(v)); v.brick[0] = v.brick[1] = v.brick[2] = 0  # through the centre, past the paddle
         until(lambda: v.state != 1)
         assert v.lives == lives and v.state == (2 if not lives else 0)
-    x, y = v.x, v.y; lib.vortex_step(C.byref(v), 0); assert (v.x, v.y, v.state) == (x, y, 2)  # over: frozen
-    lib.vortex_launch(C.byref(v)); assert v.state == 2
+    x, y = v.x, v.y; lib.bricks_step(C.byref(v), 0); assert (v.x, v.y, v.state) == (x, y, 2)  # over: frozen
+    lib.bricks_launch(C.byref(v)); assert v.state == 2
     # the last brick: the next level, its layout, aiming
-    lib.vortex_new(C.byref(v)); v.brick[0] = v.brick[1] = 0; v.brick[2] = 1 << 12
-    lib.vortex_launch(C.byref(v)); until(lambda: v.level)
+    lib.bricks_new(C.byref(v)); v.brick[0] = v.brick[1] = 0; v.brick[2] = 1 << 12
+    lib.bricks_launch(C.byref(v)); until(lambda: v.level)
     assert (v.state, v.score, list(v.brick)) == (0, 110, [0x5555, 0xffff, 0xaaaa])
-    lib.vortex_launch(C.byref(v)); assert abs(speed(v) - (2 << 16) - (1 << 14)) < 64
+    lib.bricks_launch(C.byref(v)); assert abs(speed(v) - (2 << 16) - (1 << 14)) < 64
     # the speed caps; at it, from every angle, the outer ring is hit first: no ring is crossed
     for pa in range(0, 1024, 7):
-        lib.vortex_new(C.byref(v)); v.level = 99; lib.vortex_step(C.byref(v), pa - 768); lib.vortex_launch(C.byref(v))
+        lib.bricks_new(C.byref(v)); v.level = 99; lib.bricks_step(C.byref(v), pa - 768); lib.bricks_launch(C.byref(v))
         assert abs(speed(v) - (9 << 15)) < 64
         until(lambda: v.score); assert v.score == 10 and v.brick[:2] == [0xffff] * 2 and bin(v.brick[2]).count('1') == 15, pa
     # the same inputs, the same game
     def play(seed):
-        rng = random.Random(seed); w = Vortex(); lib.vortex_new(C.byref(w))
+        rng = random.Random(seed); w = Bricks(); lib.bricks_new(C.byref(w))
         for i in range(20000):
-            if w.state == 0: lib.vortex_launch(C.byref(w))
-            lib.vortex_step(C.byref(w), rng.randrange(-9, 10))
+            if w.state == 0: lib.bricks_launch(C.byref(w))
+            lib.bricks_step(C.byref(w), rng.randrange(-9, 10))
         return bytes(w)
     assert play(1) == play(1) and play(1) != play(2)
     # Snake: 20 x 20, a cell y * 20 + x; the body a ring from the tail, the head last; dir 0 up, 1 right, 2 down, 3 left
@@ -2792,7 +2792,7 @@ def games_check(tmp):
             lib.sol_finish(C.byref(s)); sound(s)
             if lib.sol_won(C.byref(s)): won += 1; break
     assert won > 10, won
-    print('Games: Sudoku uniqueness, clues, conflicts, completion and saves; Vortex paddle, bricks, lives, levels, speed, tunnelling and determinism; Solitaire deal, draw, moves, finish and random play; Snake turns, growth, walls, self collision and food placement passed.')
+    print('Games: Sudoku uniqueness, clues, conflicts, completion and saves; Bricks paddle, bricks, lives, levels, speed, tunnelling and determinism; Solitaire deal, draw, moves, finish and random play; Snake turns, growth, walls, self collision and food placement passed.')
 
 def video_check(tmp):
     """q2video (video.c): the Bluetooth volume, Mono Audio and the swap on its samples, and radio's tags."""
@@ -3234,7 +3234,7 @@ def shelf_check(tmp, lib):
     assert len(sources(''.join(f'me/q2-a{i}\n' for i in range(20)), scratch)) == 16
     assert [a[2] for a in sources('a/q2\nb/q2-tidal\nc/downpic\nd/q2-tidal2\n', scratch)] == ['tidal2']  # never the firmware's folders
     own = {m for f in (ROOT/'patch').glob('*.[ch]')
-           for m in re.findall(r'(?:mmc/|CARD "/)\.([a-z0-9-]+)["/]', f.read_text())} - {'rockbox', 'spotify', 'groovebox'}  # card apps the firmware knows by path
+           for m in re.findall(r'(?:mmc/|CARD "/)\.([a-z0-9-]+)["/]', f.read_text())} - {'rockbox', 'spotify'}  # card apps the firmware knows by path
     assert own and not [x for x in own if sources(f'a/q2-{x}\n', scratch)], own  # every card folder of the firmware's
     C.c_int.in_dll(lib, 'shelf_n').value = len(sources((ROOT/'sources.list').read_text()))
     ids = [a.id.decode() for a in apps[:6]]

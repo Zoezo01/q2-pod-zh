@@ -32,8 +32,8 @@ enum { SH_OK, SH_NET, SH_SPACE, SH_CARD, SH_MISSING, SH_BAD, SH_CANCELLED, SH_BU
 /* repo: its GitHub owner/name; id: the repo's name less "q2-", for the card folder .<id>, the tag
  * and file list; keep: unzip -x patterns an update never writes (the user's); bin: the app's
  * binary, present without a tag file meaning a manual install, and moved after every other file:
- * power-on runs Rockbox's. dropped: gone from the list but installed, so it can only be removed.
- * game: listed under [Games], so on the App Store's Games tab. */
+ * a card app is there once its binary is. dropped: gone from the list but installed, so it can only
+ * be removed. game: listed under [Games], so on the App Store's Games tab. */
 typedef struct {
     char name[32], id[16], repo[80], dir[17], bin[40], latest[32], dropped, game;
     const char *keep;
@@ -711,7 +711,7 @@ int ringnav_fwupdate(widget_t *win, void *ctx) {
             show("正在下载…");
         else if (*nc.tag)
             named(); /* else stock's name, as it built the row */
-        pod_rows(win, "scroll_view_fwupdate", 26 /* POD_REMIND_DAILY */, 1, icons);
+        pod_rows(win, "scroll_view_fwupdate", POD_REMIND_DAILY, 1, icons);
     }
     return result;
 }
@@ -1083,10 +1083,8 @@ static void sh_text(int r) {
         snprintf(s, sizeof s, "正在下载 %d%%", sh.percent);
     else if (busy)
         t = tr(stages[sh.stage]);
-    else if (armed && sh_state(i) == ST_INSTALLED)
-        t = tr("再按一次以移除");
-    else if (armed) /* docs/boot.md#rockbox */
-        t = tr("开机自动启动，可在“默认启动”中更改。再按一次以安装");
+    else if (armed)
+        t = "再按一次以移除";
     else { /* its GitHub owner, as an app's developer: 39 bytes at most, as GitHub's names are */
         int k = (int)(strstr(apps[i].repo, "/") - apps[i].repo);
         snprintf(s, sizeof s, "%.*s", k < 39 ? k : 39, apps[i].repo);
@@ -1151,8 +1149,6 @@ static int sh_wait(const void *unused) {
         snprintf(s, sizeof s, "还需 %u MB 空间", sh.need), toast(s);
     else if ((job == JOB_INSTALL || job == JOB_REMOVE) && r)
         toast(tr(said[r]));
-    else if (job == JOB_INSTALL && is(i, "rockbox"))
-        toast(tr("Rockbox 已就绪，可在主菜单找到"));
     else if (job == JOB_INSTALL && is(i, "themes"))
         toast(tr("Rockbox 主题已就绪，可在 Rockbox 的主题设置中选择"));
     else if (job == JOB_INSTALL) /* addon_where's place, translated there */
@@ -1177,10 +1173,9 @@ static void sh_start(int job, int i) {
         timer_add(sh_wait, (void *)0, 500);
 }
 
-/* Install and Update at once; Installed's Remove and Rockbox's first Install (it becomes the
- * power-on default) on a second press of the same row. Pressed again, the running install cancels.
- * Check for Updates checks now (loading the list, with none yet), unless the last whole check is
- * under SH_RECHECK_MS old: then it says that check's count again. */
+/* Install and Update at once; Installed's Remove on a second press of the same row. Pressed again,
+ * the running install cancels. Check for Updates checks now (loading the list, with none yet),
+ * unless the last whole check is under SH_RECHECK_MS old: then it says that check's count again. */
 static int sh_click(void *ctx, event_t *event);
 
 /* A press held for Smart Wi-Fi's link (need_link) by its app, ROW_CHECK for Check for Updates: made
@@ -1218,8 +1213,6 @@ static int sh_click(void *ctx, event_t *event) {
         sh_start(JOB_CHECK, 0), sh.manual = 1;
     else if (is(i, "themes") && !rockbox_available())
         toast("请先安装 Rockbox");
-    else if (is(i, "rockbox") && sh_state(i) == ST_INSTALL && !armed)
-        sh.armed = r + 1;
     else
         sh_start(JOB_INSTALL, i);
     sh_refresh();
@@ -1228,9 +1221,11 @@ static int sh_click(void *ctx, event_t *event) {
 }
 
 static int sh_closed(void *ctx, event_t *event) {
-    sh.page = sh.strip = store_tabs(0, 0), sh.rows = sh.armed = 0;
+    sh.page = sh.strip = store_tabs(0, 0, 0, 0), sh.rows = sh.armed = 0;
     return 0;
 }
+
+static const char *const sh_tabs[2] = { "应用", "游戏" };
 
 /* The rows: Check for Updates, then the open tab's apps (sh_shown) in the list's order; built again
  * when a job's end or the tab changes which. The tabs' badges are counted here too, as only a job's
@@ -1245,7 +1240,7 @@ static void sh_rows(void) {
         memcpy(sh.map, map, sizeof map);
         sh.rows = 0;
         widget_t *view = page_list(sh.page, sh.page, 0, "应用商店", n, 64);
-        sh.strip = store_tabs(sh.page, view);
+        sh.strip = store_tabs(sh.page, view, sh_tabs, shelf_tab);
         for (int r = 0; r < n; ++r) {
             int i = map[r];
             /* sh_text writes the detail: a blank one, or a theme would centre the name over it */
@@ -1264,15 +1259,6 @@ void shelf_tab(int tab) {
     if (!sh.page || tab == sh.tab) return;
     sh.tab = tab, sh.armed = 0;
     sh_rows();
-}
-
-/* ringnav, before stock's song skip: on the App Store, Previous opens Apps and Next Games.
- * ponytail: a toast on top (msginfo_dialog, 0x49b7c8) stops them for its time, as for field_key;
- * looking past it (smart_wifi.c page_in_use) would lift that. */
-int shelf_key(widget_t *top, unsigned key) {
-    if (!sh.page || top != sh.page || (key != KEY_BACK_BTN && key != KEY_FWD_BTN)) return 0;
-    shelf_tab(key == KEY_FWD_BTN);
-    return 1;
 }
 
 /* Streaming → Configuration's Erase Spotify Data (navigation.c): with start, Spotify's login, cache

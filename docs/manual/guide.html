@@ -327,7 +327,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
     <li><b>Library:</b> your music in Artists, Albums, Songs, Genres, Era and other lists, plus Playlists, Ratings, Shuffle and Games (<a href="#browse">The Library</a>).</li>
     <li><b>Cover Flow:</b> your albums as covers (<a href="#cf">Cover Flow</a>).</li>
     <li><b>Folder:</b> the folders on the card. If an OTG drive is connected, select SD or OTG first.</li>
-    <li><b>Shortcut:</b> Rockbox if it is on the card. If not, Favourites. To change it, use <b>Shortcut</b> in <a href="#appearance">Appearance</a>. <b>None</b> removes the row.</li>
+    <li><b>Shortcut:</b> Favourites. To change it, use <b>Shortcut</b> in <a href="#appearance">Appearance</a>. It can also open a card app or game. <b>None</b> removes the row.</li>
     <li><b>Streaming:</b> TIDAL, Spotify, your card apps, Tidal Downloads, Internet Radio, AirPlay and Configuration (<a href="#c6">Chapter 6</a>).</li>
     <li><b>Settings:</b> shows <b>Playback</b> and <b>System</b> where the list was, as on an iPod.</li>
   </ul>
@@ -486,14 +486,14 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
     <tbody>
       <tr><td>Artists</td><td>Each artist opens on their albums, with Songs one tap away</td></tr>
       <tr><td>Albums, Songs, Genres</td><td>Your full library, A to Z</td></tr>
-      <tr><td>Era</td><td>Each decade with dated albums, oldest first (below)</td></tr>
+      <tr><td>Era</td><td>Each decade, or each year, with dated albums (below)</td></tr>
       <tr><td>Long Songs</td><td>Songs longer than 10 minutes, longest first (below)</td></tr>
       <tr><td>Playlists, Ratings</td><td>See <a href="#c4">Chapter 4</a></td></tr>
       <tr><td>Recently Added, Recent, Most Played, Hi-Res</td><td>Your newest songs, the songs you played recently, your 100 most played, and hi-res files</td></tr>
       <tr><td>Shuffle</td><td>Shuffles the full library (<a href="#shuffle">Shuffle the library</a>)</td></tr>
       <tr><td>Podcasts, Audiobooks, Photos</td><td>Show when the card has these folders (<a href="#c7">Chapter 7</a>)</td></tr>
       <tr><td>Apps</td><td>Installed apps that open here, after you install one</td></tr>
-      <tr><td>Games</td><td>Sudoku, Vortex, Solitaire, Snake and your installed games</td></tr>
+      <tr><td>Games</td><td>Sudoku, Bricks, Solitaire, Snake and your installed games</td></tr>
       <tr><td>App Store, Upload Scrobbles, Update Library</td><td>See <a href="#apps">Install apps</a>, <a href="#scrobble">Last.fm and ListenBrainz</a> and <a href="#addmusic">Add music</a></td></tr>
     </tbody>
   </table>
@@ -507,7 +507,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
   <h2 id="more">More ways to find music</h2>
   <div class="sub">
   <h3>Era</h3>
-  <p><b>Library → Era</b> shows each decade with dated albums, and their number. A decade opens <b>Play All</b> (its albums by year), <b>Shuffle</b> and its albums. Centre on an album shows it in Cover Flow. An album’s year is its latest Year tag. Undated albums do not show.</p>
+  <p><b>Library → Era</b> shows each decade with dated albums, and their number. The <b>Years</b> tab shows each year, newest first. Tap a tab, or push Previous or Next. A decade or a year opens <b>Play All</b> (its albums by year), <b>Shuffle</b> and its albums. Centre on an album shows it in Cover Flow. An album’s year is its latest Year tag. Undated albums do not show.</p>
   </div>
   <div class="sub">
   <h3>Long Songs</h3>
@@ -589,7 +589,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3, .lead { b
     <thead><tr><th>To</th><th>Do this</th></tr></thead>
     <tbody>
       <tr><td>Rate a song</td><td>On Now Playing, hold the heart, or hold Play/Pause and select <b>Rate</b>. Turn the wheel, then push Centre to save or Return to cancel. Or tap a heart. Tap the current one to clear it.</td></tr>
-      <tr><td>Add a song to favourites, or remove it</td><td>Tap the heart on Now Playing. A song with a rating of 1 to 4 shows its number on the empty heart.</td></tr>
+      <tr><td>Add a song to favourites, or remove it</td><td>Tap the heart on Now Playing. A song with a rating of 1 to 4 fills the bottom of the empty heart: one fifth of it for each heart.</td></tr>
       <tr><td>Rate an album</td><td>Hold Play/Pause on it in Cover Flow, Albums or an artist’s albums, then select <b>Rate Album</b>. <b>Add to Favourites</b> gives it five hearts and adds all its songs to favourites. <b>Remove from Favourites</b> cancels the two.</td></tr>
     </tbody>
   </table>
@@ -985,19 +985,19 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
 
   <div class="sec">
   <h2 id="games">Games</h2>
-  <p><b>Library → Games</b> has Sudoku, Vortex, Solitaire and Snake. The music continues. The Q2 keeps open games and Vortex’s and Snake’s best scores, also through shutdown.</p>
+  <p><b>Library → Games</b> has Sudoku, Bricks, Solitaire and Snake. The music continues. The Q2 keeps open games and Bricks’ and Snake’s best scores, also through shutdown.</p>
   <table class="three">
     <thead><tr><th>Game</th><th>Wheel</th><th>Centre</th><th>Other keys</th></tr></thead>
     <tbody>
       <tr><td>Sudoku</td><td>Moves through the cells, or selects the digit</td><td>Opens the digit, then writes it</td><td>Previous and Next move a row. Play/Pause starts a new game. Return cancels or goes back.</td></tr>
-      <tr><td>Vortex</td><td>Turns the paddle</td><td>Sends the ball</td><td>Play/Pause pauses. Return gives Continue or Quit.</td></tr>
+      <tr><td>Bricks</td><td>Turns the paddle</td><td>Sends the ball</td><td>Play/Pause pauses. Return gives Continue or Quit.</td></tr>
       <tr><td>Solitaire</td><td>Moves between the piles</td><td>Draws, picks up, then drops cards. Two pushes on a pile send its top card home.</td><td>Previous and Next change rows. Play/Pause starts a new game. Return puts cards back or goes back.</td></tr>
       <tr><td>Snake</td><td>Not used</td><td>Starts a new game after a crash</td><td>Previous and Next turn. Play/Pause pauses. Return gives Continue or Quit.</td></tr>
     </tbody>
   </table>
   <ul>
     <li><b>Sudoku</b> clues are on grey, and a digit that clashes becomes red. <b>Solitaire</b> is Klondike, with one card for each draw. A column’s face-up cards move together.</li>
-    <li><b>Snake</b> becomes longer and faster with each apple. Walls and its own body stop the game. <b>Vortex</b> pauses when the screen goes off.</li>
+    <li><b>Snake</b> becomes longer and faster with each apple. Walls and its own body stop the game. <b>Bricks</b> pauses when the screen goes off.</li>
     <li><b>App Store games</b> (<a href="#apps">Install apps</a>) come after Snake and fill the screen. Play/Pause, Next and Previous control the music. Hold Return to close the game. A game closes after two minutes without a touch, unless <b>Smart Awake</b> is on.</li>
   </ul>
   </div>
@@ -1090,7 +1090,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
       <tr><td>Status Bar</td><td>Theme (default) agrees with your theme. Or Minimal, Modern or Classic: that bar in all themes.</td></tr>
       <tr><td>Rounded Corners</td><td>Minimal and Modern. On: pill-shaped bars and rounded tiles. Off: full-width bars and square tiles.</td></tr>
       <tr><td>Home</td><td>Split (default): the menu adjacent to the cover. Full: only the menu. Carousel: the Shanling home carousel of eight cards. The wheel moves between them, and Centre opens one.</td></tr>
-      <tr><td>Shortcut</td><td>The shortcut row on Home: Rockbox, Favourites, Shuffle, Rated Albums, Playlists, Artists, Albums, Games, Podcasts, Audiobooks, Groovebox (after you install it) or None.</td></tr>
+      <tr><td>Shortcut</td><td>The shortcut row on Home. Push it to see a list: Favourites, Shuffle, Rated Albums, Playlists, Artists, Albums, Games, Podcasts, Audiobooks and None, then the card apps, then the card games. Select one.</td></tr>
       <tr><td>Battery</td><td>Icon (default), Percent, Icon + Percent (not in Classic) or Percent Inside.</td></tr>
       <tr><td>Time in Title</td><td>On: the title bar shows the time. Off: it shows the page name, and Home shows Q2 Pod. In Classic, it always shows the page name, and On adds the time.</td></tr>
       <tr><td>Show Wordmark</td><td>On (default): the Home title shows Q2 Pod, where an iPod shows iPod. Off: it stays empty.</td></tr>
@@ -1098,7 +1098,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
       <tr><td>Library on Home</td><td>Classic, Home: Split. On (default): Library opens on Home, adjacent to the pane. Off: it opens its own page.</td></tr>
       <tr><td>Row Preview</td><td>Classic, Home: Split. On (default): the pane shows the highlighted row. Off: it shows the current song.</td></tr>
       <tr><td>Row Art</td><td>Classic. On (default): album covers in taller rows. Off: one-line rows. A change starts the Q2 again.</td></tr>
-      <tr><td>Hide Streaming, Hide Folder, Hide Apps, Hide Games, Hide App Store, Hide Hi-Res</td><td>On: removes that row from the Home or Library list. Home: Carousel keeps its card.</td></tr>
+      <tr><td>Hide</td><td>A page of switches: Hide Streaming, Hide Folder, Hide Apps, Hide Games, Hide App Store, Hide Hi-Res. On: removes that row from the Home or Library list. Home: Carousel keeps its card.</td></tr>
     </tbody>
   </table>
   </div>
@@ -1146,7 +1146,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
     <thead><tr><th>Timer</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td>Screen Off Time (Display)</td><td>How long the screen stays on. The music continues.</td></tr>
-      <tr><td>Auto-standby (Power → Standby)</td><td>After 5 minutes without playback, the Q2 goes into Standby, a low-power sleep, until you push a key.</td></tr>
+      <tr><td>Auto-standby (Power → Standby)</td><td>After 5 minutes without playback, the Q2 goes into Standby, a low-power sleep, until you push a key. Standby can cause the Q2 to freeze or to start again. Auto-shutdown is safer.</td></tr>
       <tr><td>Auto-shutdown (Power → Standby)</td><td>After 1, 3, 5 or 10 minutes without playback, the Q2 shuts down. When you set this on, Auto-standby goes off, and the opposite.</td></tr>
     </tbody>
   </table>
@@ -1156,7 +1156,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
     <tbody>
       <tr><td>Standby Limit</td><td>Off by default. 1, 8 or 24 h: a Q2 in Standby for that time shuts down. Thus a Q2 in a bag keeps its charge.</td></tr>
       <tr><td>Sleep Timer</td><td>Shuts down the Q2 after a set time, with or without playback. Set it to On, set the hours and minutes, then select OK. It counts from OK. Without OK, nothing occurs. It operates one time. Off cancels it. While it runs, the <b>Power</b> row shows <b>Sleep Timer: 45 min</b>.</td></tr>
-      <tr><td>Charge Limit</td><td>Off by default. On: stops the charge at 80% and starts it again at 75%. Thus a Q2 that stays connected, also as a USB DAC, is not kept full. It does not change the life of a charge. It applies while the Q2 is on. When the Q2 is off, the Shanling charge control applies.</td></tr>
+      <tr><td>Charge Limit</td><td>Off by default. On: stops the charge at 80% and starts it again at 75%. Thus a Q2 that stays connected, also as a USB DAC, is not kept full. It does not change the life of a charge. It applies while the Q2 is on. A Q2 that is off can charge to 100%.</td></tr>
       <tr><td>USB DAC Charging</td><td>Off by default: a wall adapter charges the Q2, but a phone or computer that uses it as a USB DAC does not. <b>On</b>: they also charge it. <b>Never</b>: nothing charges it in <b>Audio and DAC</b>, for a phone that otherwise rejects the DAC.</td></tr>
       <tr><td>Smart Wi-Fi</td><td>Off by default. On: Wi-Fi goes off after 5 minutes without use, and comes on again when you open Streaming or the Wi-Fi settings. Functions that use it wait some seconds for it. It stays on while a USB cable is connected. It also stays on while one of these uses it: a stream, a card app, a download, AirPlay, DLNA, SyncLink, Wi-Fi File Transfer. Quick Settings then shows Wi-Fi off. Your Wi-Fi setting does not change.</td></tr>
       <tr><td>In-Vehicle Mode</td><td>On: plays when the Q2 starts.</td></tr>
@@ -1186,8 +1186,32 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
 
 
   <div class="sec">
-  <h2 id="lock">Lock Screen</h2>
-  <p><b>System settings → Display → Lock Screen</b> sets the lock screen. Set the switch to on, then select a picture. You can use the Shanling picture, six built-in wallpapers (Aurora, Sunrise, Graphite, Tide, Ember and Black), or a maximum of 5 of your own PNG or JPG files (375 × 320 fits). Put them in a <code>lockscreenimage</code> folder at the card’s root. <b>Clock: Large</b> shows the time in large type, with the date and battery. <b>Clock: Standard</b> is the Shanling layout. <b>Show Time</b> shows the time on it.</p>
+  <h2 id="lock" class="pagebreak">Lock Screen</h2>
+  <p>The lock screen shows when the screen wakes, if its switch is on. Set the switch in <b>System settings → Display → Lock Screen</b>.</p>
+  <table>
+    <thead><tr><th>To</th><th>Do this</th></tr></thead>
+    <tbody>
+      <tr><td>Unlock (Default)</td><td>Swipe the screen.</td></tr>
+      <tr><td>Unlock (At a Glance)</td><td>Slide the knob to the right. Let go after about two-thirds of the distance.</td></tr>
+      <tr><td>See your picture (At a Glance)</td><td>Hold the clock for about one second. The Q2 shows your picture, or a large clock, and keeps that view. Hold it again to go back.</td></tr>
+      <tr><td>Put away the volume panel</td><td>Touch anywhere on the screen.</td></tr>
+      <tr><td>Shut down the Q2</td><td>Hold Centre. Then use the wheel and Centre on the <b>Shut Down?</b> prompt.</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>Show Time</td><td>Shows the time on the lock screen.</td></tr>
+      <tr><td>Layout</td><td>Default, or At a Glance: the clock, the date and the song on one screen.</td></tr>
+      <tr><td>Clock</td><td>In Default only. Standard is the Shanling layout. Large shows the time in large type, with the date and battery.</td></tr>
+      <tr><td>Background</td><td>In At a Glance only. Cover Colour (default) is one flat colour from the cover. Plain is the theme’s background. Blurred Cover is the cover, blurred.</td></tr>
+      <tr><td>Classic Slider</td><td>In At a Glance only. Off by default. On: a grey slider, with a band of light that moves across the words.</td></tr>
+        <tr><td>Return Unlocks</td><td>On by default: push Return to unlock. Off: Return has no effect on the lock screen, and only the slide or swipe unlocks.</td></tr>
+      <tr><td>Wheel Unlocks</td><td>In At a Glance only. Off by default: the wheel changes the volume. On: turn the wheel three clicks to slide the knob.</td></tr>
+    </tbody>
+  </table>
+  <p>At a Glance shows a large clock, the weekday and date, and the battery percent. While a song plays, it also shows the cover, the title, artist and album, the times and the position in the queue (“1 of 20”). It follows the theme’s colours and fonts, and <b>Light Mode</b>.</p>
+  <p>Select a picture in the grid at the end of the page. You can use the Shanling picture, six built-in wallpapers (Aurora, Sunrise, Graphite, Tide, Ember and Black), or a maximum of 5 of your own PNG or JPG files (375 × 320 fits). Put them in a <code>lockscreenimage</code> folder at the card’s root.</p>
   </div>
 </section>
 
@@ -1215,7 +1239,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
     </tbody>
   </table>
   <ul>
-    <li><b>Rockbox</b> becomes what the Q2 starts, thus the first push tells you this. Push again to install. Its themes show when Rockbox is installed, and go with it.</li>
+    <li><b>Rockbox</b> shows in Library → Apps. Its themes show when Rockbox is installed, and go with it.</li>
     <li><b>When you remove Spotify</b>, its login stays. <b>Erase Spotify Data</b> (<a href="#stream-config">Configuration</a>) erases it.</li>
     <li><b>Card apps</b> show in Streaming or Library → Apps, and games in Library → Games. USB storage stops them until it ends: close a game first. An app that syncs music updates your library when nothing plays. If one does not start, select <b>Stop</b> and its name, then open it.</li>
     <li><b>Space:</b> the card must have space for the download, the unpacked files, and 64 MB more.</li>
@@ -1228,16 +1252,16 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   <ol class="steps">
     <li>Download <code>rockbox.zip</code> from github.com/DiamondBond/q2-rockbox/releases.</li>
     <li>Unzip it to the card’s root. It adds a <code>.rockbox</code> folder.</li>
-    <li>Start the Q2. Rockbox starts.</li>
+    <li>Start the Q2. Select <b>Rockbox</b> in Library → Apps.</li>
   </ol>
   <p>For the ported themes, unzip the release from github.com/DiamondBond/q2-rockbox-themes/releases to the card. Then, in Rockbox, select <b>Settings → Theme Settings → Browse Theme Files</b>.</p>
   <table>
     <thead><tr><th>To</th><th>Do this</th></tr></thead>
     <tbody>
       <tr><td>Start Q2 Pod one time</td><td>Hold Play/Pause while you start the Q2.</td></tr>
-      <tr><td>Always start Q2 Pod</td><td>Set <b>System settings → Power → Boot to: Q2 Pod</b>. To start Rockbox, select <b>Rockbox</b> on Home.</td></tr>
+      <tr><td>Always start Rockbox</td><td>Set <b>System settings → Power → Boot to: Rockbox</b>. Without it, the Q2 starts Q2 Pod.</td></tr>
       <tr><td>Copy music through USB</td><td>Start Q2 Pod with Play/Pause held, then connect the USB cable.</td></tr>
-      <tr><td>Use Bluetooth headphones</td><td>Connect them in Q2 Pod, then select <b>Rockbox</b> on Home. Set the volume in Rockbox. It keeps it for the next time. When Rockbox shuts down, Q2 Pod starts again, with its own volume.</td></tr>
+      <tr><td>Use Bluetooth headphones</td><td>Connect them in Q2 Pod, then select <b>Rockbox</b> in Library → Apps. Set the volume in Rockbox. It keeps it for the next time. When Rockbox shuts down, Q2 Pod starts again, with its own volume.</td></tr>
       <tr><td>Start again from a frozen or unreadable screen</td><td>Hold Play/Pause for 15 seconds.</td></tr>
     </tbody>
   </table>
@@ -1283,7 +1307,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
 
   <div class="sec">
   <h2 id="trouble">Problems with the Q2 and your library</h2>
-    <p><b>The Q2 does not start, does not charge, or is frozen.</b> Connect it to the charger. Hold Centre for 15 seconds, through the shutdown prompt, until it starts again (in Rockbox, hold Play/Pause). A Q2 that gives no response starts again in less than one minute, and <code>q2-crash.log</code> on the card records why.</p>
+    <p><b>The Q2 does not start, does not charge, or is frozen.</b> Connect it to the charger. Hold Centre for 15 seconds, through the shutdown prompt, until it starts again (in Rockbox, hold Play/Pause). A Q2 that gives no response starts again in less than one minute, and <code>q2-crash.log</code> on the card records why. A Q2 that freezes when it goes into or comes out of Standby does not start again by itself.</p>
   <p><b>The charge sign shows, but the battery level decreases.</b> Hold Centre while you connect the Q2 to the charger. This resets its power controller.</p>
   <p><b>A song is missing.</b> Examine its format (<a href="#card">Files on the microSD card</a>), then start Update Library. DRM-protected files do not show. Then examine its tags (<a href="#tagging">Music tags</a>).</p>
   <p><b>An album shows as two.</b> Give its tracks the same Album Artist, then start Update Library.</p>
@@ -1305,6 +1329,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   <div class="sec">
   <h2 id="help">Help</h2>
   <ul>
+    <li><b>Website:</b> <a href="https://diamondbond.github.io/q2-pod/">diamondbond.github.io/q2-pod</a>.</li>
     <li><b>Questions and ideas:</b> the <a href="https://discord.gg/MY3FTNuAdG">Q2 Pod Discord</a> (discord.gg/MY3FTNuAdG).</li>
     <li><b>Bugs:</b> <a href="https://github.com/DiamondBond/q2-pod/issues">github.com/DiamondBond/q2-pod/issues</a>, with the list below.</li>
     <li><b>Downloads and changelog:</b> <a href="https://github.com/DiamondBond/q2-pod/releases/latest">github.com/DiamondBond/q2-pod/releases</a>.</li>
@@ -1320,7 +1345,7 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   <p>Do not include passwords, tokens or keys. Do not post <code>.scrobble.ini</code> or <code>.spotify/cache</code>.</p>
 
   <div class="legal">
-    <p>Q2 Pod is an independent project and is not affiliated with, endorsed by or sponsored by Shanling or Apple. Shanling and Q2 are trademarks of Shanling. IPod, iPhone, AirPods and AirPlay are trademarks of Apple Inc.. Spotify is a trademark of Spotify AB. The Shanling firmware included in release images remains Shanling’s. Q2 Pod’s code and documentation are released under the GNU General Public License, version 3.</p>
+    <p>Q2 Pod is an independent project and is not affiliated with, endorsed by or sponsored by Shanling or Apple. Shanling and Q2 are trademarks of Shanling. Cover Flow, iPod, iPhone, AirPods and AirPlay are trademarks of Apple Inc. Spotify is a trademark of Spotify AB. The Shanling firmware included in release images remains Shanling’s. Q2 Pod’s code and documentation are released under the GNU General Public License, version 3.</p>
   </div>
   </div>
 

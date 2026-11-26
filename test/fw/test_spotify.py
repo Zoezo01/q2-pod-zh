@@ -8,6 +8,7 @@ import ctypes as C
 import pytest
 
 from conftest import O, SPOT_NOSOCK, Config, Files
+from test_radio import Clock
 from test_streaming import (A_CAPS, A_DOWNLOAD, A_PLAY, A_PREVIEW, A_REMOVE, A_SIGNOUT, L_CONFIRM, L_DOWNLOADS, L_JOB,
                             L_LIST, L_REMOVE, L_SELECT, L_STORAGE, S_OLD, S_PAIR, S_WAIT, Br, Sp, Wk, track)
 
@@ -28,22 +29,6 @@ class Ui(C.Structure):
                 *((n, C.c_int) for n in ('scrub', 'scrub_ms', 'ipod')),
                 ('art_track', C.c_char * 64), ('art_tried', C.c_char * 64), ('art_tries', C.c_int),
                 ('art_left', C.c_uint)]
-
-
-class Clock:
-    """time_now_ms, sleep_ms passing it on, and clock_gettime's CLOCK_MONOTONIC (now_ms) in step."""
-    def __init__(self, fw, now=100000):
-        self.now = now
-        fw.mock('time_now_ms', lambda *_: self.now)
-        fw.mock('sleep_ms', lambda ms, *_: self.step(ms))
-        fw.mock('fw_clock_gettime', self.clock)
-
-    def clock(self, which, ts, *_):
-        t = C.cast(ts, C.POINTER(C.c_long))  # struct { long s, ns; }
-        t[0], t[1] = self.now // 1000, self.now % 1000 * 1000000
-
-    def step(self, ms):
-        self.now += ms
 
 
 class Widgets:

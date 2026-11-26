@@ -528,7 +528,7 @@ def test_both_faces_are_given_a_play_mark_on_the_middle_of_their_capitals(face):
     assert xs[0] == xs[1] and ys[1] == (ys[0] + ys[2]) // 2  # an upright edge on the left, its point level with the middle
     assert abs(ys[0] + ys[2] - cap) <= 1  # on the capitals' middle
     assert abs((ys[2] - ys[0]) / cap - .78) < .005 and abs((xs[2] - xs[0]) / cap - .70) < .005
-    # at a Classic row's title px, bold standing in at FACE_FALLBACK_PCT of it (script.c fallback_px),
+    # at a Classic row's title px, bold standing in at FACE_FALLBACK_PCT of it (script.c),
     # the upright edge lies on a pixel's, so it is drawn sharp
     px = next(t for t in theme.builtins() if t['id'] == 'classic-light')['font_px[ROLE_TITLE]']
     pct = re.search(r'#define FACE_FALLBACK_PCT (\d+)', (build.ROOT/'patch/script.c').read_text())
@@ -1043,23 +1043,14 @@ def test_patch_bluealsa_payload_must_fit(silence, monkeypatch):
         build.patch_bluealsa(bluealsa())
 
 
-def elf(*headers, size=0x3000):
-    """An ELF32 image of size bytes whose program headers, (type, offset, vaddr, filesz, memsz) each, start at 52."""
-    data = bytearray(size)
-    struct.pack_into('<I', data, 28, 52)
-    struct.pack_into('<HH', data, 42, 32, len(headers))
-    for i, (kind, offset, vaddr, filesz, memsz) in enumerate(headers):
-        struct.pack_into('<8I', data, 52 + 32 * i, kind, offset, vaddr, vaddr, filesz, memsz, 5, 0x1000)
-    return data
-
-
 # The TagLib cover library's layout (test/m4b.py): the M4A test's beq at SITE to the MP4 extractor
 # (0x1040004a, to SITE + 4 + 0x4a * 4), the next format's test after its delay slot, gp and strcasecmp's GOT slot.
 SITE, MP4, NEXT, GP, STRCASECMP = 0x125ac, 0x126d8, 0x125b4, 0x327e0, 0x327e0 - 0x7e90
 
 
 def taglib():
-    lib = elf((1, 0x1000, 0x12000, 0x1000, 0x1000), (1, 0x2000, 0x2a000, 0x1000, 0x1000), (0, 0, 0, 0, 0))
+    lib = program((1, 0x1000, 0x12000, 0x12000, 0x1000, 0x1000, 5, 0x1000), (1, 0x2000, 0x2a000, 0x2a000, 0x1000, 0x1000, 5, 0x1000),
+                  (0, 0, 0, 0, 0, 0, 5, 0x1000), size=0x3000)
     struct.pack_into('<I', lib, build.fileoff(lib, SITE), 0x1040004a)
     return bytes(lib)
 
@@ -1195,7 +1186,7 @@ def test_stock_header_is_c(tmp_path, monkeypatch):
     (tmp_path/'stock.h').write_text(stock_h())
     (tmp_path/'h.c').write_text(f'''#include "stock.h"
 const int h_ints[] = {{RING_STEP, THEME_N, THEME_KEYS, Q2POD_DEV}};
-const char *const h_strings[] = {{ROCKBOX_FLAG, STOCK_VERSION, Q2POD_VERSION, Q2POD_TAG, Q2POD_REPO, Q2POD_UA}};
+const char *const h_strings[] = {{TAKEOVER_FLAG, STOCK_VERSION, Q2POD_VERSION, Q2POD_TAG, Q2POD_REPO, Q2POD_UA}};
 const char *const h_zones[] = TIMEZONE_NAMES;
 const char *const h_cities[] = TIMEZONE_CITIES;
 const int h_order[] = TIMEZONE_ORDER;
@@ -1216,7 +1207,7 @@ const unsigned long h_sizes[] = {{sizeof h_zones / sizeof *h_zones, sizeof h_cit
     zones, cities, order, icons, lit, rounds, bold = array(ctypes.c_ulong, 'h_sizes', 7)
     assert array(ctypes.c_int, 'h_ints', 4) == [build.RING_STEP, len(themes), len(theme.theme_keys(themes)), 0]
     assert [s.decode() for s in array(ctypes.c_char_p, 'h_strings', 6)] == [
-        build.ROCKBOX_FLAG, 'V1.36', build.VERSION, build.RELEASE_TAG, build.REPO, f'Q2Pod/{build.VERSION} (https://github.com/DiamondBond/q2-pod)']
+        build.TAKEOVER_FLAG, 'V1.36', build.VERSION, build.VERSION, build.REPO, f'Q2Pod/{build.VERSION} (https://github.com/DiamondBond/q2-pod)']
     assert [s.decode() for s in array(ctypes.c_char_p, 'h_zones', zones)] == [zone for _, zone in build.TIMEZONES]
     # each row's city, its label after the offset
     cities = [s.decode() for s in array(ctypes.c_char_p, 'h_cities', cities)]

@@ -10,7 +10,7 @@ import pytest
 
 import host
 import test_nav_loop as NL  # Now Playing's update (NP_UPDATE) and the window manager's paint (Wm)
-from conftest import O, Deques, Files, Rows, claim, favdir_card, fnv1a, high_halves, in_fork, ui_name
+from conftest import O, Deques, Files, Rows, claim, favdir_card, fnv1a, high_halves, in_fork, libc, ui_name
 from test_nav_display_library import Ple  # playlists.c's editor state
 from test_navigation import directory
 from test_coverflow import Cf  # coverflow.c's state
@@ -52,9 +52,7 @@ class Records:
     HIGHS = high_halves(0x400)
 
     def __init__(self):
-        self.libc = C.CDLL(None)
-        self.libc.mmap.restype, self.libc.mmap.argtypes = C.c_void_p, [C.c_void_p, C.c_size_t, C.c_int, C.c_int, C.c_int, C.c_long]
-        self.libc.munmap.argtypes = [C.c_void_p, C.c_size_t]
+        self.libc = libc
         self.pages, self.keep = set(), []
         # this file's high halves (conftest.high_halves), each a string's high half once; its low half may sit near
         # its page's end, so page() maps the next page too
@@ -1823,7 +1821,7 @@ def test_the_menu_gone_mid_blink_shows_the_selection_as_before(hold, recs, ui, s
     assert st('touch_mode').value == touch and not ui.timers and hold.dialog not in ui.stack
 
 
-def cover_flow(fw, ui, recs, screen):
+def cover_flow(fw, ui, screen):
     """Cover Flow's page, on its covers (its first cover at the centre) or an album's tracks."""
     cf = fw.var('cf', Cf)
     cf.page = ui.window('coverflow_page')
@@ -1841,7 +1839,7 @@ def test_a_queue_add_from_a_page_of_its_own_tracks(hold, recs, ui, st, fw, row, 
     songs = [song(recs, i) for i in range(3)]
     tracks = hold.deques.new(songs)
     if where == 'coverflow':
-        cf = cover_flow(fw, ui, recs, 2)  # TRACKS
+        cf = cover_flow(fw, ui, 2)  # TRACKS
         ui.stack.remove(cf.page)
     hold.songs_page(f'{where}_page', songs, sel=1, showlist=False, cls=0xf003)
     if where == 'coverflow':
@@ -1857,7 +1855,7 @@ def test_a_queue_add_from_a_page_of_its_own_tracks(hold, recs, ui, st, fw, row, 
 
 def test_a_cover_s_menu_reads_its_cover_through_the_blink(hold, recs, ui, fw):
     album = recs(path='/mnt/mmc/Music/a', album='Abbey Road', artist='The Beatles', kind=4)
-    cf = cover_flow(fw, ui, recs, 1)  # COVERS
+    cf = cover_flow(fw, ui, 1)  # COVERS
     slide = C.create_string_buffer(0x100)
     cf.slide, cf.albums = C.addressof(slide), hold.deques.new([album])
     hold.hold()

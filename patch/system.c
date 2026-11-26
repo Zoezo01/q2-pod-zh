@@ -68,6 +68,44 @@ static void charge_poll(void) {
     battery_tick(level, g_usbdet_value != 0); /* Battery History's rows (battery.c) */
 }
 
+/* A row's switch off, as stock's handler reads it: Auto-standby's byte at 0, Auto-shutdown's mode
+ * (a signed byte, 1 to 4 its times) at 0 or less */
+static int switch_off(int row) { return row ? (signed char)g_savepower_mode <= 0 : !g_standbyflag; }
+
+/* The Standby page's two questions (docs/internals.md#standby-limit, #charge-limit). Waking from
+ * Standby can leave a Q2 frozen, and the watchdog is stopped across the suspend. Charge Limit runs
+ * only while demo does, so a Q2 that Auto-shutdown powered off charges to full on a charger. The
+ * page's row click is stock's (0x4d1e48, by the button's name: row 0 Auto-standby, row 1
+ * Auto-shutdown, then its times). The click that would turn Auto-standby on asks first, and so
+ * does the one that would turn Auto-shutdown on while Charge Limit is on, before that handler has
+ * changed anything. Accept runs the handler, once: the switch, the other one's turning off, the
+ * saves, the idle counters and the rows are all its own. Any other answer (Cancel, Return, a hold
+ * that cancels the prompt) leaves everything as it was. The prompt's loop ran in between, so the
+ * click goes on only while the page is still one of the window manager's windows and the switch
+ * is still off. ponytail: only these two switches ask; an Auto-standby already on is not asked
+ * about, and Standby Limit, the Sleep Timer and a shutdown by hand also leave the Q2 off,
+ * charging to 100%, and ask nothing. */
+int ringnav_standby_row(widget_t *button, event_t *event) {
+    const char *name = widget_get_prop_str(button, "name", "");
+    int row = (name[0] == '0' || name[0] == '1') && !name[1] ? name[0] - '0' : -1;
+    if (row >= 0 && (!row || st.charge_limit) && switch_off(row)) {
+        widget_t *wm = window_manager(), *page = window_of(button);
+        char ask[0x200];
+        if (row)
+            tk_snprintf(ask, sizeof ask, "%s\n%s",
+                        "Q2 关机时充电上限不生效。",
+                        "启用自动关机？");
+        else
+            tk_snprintf(ask, sizeof ask, "%s\n%s", "待机可能导致 Q2 无响应。",
+                        "请改用自动关机。启用待机？");
+        if (confirm_over(ask, "确定", 0) != 10) return 0;
+        unsigned held = widget_count_children(wm);
+        while (held && widget_get_child(wm, held - 1) != page) --held;
+        if (!held || !switch_off(row)) return 0;
+    }
+    return stock_standby_row_trampoline(button, event);
+}
+
 /* The Wi-Fi signal (docs/internals.md#battery), for networkGetWifiSignal's two pollers: the status
  * bar's bars (get_wifisignal) and the network monitor thread's connect status, each about once a
  * second. Stock asks with SIOCGIWSTATS, which the driver answers through get_station, whose TX
@@ -103,7 +141,7 @@ int ringnav_wifi_signal(void) {
  * cuts the power. The first UI loop pass starts it counting WDT_MS and every pass feeds it, so a
  * stall that long reboots instead. It counts on the RTC clock, through a suspend, so Standby stops
  * it before and starts it again after (ringnav_standby). Its close is a no-op, so a clean end
- * (ringnav_clean_end: power-off, Restart, a firmware update, Rockbox) stops it. libhardware2's
+ * (ringnav_clean_end: power-off, Restart, a firmware update, a takeover) stops it. libhardware2's
  * watchdog_start/stop/feed ioctls; no device, or a refused start, leaves stock's behaviour.
  * ponytail: the UI loop is the only feeder, so a stalled worker thread is not caught. */
 #define WDT_DEV "/dev/jz_watchdog"
@@ -137,12 +175,8 @@ static void stall_read(char *in, const char *path) { /* the file's start, NUL-te
 }
 /* in's line that starts with key */
 static const char *stall_find(const char *in, const char *key) {
-    unsigned n = strlen(key);
-    for (const char *s = in; *s; ++s) {
-        if (!strncmp(s, key, n)) return s;
-        while (*s && *s != '\n') ++s;
-        if (!*s) break;
-    }
+    for (const char *s = strstr(in, key); s; s = strstr(s + 1, key))
+        if (s == in || s[-1] == '\n') return s;
     return 0;
 }
 static char *stall_add(char *p, char *end, const char *label, const char *s) { /* s's first line */
@@ -264,7 +298,8 @@ static void state_poll(void) {
     blob_io(STATE_FILE, STATE_FILE ".tmp", s, (unsigned)n, 1); /* once a change: not each pass */
     memcpy(pw.state, s, n + 1);
 }
-/* A clean end: power-off, Restart, a firmware update, Rockbox. Nothing to report at the next boot.
+/* A clean end: power-off, Restart, a firmware update, a takeover. Nothing to report at the next
+ * boot.
  */
 void ringnav_clean_end(void) {
     /* every call's: an update's dialog is a clean end as it opens, and its reboot one more */

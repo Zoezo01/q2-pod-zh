@@ -198,7 +198,7 @@ typedef struct {
     float ring[VIS_RING][2];
 } vis_tap;
 long long now_ns(void);
-unsigned long long now_ms(void);
+unsigned long long now_ms(void); /* CLOCK_MONOTONIC */
 /* Crossfade (docs/internals.md#crossfade): demo writes the next track change's fade, an int in ms,
  * 0 for none; hciplayer's filter maps the file read-only and holds the outgoing track's tail for
  * it. */
@@ -275,7 +275,7 @@ void press_stamp(void), press_forget(void);
 #define MUTE_FILE PEQ_ROOT "/tmp/q2mute"
 void mute_stamp(void);
 /* librespot (spotify.c) and its restart loop, whose pid its launcher left, stopped: Spotify's idle
- * stop and Home's Rockbox row, which lets ALSA go too. A q2video sink ends with librespot's pipe.
+ * stop and a takeover app's row, which lets ALSA go too. A q2video sink ends with librespot's pipe.
  */
 #define SPOT_OUT "/tmp/q2-librespot.out" /* the output for the card's aplay.sh, none on the DAC */
 #define SPOT_DOWNLOAD                                                                              \
@@ -385,8 +385,8 @@ int album_cmp(void *a, void *b);
 int spoken(const char *path);         /* navigation.c: under Podcasts or Audiobooks, or an M4B */
 void peq_attach(void);                /* peq_ui.c */
 void peq_page_replace(widget_t *old); /* peq_ui.c: the open EQ page closed for a new one */
-/* navigation.c: the settings rows pod_rows builds (pod_values and its Q2POD keys); pod_value(i) is
- * one's value (only rows with a pod_values entry), read once from config.ini. */
+/* navigation.c: the settings rows pod_rows builds (pods and its Q2POD keys); pod_value(i) is
+ * one's value (only rows with a pods entry), read once from config.ini. */
 enum {
     POD_CHARGE,
     POD_WAKE,
@@ -431,6 +431,13 @@ enum {
      * coverflow_cover_tracks */
     POD_CF_DUP_ALBUMS,
     POD_CF_DUP_SONGS,
+    POD_SAMPLERATE, /* Appearance's Show Sample Rate (samplerate.c): the output's rate in the bar */
+    POD_LOCKLAYOUT, /* the Lock Screen's Layout: 1 At a Glance (lock_glance.c), else Default */
+    POD_LOCKGROUND, /* At a Glance's Background: 0 Cover Colour, 1 Plain, 2 Blurred Cover */
+    POD_LOCKSLIDER, /* At a Glance's Classic Slider: 1 the grey slider and its shine, 0 (default)
+                       flat */
+    POD_LOCKRETURN, /* the Lock Screen's Return Unlocks: 1 (default) Return unlocks, 0 nothing */
+    POD_LOCKWHEEL, /* At a Glance's Wheel Unlocks: 1 the wheel moves the knob, 0 (default) volume */
     /* 中文分支自有的行一律排在 upstream 成员之后：上游的 POD_* 索引、它的 _Static_assert 和
      * netupdate.c 里 pod_rows 的硬编码就不用每次合并都跟着挪。pod_keys 按名字读写，顺序无关。 */
     POD_LIBRARY_FILL, /* 补全封面与歌词, an action: onlinematch.c's library_fill_* over the card */
@@ -530,7 +537,7 @@ void tidal_all(int press, char *out, unsigned size), tidal_poll(void), tidal_all
 #define APPS_MAX 64
 int addon_scan(void), addon_open(void *ctx, event_t *event), addon_hold(widget_t *top);
 int addon_games_last(void); /* the card's games as the last addon_scan found them */
-#define GAMES_BUILTIN 4     /* games.c's Sudoku, Vortex, Solitaire and Snake */
+#define GAMES_BUILTIN 4     /* games.c's Sudoku, Bricks, Solitaire and Snake */
 const char *addon_name(int a), *addon_id(int a), *addon_icon(int a);
 int addon_slot(int a);
 const char *addon_slot_id(int i); /* slot i's app's id while it has a row anywhere, else 0 */
@@ -546,7 +553,8 @@ const char *addon_network_name(int k), *addon_network_icon(int k);
 /* addon.c: the wifi=1 apps, for addon_wifi.c's link follower: each started (but those the user
  * stopped), each stopped, and the user's stops forgotten. */
 void addon_wifi_start(void), addon_wifi_stop(void), addon_wifi_release(void);
-void addon_wifi_poll(void); /* addon_wifi.c: once per addon_poll pass */
+void addon_wifi_poll(void);    /* addon_wifi.c: once per addon_poll pass */
+void addon_playing_poll(void); /* addon_playing.c: once per addon_poll pass */
 /* addon.c: a running app's status bar icon, the one its status file's bar= names (bar.png for 1,
  * bar-<word>.png for a word; white, which Light Mode turns to the bar's ink), or 0 */
 const char *addon_bar_icon(void);
@@ -565,7 +573,10 @@ int addon_games(void), addon_game_start(int k);
 int addon_game_front(void), addon_game_keys(void);
 int addon_game_audio(
     void); /* a card game with audio=1 runs: the sound and the media keys are its */
-int addon_game_open(const char *id); /* Home's Shortcut: the card game with this id, -1 none */
+int addon_open_app(const char *id); /* Home's Shortcut: the app with this id pressed, -1 none */
+const char *addon_name_of(const char *id);
+int addon_sorted(int game, int *slots);
+void ringnav_hand_over(void); /* navigation.c: demo ends for a takeover app (addon.c takeover) */
 const char *addon_game_name(int k);
 /* games.c: the theme's pop-up for a card game (Q2_POPUP's value), 7 + 6 * 7 + 64 * 7 + 1 bytes at
  * most */
@@ -667,7 +678,6 @@ void caption(canvas_t *canvas, const char *s, int x, int y, int w, int h, unsign
 unsigned wide_text(unsigned *to, unsigned room, const char *s);
 void peq_paint(widget_t *w, canvas_t *canvas);
 /* spotify.c's, shared with radio.c */
-unsigned long long now_ms(void); /* CLOCK_MONOTONIC */
 void field(const char *raw, const char *key, char *out, unsigned n);
 unsigned long long number(const char *raw, const char *key);
 unsigned state_read(const char *path, char *raw, unsigned size);
@@ -712,6 +722,8 @@ const char *output_device(char *vol); /* radio.c */
 void dac_take(void);                  /* radio.c */
 /* navigation.c: the theme's font for role on w, or stock's */
 int theme_font(widget_t *w, int role, int was);
+void face_states(widget_t *w, const char *face,
+                 int px);           /* navigation.c: the face in every label state */
 #define FONT_ROW (-2)               /* was: cache the answer in w's own "_font" prop */
 void marq_restart(widget_t *row);   /* navigation.c: its title changed, its marquee re-armed */
 void list_stop_scroll(widget_t *w); /* navigation.c: its scroll animation stopped */
@@ -793,6 +805,22 @@ void slider_number(widget_t *label), slider_tray_dirty(widget_t *page),
 void switch_row(widget_t *win, widget_t *view); /* the toolbar's, as a row */
 void stock_more_speed(widget_t *win);
 void stock_more_into(widget_t *win);
+/* lockscreen.c: ringnav_input's lock screen events, 1 taken; Layout's row was clicked; a label's
+ * face (0 the system font) at px, set again only when it changes */
+int lockscreen_input(widget_t *wm, event_t *e);
+void lockscreen_layout_turned(widget_t *win);
+void lock_face(widget_t *w, const char *face, int px);
+/* navigation.c: the playing track and its cover file, 0 none; a row lit again after its list was
+ * rebuilt */
+unsigned np_art_key(void);
+void ringnav_keep_row(widget_t *row);
+/* lock_glance.c: At a Glance's lock window, from lockscreen.c; a wheel tick with Wheel Unlocks on
+ */
+void glance_init(widget_t *win, widget_t *img, int picture, void *full);
+void glance_poll(void), glance_cover(widget_t *cover);
+int glance_paint(widget_t *w, canvas_t *canvas);
+int lockscreen_touch(widget_t *wm, event_t *e, unsigned type);
+int glance_wheel(widget_t *wm, unsigned type, unsigned key);
 void info_poll(void);          /* lockscreen.c: the info screen's timer, with the screen lit */
 int xfade_page(widget_t *top); /* crossfade.c */
 int ipod_battery(void);        /* theme_engine.c: IPOD BATTERY, 0 Icon, else a percentage */
@@ -850,17 +878,17 @@ widget_t *coverflow_playlists_close(void);
 void playlist_open(widget_t *win, int cd_num);
 unsigned playlist_index(int cd_num);
 void playlists_edit(int edit);
-int rockbox_available(void);   /* theme_engine.c: a regular Rockbox binary on the card */
-int groovebox_available(void); /* theme_engine.c: the Groovebox card app's binary on the card */
-#define SHORTCUT_GROOVEBOX 10  /* IPOD SHORTCUT's Groovebox, after the ten stock-era values */
-#define SHORTCUT_NONE 11       /* IPOD SHORTCUT's None: Home has no Shortcut row */
+int rockbox_available(void); /* theme_engine.c: a regular Rockbox binary on the card */
+#define SHORTCUT_APP 0       /* IPOD SHORTCUT's card app, IPOD SHORTCUT_APP its id */
+#define SHORTCUT_NONE 11     /* IPOD SHORTCUT's None: Home has no Shortcut row */
 int page_keyup(void *ctx, event_t *event); /* navigation.c: Return leaves a payload page */
 int ringnav_localclass(int cls);           /* navigation.c: load_localclass_list's hook */
 int shelf_open(void *ctx, event_t *event); /* netupdate.c: Library's App Store page */
 void shelf_tab(int tab); /* netupdate.c: the App Store's open tab, 0 Apps, 1 Games */
-int shelf_key(widget_t *top, unsigned key); /* netupdate.c: Previous and Next switch its tabs */
-/* app_store.c: the App Store's tabs and rows, drawn in ringnav_paint (store_paint) */
-widget_t *store_tabs(widget_t *page, widget_t *view);
+/* app_store.c: the App Store's tabs (Era's too) and rows, drawn in ringnav_paint (store_paint);
+ * Previous and Next switch the tabs (store_tabs_key) */
+widget_t *store_tabs(widget_t *page, widget_t *view, const char *const *names, void (*pick)(int));
+int store_tabs_key(widget_t *top, unsigned key);
 void store_tabs_set(widget_t *strip, int tab, const int *updates);
 void store_state(widget_t *item, int state);
 void store_paint(widget_t *w, canvas_t *canvas);

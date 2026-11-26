@@ -13,6 +13,7 @@ import struct
 import host
 import messy_playlists
 from conftest import O, Deques
+from test_radio import Mallinfo2
 
 
 class Songs(C.Structure):
@@ -267,11 +268,6 @@ def test_usb_storage_stops_the_art_worker_before_stock_hands_over_the_card(fw):
     fw.mock('stock_usbmode_trampoline', lambda *_: order.append(('stock', pl.running)) or 3)
     assert fw.fn('ringnav_usbmode', C.c_int, C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p)(None, None, None, None) == 3
     assert order == [('join', 0x77, 1), ('stock', 0)] and pl.cancel == 0
-
-
-class Mallinfo2(C.Structure):
-    _fields_ = [(f, C.c_size_t) for f in ('arena', 'ordblks', 'smblks', 'hblks', 'hblkhd', 'usmblks', 'fsmblks',
-                                           'uordblks', 'fordblks', 'keepcost')]
 
 
 def test_a_playlist_of_huge_tags_keeps_a_small_heap(fw, messy):

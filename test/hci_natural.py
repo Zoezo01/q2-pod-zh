@@ -498,6 +498,14 @@ def iso_no_tracks():
     check(not stopped and p.frames() == N, f'no-track ISO: a whole, {p.frames()} frames, stop flag clear {not stopped}')
 
 
+def reported(p, said):
+    """Polls the player: its replies go into said, and a status request asks for the next. Done once one says error."""
+    said.extend(b''.join(p.e.replies))
+    p.e.replies.clear()
+    p.e.send_cmd('{player-status\\request}')
+    return b'error' in said
+
+
 def xfade_bad_next():
     """Crossfade holds a's tail back, and a's whole length comes out of the decoder before the report."""
     p = Player()
@@ -508,12 +516,7 @@ def xfade_bad_next():
     p.run(0.5)
     p.gapless('junk.flac')
     said = bytearray()
-    def reported():
-        said.extend(b''.join(p.e.replies))
-        p.e.replies.clear()
-        p.e.send_cmd('{player-status\\request}')
-        return b'error' in said
-    check(p.until(reported, SECONDS + 1), f'under Crossfade: reported ({p.frames()} of {N} frames out, the rest held: a limit)')
+    check(p.until(lambda: reported(p, said), SECONDS + 1), f'under Crossfade: reported ({p.frames()} of {N} frames out, the rest held: a limit)')
     check(not p.e.r32(STOP) and p.frames() >= N - 2 * RATE - 4096, f'under Crossfade: only the hold is missing, {p.frames()} of {N} frames')
 
 
@@ -538,12 +541,7 @@ def xfade_late_next(label, delay, again, wanted):
     p.run(3.5)
     p.gapless('junk.flac')
     said = bytearray()
-    def reported():
-        said.extend(b''.join(p.e.replies))
-        p.e.replies.clear()
-        p.e.send_cmd('{player-status\\request}')
-        return b'error' in said
-    check(p.until(reported, 12), f'{label}: reported')
+    check(p.until(lambda: reported(p, said), 12), f'{label}: reported')
     before = p.frames()
     if again:  # the second attempt demo may make under a second toast
         p.run(1)

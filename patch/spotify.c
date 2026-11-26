@@ -201,17 +201,6 @@ static unsigned spot_position(void) {
     return p < sp.duration ? p : sp.duration;
 }
 
-/* librespot starts playing: what stock's AirPlay page (airplay_page_init, on_airplayset_onclick)
- * does for its receiver. Local music stops (hciplayer holds the PCM even paused), then dac_take
- * (radio.c). Bluetooth and USB outputs are left alone: librespot's sink plays on them itself
- * (spot_output). */
-static void spot_take(void) {
-    headset_manual();
-    radio_stop();                               /* Internet Radio's q2video holds the PCM */
-    if (mclGetPlayStatus() != 1) player_stop(); /* 1 stopped */
-    dac_take();
-}
-
 /* The output in use, which the card's aplay.sh reads each time librespot starts its sink: SPOT_OUT
  * holds output_device's device and volume for Bluetooth or a USB DAC (q2video -s plays there), and
  * is gone for the headphone DAC (aplay on plughw:0,0), except with Mono Audio on: q2video mixes it,
@@ -304,7 +293,7 @@ void spot_kill(const char *before, const char *after) {
 }
 
 /* SPOT_IDLE_MS after playback ended with the browser shut, or Streaming's Stop Streaming Services
- * row: librespot and its restart loop killed, as Home's Rockbox row does, and the keys local
+ * row: librespot and its restart loop killed, as a takeover app's row does, and the keys local
  * music's. Streaming's Spotify row starts it again. */
 void spot_stop(void) {
     int sock = sp.sock;
@@ -354,7 +343,14 @@ void spot_poll(void) {
     }
     if (playing && !sp.playing) {
         sp.playing = 1;
-        spot_take();
+        /* librespot starts playing: what stock's AirPlay page (airplay_page_init,
+         * on_airplayset_onclick) does for its receiver. Local music stops (hciplayer holds the PCM
+         * even paused), then dac_take (radio.c). Bluetooth and USB outputs are left alone:
+         * librespot's sink plays on them itself (spot_output). */
+        headset_manual();
+        radio_stop();                               /* Internet Radio's q2video holds the PCM */
+        if (mclGetPlayStatus() != 1) player_stop(); /* 1 stopped */
+        dac_take();
     }
     sp.playing = playing;
     sp.paused = !strcmp(sp.state, "paused");

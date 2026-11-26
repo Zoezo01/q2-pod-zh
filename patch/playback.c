@@ -363,7 +363,7 @@ void wheel_sample(int *ts, int ret, char *info) {
     d = d < -100 ? d + 200 : d > 100 ? d - 200 : d;
     d *= WHEEL_FINE;
     wh_last = ts[0];
-    if (wheel_raw) { /* games.c's Vortex reads the travel itself; nothing is queued for a menu */
+    if (wheel_raw) { /* games.c's Bricks reads the travel itself; nothing is queued for a menu */
         __sync_fetch_and_add(&wheel_travel, d / WHEEL_FINE);
         wh_acc = 0;
         /* Cover Flow's thumb (2): its travel counts as ticks towards Return's stop */
@@ -418,12 +418,10 @@ typedef struct {
     unsigned mode;
 } folder_speed;
 
+static const char *track_path(int at);
 static int speed_folder(int at, char folder[1024]) {
-    void *q = queue();
-    if (!q || at < 0 || (unsigned)at >= deque_size(q)) return 0;
-    void *r = deque_at(q, (unsigned)at);
-    const char *p = r ? P(r, REC_PATH) : (void *)0;
-    if (!p || I(r, REC_TYPE) != 8 || *p != '/') return 0;
+    const char *p = track_path(at);
+    if (!p || *p != '/') return 0;
     const char *end = strrchr(p, '/');
     unsigned n = (unsigned)(end - p) + 1;
     if (n >= 1024 || !end[1]) return 0;
@@ -934,9 +932,7 @@ static void play_now(unsigned next) {
         s.order[i] = t;
         --s.cursor;
     } else if (i > s.cursor && i < s.n) {
-        entry t = s.order[i];
-        for (; i > s.cursor + 1; --i) s.order[i] = s.order[i - 1];
-        s.order[i] = t;
+        move_back(i, s.cursor + 1);
     }
     s.seen[next] = 0;
     s.dirty = 1; /* the order changed: saved at once (playback_poll) */
@@ -1170,7 +1166,6 @@ static int change_restarts(int next) {
 }
 /* A local queue's only: a DLNA controller or an online queue (0xf1, 0xf2) keeps stock's way. */
 static int local_class(int cls) { return cls == 1 || (cls & 0xf000) == 0xf000; }
-static int place_held(void) { return local_class(M(MCL_TYPE)) && resume_held(); }
 /* A press that would restart a track holding a place only asks; a second of the same key within
  * RESTART_ASK_MS goes ahead, and resume_poll forgets the place as for any move to the start.
  * Another key asks again and arms for itself, so Previous can't confirm what a stray Next asked. */
@@ -1203,7 +1198,8 @@ static int change_music(int next) {
      * a pocket press of Next after the jack came out must still leave the page's track. */
     headset_manual();
     /* Stock's skip past a file it can't play is automatic, and never asks. */
-    if (!press_natural && restart_refused(next, place_held() && change_restarts(next)))
+    if (!press_natural &&
+        restart_refused(next, (local_class(M(MCL_TYPE)) && resume_held()) && change_restarts(next)))
         return 0; /* the caller toasts -1 (no storage) and -5 */
     press_stamp();
     if (!s.active) {
@@ -1243,14 +1239,14 @@ int ringnav_seek_time(int sec) {
  * and Previous changes track. */
 int ringnav_seek_start(void) {
     int restarts = player_playtime() > 10;
-    if (restart_refused(0, restarts && place_held())) return 1;
+    if (restart_refused(0, restarts && (local_class(M(MCL_TYPE)) && resume_held()))) return 1;
     if (restarts) press_stamp();
     return stock_seek_start_trampoline();
 }
 /* Is q's entry at the file playing or paused, the same CUE track, on a track holding a place? */
 int playback_keeps(void *q, int at) {
     unsigned pos = (unsigned)M(MCL_POS);
-    if (mclGetPlayStatus() == 1 || !place_held() || !q || !queue() ||
+    if (mclGetPlayStatus() == 1 || !(local_class(M(MCL_TYPE)) && resume_held()) || !q || !queue() ||
         (unsigned)at >= deque_size(q) || pos >= deque_size(queue()))
         return 0;
     void *ra = deque_at(q, (unsigned)at), *rb = deque_at(queue(), pos);
@@ -1724,9 +1720,7 @@ int ringnav_memory(void *out) {
             }
             for (unsigned j = 0; j < deque_size(rows); ++j) {
                 void *r = deque_at(rows, j);
-                if (I(r, REC_TYPE) == 8 && !strcmp(P(r, REC_PATH), path) &&
-                    (unsigned)I(r, REC_CUE_START) == id[1] &&
-                    (unsigned)I(r, REC_CUE_END) == id[2]) {
+                if (I(r, REC_TYPE) == 8 && !resume_cmp(r, path, id[1], id[2])) {
                     map[i] = deque_size(q);
                     _deque_push_back(q, r);
                     break;

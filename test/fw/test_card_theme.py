@@ -16,6 +16,7 @@ from test_coverflow import bitmap as cover
 from test_coverflow import rgba as cover_pixels
 from test_nav_display_library import Ui, appearance, button_of, row_of, writes
 from test_nav_loop import Card, Clock, Mounts, logo_poll, toasts
+from test_nav_painters import mix
 from test_nav_paint import WHITE, Canvas, bitmaps, channels, image_add, paint_bg, px, rgb_of, strings, style_color, system_bar, world  # noqa: F401 (bitmaps, world: fixtures)
 
 SRC, DST = '/mnt/mmc/Q2Pod/theme.txt', '/mnt/data/q2pod-theme'
@@ -46,10 +47,6 @@ def ct(fw, ct_fields):
 
 def parse(fw, data):
     return fw.fn('card_theme__card_theme_parse', C.c_int, C.c_void_p, C.c_uint)(block(fw, data), len(data))
-
-
-def mix(a, b, j, n):
-    return sum(((a >> s & 255) * (n - j) + (b >> s & 255) * j) // n << s for s in (0, 8, 16))
 
 
 def luminance(c):

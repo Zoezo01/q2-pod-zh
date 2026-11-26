@@ -73,8 +73,8 @@ print('Boot logo: mount edges, validation, rotation, unchanged bytes and failed 
 
 # System boot row: regular-file gating, persisted choice and transactional failures.
 
-for value,expected in ((None,'Rockbox'),(b'bad','Rockbox'),(b'q2pod','Q2 Pod'),(b'rockbox','Rockbox'),
-                       (b'q2pod\n','Q2 Pod'),(b'q2pod\0bad','Rockbox')):
+for value,expected in ((None,'Q2 Pod'),(b'bad','Q2 Pod'),(b'q2pod','Q2 Pod'),(b'rockbox','Rockbox'),
+                       (b'rockbox\n','Rockbox'),(b'rockbox\0bad','Q2 Pod')):
     m,button,label=boot_row(value)
     assert m.nodes[label]['text']=='Boot to: '+expected
     toggle_boot(m,button)
@@ -92,7 +92,7 @@ for failure in ('fopen','fwrite','fflush','fsync','fclose','rename'):
     assert any(c[0]=='navigator_to_with_context' for c in m.calls)
     passed()
 m,button,label=boot_row(); m.rockbox_mode=0; toggle_boot(m,button)
-assert m.nodes[label]['text']=='Boot to: Rockbox' and '/mnt/data/boot-target' not in m.files; passed()
+assert m.nodes[label]['text']=='Boot to: Q2 Pod' and '/mnt/data/boot-target' not in m.files; passed()
 # Wheel centre reaches Boot to through the existing selection/dispatch path.
 m,button,label=boot_row(); view=m.nodes[m.top]['children'][0]; view=m.nodes[view]['children'][0]
 m.paint(view)

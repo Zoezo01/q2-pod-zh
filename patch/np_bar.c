@@ -295,13 +295,13 @@ void bar_title(widget_t *bar, widget_t *top) {
     int changed = !st.bar_named || !had || *had != *want;
     if (changed) widget_set_text(word, title);
     /* The bar's own face at the clock's 16 px, never ROLE_NP's bold: the name reads
-     * like the time beside it. label_font writes "default", the face with hanzi,
+     * like the time beside it. face_states writes "default", the face with hanzi,
      * and the weight mark clears anything a theme or a previous page left behind. */
     static const char *const sizes[] = { "style:normal:font_size", "style:focused:font_size",
                                          "style:disable:font_size" };
     for (unsigned i = 0; i < 3; ++i) widget_set_prop_int(word, sizes[i], 16);
     bar_bold = theme_font(word, ROLE_BAR, bar_bold);
-    label_font(word, 0);
+    face_states(word, "default", 0);
     font_weight_mark(word, 0);
     if (!widget_get_visible(word)) widget_set_visible(word, 1, 0);
     if (!st.bar_named) st.word_key = -1;

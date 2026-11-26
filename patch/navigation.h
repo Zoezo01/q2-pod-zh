@@ -243,7 +243,8 @@ typedef struct {
     unsigned lyric_song, lyric_rows_song;
     /* The Display settings, read from config.ini on first use, and the display page's value labels.
      */
-    int settings_read, accent, minimal_accent, home, battery, home_rockbox, home_groovebox, theme,
+    int settings_read, accent, minimal_accent, home, battery, home_app,
+        theme,                               /* home_app: as last laid out */
         shortcut, rounded, light, light_day, /* light_day: Auto's answer for now (LIGHT=2) */
         keep_lit,                            /* Smart Awake (#57, keep_lit_poll) */
         np_centred,                          /* Centred Now Playing (ringnav_ui_load) */
@@ -328,11 +329,12 @@ extern int stock_keyup_trampoline(void *, event_t *), stock_touch_trampoline(voi
     stock_usbmode_trampoline(void *, void *, void *, void *),
     stock_hscroll_start_trampoline(widget_t *), stock_wifi_page_trampoline(widget_t *, void *),
     stock_stream_row_trampoline(widget_t *, event_t *),
+    stock_standby_row_trampoline(widget_t *, event_t *),
     stock_netservice_row_trampoline(widget_t *, event_t *), stock_online_match_trampoline(void *);
 extern int scrobble_ready(void), scrobble_start(void), scrobble_poll(int *sent),
     scrobble_flag(const char *key), scrobble_value(const char *key);
 extern const char *now_tag(void *r, int field);
-extern void *queue_now(unsigned *pos, unsigned *n);
+extern void *queue_now(unsigned *pos, unsigned *n); /* coverflow.c: the playing record, or 0 */
 extern int queue_loaded(void);
 extern void *coverflow_tracks(widget_t *page);
 extern void *coverflow_album(widget_t *page);
@@ -365,7 +367,6 @@ void paint_panel(widget_t *w, canvas_t *canvas, const rect_t *r, const char *sha
 unsigned stops_row(const stops_t *s, int j, int h) __attribute__((pure));
 int bar_repaint(const void *info);
 void clock_text(widget_t *label, int negative, int t);
-void label_font(widget_t *w, int bold);
 widget_t *list_row(widget_t *view, const char *icon, int (*click)(void *, event_t *), void *ctx);
 int language_offered(void); /* language.c */
 widget_t *list_row_core(widget_t *view, const char *icon, int (*click)(void *, event_t *),
@@ -498,14 +499,16 @@ void confirm_lit(canvas_t *canvas, const rect_t *c);
 void confirm_labels_flat(widget_t *w, canvas_t *canvas, int form);
 
 /* np_marks.c */
-void np_mark_add(widget_t *const *image, unsigned n);
 void np_marks_page(widget_t *win);
 void np_marks(widget_t *w, canvas_t *canvas);
 
+int to_page(void *ctx, event_t *event); /* navigation.c: a row that opens the page ctx names */
+int hold_taken(const void *key); /* navigation.c: a Play/Pause hold taken: latch and swallow */
 /* queue_menu.c */
 int qm_hold(void);
 void *qm_record(void);
 void *qm_collect(void *r);
+void *qm_songs(void), qm_songs_free(void); /* queue_menu.c: Add to Playlist's album songs */
 unsigned qm_album_id(void *r);
 
 /* clock.c */
@@ -592,6 +595,10 @@ int *option_slot(const theme_t *T, int setting);
 unsigned red_map(unsigned c, unsigned tone, unsigned glyph, int light);
 int setting(int i);
 int shortcut(void);
+const char *shortcut_app(void);
+extern const char *const shortcut_names[];
+void shortcut_set(int v, const char *id);
+int shortcut_is_app(void), shortcut_app_there(void), ipod_home_shown(void);
 unsigned tone_of(const unsigned *a, int tone);
 extern const char *const accent_names[];
 extern const char *const np_pages[];
@@ -632,6 +639,16 @@ int ringnav_netservice(void *win, void *ctx);
 
 /* addon_bar.c: a card app's status bar icon, shown while room (bar_sync) */
 void bar_addon_sync(int room);
+/* samplerate.c: Show Sample Rate's setting (pod_values), its text now, a fresh read, and the bar's
+ * label, its right edge at right (the bar's x) and shown only within room px */
+extern int sr_setting;
+int sr_now(int mode, char *buf, unsigned size);
+void sr_forget(void);
+void bar_rate_sync(int left, int x, int room);
+int bar_rate_stale(void); /* the rate now differs from what the bar last took: repaint it */
+/* tools/ipod.py's widest clock (CLOCK_TEXT, 70) centred on the 375 px bar, less CLOCK_GAP (4):
+ * where the left group's text must end */
+#define RATE_CLOCK_LEFT (375 / 2 - 70 / 2 - 4)
 
 /* smart_wifi.c */
 void smart_wake(void); /* Smart Wi-Fi's radio back now, if it had it off */
@@ -647,6 +664,11 @@ void battery_tick(int level, int cable);
 unsigned battery_log(char *out, unsigned size);
 int battery_history(void *ctx, event_t *event);
 void battery_paint(widget_t *w, canvas_t *canvas);
+
+/* shortcut_pick.c: Display's Shortcut picker (navigation.c ringnav_display), and its row's label
+ * written again (navigation.c setting_text) */
+void shortcut_rows(widget_t *view);
+void setting_text(int i);
 
 /* system.c */
 void power_poll(void);
@@ -701,6 +723,7 @@ int ratings_menu(void *ctx, event_t *event), rated_hold(widget_t *top);
 void ratings_copy_due(void);
 void ratings_copy_poll(void);
 int rt_play(void *ctx, event_t *event);
+void rate_fill_paint(widget_t *w, canvas_t *canvas);
 
 /* classic_pages.c */
 int kb_key(widget_t *w);
@@ -721,8 +744,9 @@ int search_del(widget_t *w);
 void search_over(widget_t *w, canvas_t *canvas);
 void slider_scrub(widget_t *w, canvas_t *canvas);
 int restart_asked(void); /* navigation.c: the Restart to apply? confirm, yes or no */
-/* playlists.c: a confirm whose second cell says verb; tray 1 the row action's tray, 0 the page */
-int confirm_over(void *prompt, const char *verb, int tray);
+/* playlists.c: a confirm whose second cell says verb; tray 1 the row action's tray, 0 the page; a
+ * newline in text starts its second line */
+int confirm_over(const char *text, const char *verb, int tray);
 
 /* playlists.c */
 /* Classic's Playlists (pl_dress): a page's add mode (ringnav_playlist), the button of a row that
@@ -738,6 +762,7 @@ int confirm_over(void *prompt, const char *verb, int tray);
 void *click_bound(widget_t *w, const void *fn); /* w's EVT_CLICK item bound to fn, or any if 0 */
 void qm_playlist_bind(widget_t *w, int depth, int (*pick)(void *, event_t *));
 void qm_select(void);
+int qm_own_songs(void);
 int qm_playlist_gone(void *ctx, event_t *event);
 int qm_playlist_pick(void *ctx, event_t *event);
 int ple_key(unsigned key, int phase);

@@ -15,15 +15,14 @@ int config_value(const char *section, const char *key, int n, int def) {
 }
 
 #define ROCKBOX_BIN "/mnt/mmc/.rockbox/rockbox"
-#define GROOVEBOX_BIN "/mnt/mmc/.groovebox/q2-groovebox"
 /* glibc 2.28 MIPS o32 stat v3: st_mode at byte 20, as stock's fs stat reads it. */
 static int bin_available(const char *path) {
     unsigned info[36];
     return !__xstat(3, path, info) && (info[5] & 0170000) == 0100000;
 }
 int rockbox_available(void) { return bin_available(ROCKBOX_BIN); }
-/* The Groovebox card app (a game with the sound, addon.c), Home's Shortcut when it is installed. */
-int groovebox_available(void) { return bin_available(GROOVEBOX_BIN); }
+/* Shortcut's card app (SHORTCUT_APP): its id, as settings_read found it or the picker set it. */
+static char shortcut_id[16] __attribute__((section(".scratch")));
 
 /* Light Mode (docs/ipod.md#light-mode): a neutral colour, its channels within LIGHT_SPREAD, flipped
  * per channel from black to the light half's paper and white to its ink (LIGHT_PAPER and LIGHT_INK
@@ -179,17 +178,23 @@ void light_apply(const int *tm) {
 /* accent()'s first call: the [IPOD] keys. Its own function, so accent()'s every later call (each
  * colour Light Mode flips asks twice: ipod_light(), scheme()) skips this frame. */
 __attribute__((noinline)) static void settings_read(void) {
-    for (int i = 0; i < 4; ++i)
-        *setting_values[i] = config_value("IPOD", setting_keys[i], setting_counts[i], 0);
     /* Shortcut has no key, its default is none (see shortcut()); Rounded's is Round under Minimal;
      * Light's is dark, 2 Auto; Time in Title's is the clock; the rest are off unless chosen. */
-    for (int i = 4; i < SETTING_OWN; ++i)
+    for (int i = 0; i < SETTING_OWN; ++i)
         *setting_values[i] = config_value("IPOD", setting_keys[i], setting_counts[i],
                                           i == 4   ? SETTING_N_SHORTCUT
                                           : i == 5 ? !st.theme
                                                    : i == 11);
     st.minimal_accent =
         config_value("IPOD", "MINIMAL_ACCENT", ACCENT_N, 0); /* Graphite, its preset */
+    /* Shortcut's card app, SHORTCUT_APP's id: an older build's 0 (no key) was Rockbox and its 10
+     * Groovebox, both read as that app */
+    char id[256] = "groovebox";
+    if (st.shortcut == 10)
+        st.shortcut = SHORTCUT_APP;
+    else
+        toolsReadConfig("/mnt/data/config.ini", "IPOD", "SHORTCUT_APP", id, "rockbox");
+    tk_snprintf(shortcut_id, sizeof shortcut_id, "%s", valid_id(id) ? id : "rockbox");
     /* the themes' own keys, after the thirteen, in table order */
     for (int k = 0; k < THEME_KEYS; ++k)
         st.own[k] = config_value("IPOD", theme_keys[k].key, theme_keys[k].n, theme_keys[k].def);
@@ -261,20 +266,37 @@ _Static_assert(sizeof np_pages / sizeof *np_pages == NP_N, "one page per NP_* la
 /* The Now Playing page: the theme's layout, which Centred Now Playing forces to NP_CENTRED. */
 int np_layout(void) { return setting(SETTING_NPCENTRED) ? NP_CENTRED : theme()->np_layout; }
 /* Shortcut with no key (or a value this build does not know, such as an old build's reading of a
- * newer one) is Rockbox while the card has it, else Favorites: asked each time, as the card may
- * mount after the first read. SHORTCUT_NONE is read as it is: the picker and Home's row ask for it
- * (ipod_home_rockbox); the carousel's card, which cannot leave, takes the default
- * (shortcut_target). */
+ * newer one) is Favourites. SHORTCUT_NONE is read as it is: the picker and Home's row ask for it
+ * (ipod_home_shown); the carousel's card, which cannot leave, takes the default
+ * (shortcut_target). SHORTCUT_APP is the card app shortcut_app names. */
 int shortcut(void) {
     accent();
-    return st.shortcut < SETTING_N_SHORTCUT ? st.shortcut : rockbox_available() ? 0 : 3;
+    return st.shortcut < SETTING_N_SHORTCUT && st.shortcut != 10 ? st.shortcut : 3;
+}
+const char *shortcut_app(void) { return accent(), shortcut_id; }
+/* The picker's choice: v, and for SHORTCUT_APP the app's id, saved. */
+void shortcut_set(int v, const char *id) {
+    accent();
+    if (v == SHORTCUT_APP) {
+        tk_snprintf(shortcut_id, sizeof shortcut_id, "%s", id);
+        toolsWriteConfig("/mnt/data/config.ini", "IPOD", "SHORTCUT_APP", shortcut_id);
+    }
+    write_int_config(st.shortcut = v, "IPOD", "SHORTCUT");
 }
 /* What the Shortcut opens and names: None's card, in Carousel, is the default's.
  * ponytail: Carousel keeps the card (home_card clones in stock's slide_menu, which lays out hidden
  * cards too); a card left out would need re-adding with the setting. */
 static int shortcut_target(void) {
     int s = shortcut();
-    return s == SHORTCUT_NONE ? (rockbox_available() ? 0 : 3) : s;
+    return s == SHORTCUT_NONE ? 3 : s;
+}
+/* Whether the Shortcut opens a card app (coverflow.c's pane: the Games icon). */
+int shortcut_is_app(void) { return shortcut_target() == SHORTCUT_APP; }
+/* Whether the Shortcut's card app's binary is on the card, a stat (bar_sync asks it). */
+int shortcut_app_there(void) {
+    char bin[64];
+    tk_snprintf(bin, sizeof bin, "/mnt/mmc/.%s/q2-%s", shortcut_app(), shortcut_app());
+    return bin_available(bin);
 }
 int ipod_home(void) {
     accent();
@@ -310,47 +332,40 @@ int ipod_battery(void) {
     accent();
     return st.battery;
 } /* lockscreen.c's Large clock */
-/* 1 when Home shows its Shortcut row (coverflow_home_layout): any target but None, Rockbox and
- * Groovebox, and those while the card has them. */
-int ipod_home_rockbox(void) {
-    st.home_rockbox = rockbox_available();
-    st.home_groovebox = groovebox_available();
+/* 1 when Home shows its Shortcut row (coverflow_home_layout): any target but None, and a card app
+ * while the card has it. */
+int ipod_home_shown(void) {
     int s = shortcut();
-    return s == SHORTCUT_NONE        ? 0
-           : s == SHORTCUT_GROOVEBOX ? st.home_groovebox
-                                     : s || st.home_rockbox;
+    st.home_app = s == SHORTCUT_APP && shortcut_app_there();
+    return s == SHORTCUT_NONE ? 0 : s != SHORTCUT_APP || st.home_app;
 }
-/* The Shortcut's name, in English: coverflow.c's pane compares it, and tr() shows it. */
+/* The Shortcut's values' names, in English, a card app's (SHORTCUT_APP) its own. */
+const char *const shortcut_names[SETTING_N_SHORTCUT] = {
+    [1] = "表演者", "专辑",
+    "收藏",    "已评价专辑",
+    "随机播放", "游戏",
+    "播放列表", "播客",
+    "有声读物", [SHORTCUT_NONE] = "无"
+};
+_Static_assert(SHORTCUT_NONE + 1 == SETTING_N_SHORTCUT, "None is the last");
+/* The Shortcut's name: coverflow.c's pane compares it, and tr() shows it. */
 const char *ipod_home_shortcut(void) {
-    static const char *const names[] = { "Rockbox",
-                                         "表演者",
-                                         "专辑",
-                                         "收藏",
-                                         "已评价专辑",
-                                         "随机播放",
-                                         "游戏",
-                                         "播放列表",
-                                         "播客",
-                                         "有声读物",
-                                         [SHORTCUT_GROOVEBOX] = "Groovebox" };
-    _Static_assert(sizeof names / sizeof *names == SHORTCUT_NONE, "one per shortcut but None");
-    _Static_assert(SHORTCUT_NONE + 1 == SETTING_N_SHORTCUT, "None is the last");
-    return names[shortcut_target()];
+    int s = shortcut_target();
+    return s == SHORTCUT_APP ? addon_name_of(shortcut_app()) : shortcut_names[s];
 }
 /* Podcasts and Audiobooks (docs/internals.md#podcasts-and-audiobooks): the card's top-level
  * folders of these names, case aside, browsed in folder_page from there; Photos opens photos.c.
  * The Library's rows (home.c) show them translated. */
 const char *const MEDIA[] = { "Podcasts", "Audiobooks", "Photos" };
 const char *const MEDIA_LABELS[] = { "播客", "有声读物", "照片" };
-extern int rockbox_open(void *, event_t *);
 int rated_albums(void *, event_t *);
 int home_shortcut_open(void *ctx, event_t *event) {
     int s = shortcut_target();
-    if (!s) return rockbox_open(ctx, event);
-    if (s == SHORTCUT_GROOVEBOX) {            /* the card game by id, as its Games row starts it */
-        if (addon_game_open("groovebox") < 0) /* no card game has the id: the folder, or a slot */
-            toast(groovebox_available() ? "Groovebox 无法从存储卡启动"
-                                        : "存储卡上没有 Groovebox");
+    if (s == SHORTCUT_APP) { /* the app's row pressed, wherever it is */
+        char said[96];
+        if (addon_open_app(shortcut_app()) < 0)
+            tk_snprintf(said, sizeof said, "%s 不在卡上", ipod_home_shortcut()),
+                toast(said);
         return 0;
     }
     if (s == 4) return rated_albums(ctx, event);

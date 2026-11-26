@@ -146,15 +146,14 @@ int ringnav_font_glyph(font_t *font, unsigned chr, unsigned size, void *glyph) {
  * too), so a CJK name sits a little over the capitals beside it, not a third. Only the fallback
  * takes it: Classic's bold stays at its px. */
 #define FACE_FALLBACK_PCT 83
-static int fallback_px(int px) { return (px * FACE_FALLBACK_PCT + 50) / 100; }
 
 /* The FONT_* to draw s (n as face_has) in for a theme's face: face where it has every character,
- * else bold where it does (classic-light's fallback, at fallback_px of *px unless px is 0), else
- * stock's, which has CJK. bold.ttf falling to stock's keeps its px. */
+ * else bold where it does (classic-light's fallback, at FACE_FALLBACK_PCT of *px unless px is 0),
+ * else stock's, which has CJK. bold.ttf falling to stock's keeps its px. */
 int script_face(int face, const unsigned *s, int n, int *px) {
     if (face_has(face, s, n)) return face;
     if (face != FONT_CLASSIC_LIGHT) return FONT_DEFAULT; /* CJK */
-    if (px) *px = fallback_px(*px);
+    if (px) *px = (*px * FACE_FALLBACK_PCT + 50) / 100;
     return face_has(FONT_BOLD, s, n) ? FONT_BOLD : FONT_DEFAULT; /* Cyrillic: still bold */
 }
 

@@ -35,10 +35,6 @@ static void sa_retry(unsigned now) {
     sa.first_at = now - scrobble_auto_ms(sa.pending) + SA_RETRY_MIN * 60000u;
     sa.missed_at = now, ++sa.misses;
 }
-/* From the last of misses (1 or more) tries in a row that sent nothing to the next wake. */
-static unsigned sa_wake_ms(unsigned misses) {
-    return SA_RETRY_MIN * 60000u << (misses > SA_WAKE_DOUBLINGS ? SA_WAKE_DOUBLINGS : misses - 1);
-}
 void scrobble_auto(void) {
     unsigned now = (unsigned)time_now_ms();
     if (sa.running) {
@@ -61,8 +57,12 @@ void scrobble_auto(void) {
      * ringnav_usbmode if that ever bites. */
     if (navigator_window_is_exist("usbmode_page")) return;
     if (get_wifisignal() <= 0) {
-        /* after tries that sent nothing, no wake (nor card read) before sa_wake_ms is over */
-        if (sa.misses && now - sa.missed_at < sa_wake_ms(sa.misses)) return;
+        /* after tries that sent nothing, no wake (nor card read) before the wait is over: from the
+         * last of misses (1 or more) tries in a row that sent nothing, to the next wake */
+        if (sa.misses && now - sa.missed_at < (SA_RETRY_MIN * 60000u
+                                               << (sa.misses > SA_WAKE_DOUBLINGS ? SA_WAKE_DOUBLINGS
+                                                                                 : sa.misses - 1)))
+            return;
         /* Smart Wi-Fi's radio off: woken for an upload that is on (the card read now), which the
          * next check sends; a wake that brought no link, or AUTO off, again in SA_RETRY_MIN */
         if (sa.woke || (smart_wifi_off() && !scrobble_flag("AUTO")))

@@ -73,6 +73,27 @@ held() {
   OUT=$(timeout 4 env -i PATH="$DEVPATH" "${PAGE_ENV[@]}" SCRIPT_NAME="/$1" REQUEST_METHOD="$2" QUERY_STRING="$3" \
         CONTENT_TYPE='application/x-www-form-urlencoded' "${cl[@]}" $SH "$CGI" 2>/dev/null < <(printf '%s' "$4"; sleep 8)); RC=$?
 }
+# midway <body file> <boundary> <command>: an upload of that body whose last 8 bytes wait until the CGI
+# has its work file open, so past its destination checks and reading the file's bytes; then <command>
+# runs and the bytes follow. It stands for something made at the destination while an upload is under
+# way. Sets OUT and RC as run does; /tmp/midway.ran exists when <command> ran at that point.
+midway() {
+  local n i cgi fifo=/tmp/midway.fifo
+  n=$(stat -c %s "$1"); rm -f /tmp/midway.ran /tmp/midway.out "$fifo" /mnt/mmc/.q2upload/out.* 2>/dev/null
+  mkfifo "$fifo"
+  env -i PATH="$DEVPATH" "${PAGE_ENV[@]}" SCRIPT_NAME=/upload REQUEST_METHOD=POST QUERY_STRING= \
+      CONTENT_TYPE="multipart/form-data; boundary=$2" CONTENT_LENGTH="$n" $SH "$CGI" < "$fifo" > /tmp/midway.out 2>/dev/null &
+  cgi=$!
+  ( head -c $((n - 8)) "$1"
+    for i in $(seq 600); do                            # 30 s: the Q2's busybox under qemu is slow
+      ls /mnt/mmc/.q2upload/out.* > /dev/null 2>&1 && { eval "$3" > /dev/null; : > /tmp/midway.ran; break; }
+      kill -0 "$cgi" 2>/dev/null || break              # it answered before reading the bytes
+      sleep 0.05
+    done
+    tail -c 8 "$1" ) > "$fifo" 2>/dev/null           # a subshell: a CGI that stopped reading ends it, not the suite
+  wait "$cgi"; RC=$?
+  OUT=$(cat /tmp/midway.out); rm -f "$fifo" /tmp/midway.out
+}
 
 echo "=== busybox ash case [[:cntrl:]] support"; busybox ash -c 'case "$(printf a\\tb)" in *[[:cntrl:]]*) echo yes;; *) echo NO;; esac'
 rm -rf /tmp/pwned* 2>/dev/null
@@ -369,6 +390,29 @@ B=/tmp/mp_cd; BND=----q2cd
 run upload POST '' "multipart/form-data; boundary=$BND" "$B"
 { [ "$(status)" = 400 ] && [ -d /mnt/mmc/ClashDir ]; } && ok "upload onto an existing directory name refused" || bad "upload dir-clash ($(status))"
 
+echo; echo "############ UPLOAD UNDER WAY: what is made at its name meanwhile"
+# An upload lasts as long as its client likes, so its destination is checked before the bytes and again
+# just before the rename. These make something at that name in between. A hidden entry's second name is,
+# on FAT, the short name a new dot-entry answers to (the FAT section's cases); here a link in the hidden
+# entry's own folder stands in for it, which hidden() refuses the same way.
+rm -rf /mnt/mmc/Arrived* /mnt/mmc/.arrived
+if [ "$FS" != vfat ]; then
+  printf 'KEEP' > /mnt/mmc/.arrived
+  mp /tmp/mp_w1 ----q2w1 /mnt/mmc/ Arrived.txt ATTACKER
+  midway /tmp/mp_w1 ----q2w1 'ln /mnt/mmc/.arrived /mnt/mmc/Arrived.txt'
+  { [ -e /tmp/midway.ran ] && refused && ! ls /mnt/mmc/.q2upload/out.* > /dev/null 2>&1; } && ok "a hidden file's second name made during an upload: refused, no work file left" || bad "second name made during an upload ($(status), .arrived='$(cat /mnt/mmc/.arrived 2>/dev/null)')"
+  rm -rf /mnt/mmc/Arrived* /mnt/mmc/.arrived
+else
+  echo "  SKIP: FAT has no links, so this 1 case is made with short names in the FAT section"
+fi
+mp /tmp/mp_w3 ----q2w3 /mnt/mmc/ Arrived.d ATTACKER
+midway /tmp/mp_w3 ----q2w3 'mkdir /mnt/mmc/Arrived.d'
+{ [ -e /tmp/midway.ran ] && refused && [ -d /mnt/mmc/Arrived.d ] && [ -z "$(ls -A /mnt/mmc/Arrived.d)" ] && ! ls /mnt/mmc/.q2upload/out.* > /dev/null 2>&1; } && ok "an ordinary folder made at an upload's name during it: refused, nothing put in it" || bad "folder made during an upload ($(status), in it: '$(ls -A /mnt/mmc/Arrived.d 2>/dev/null)')"
+mp /tmp/mp_w4 ----q2w4 /mnt/mmc/ Arrived.txt UPLOADED
+midway /tmp/mp_w4 ----q2w4 'printf EARLIER > /mnt/mmc/Arrived.txt'
+{ [ -e /tmp/midway.ran ] && ! refused && leaks '"files"' && [ "$(cat /mnt/mmc/Arrived.txt)" = UPLOADED ]; } && ok "an ordinary file made at an upload's name during it is replaced, as an upload replaces any" || bad "ordinary file made during an upload ($(status), now='$(cat /mnt/mmc/Arrived.txt 2>/dev/null)')"
+rm -rf /mnt/mmc/Arrived*
+
 echo; echo "############ PATH ROBUSTNESS: sibling-prefix, double-encoding, mid-name dot"
 post create '/mnt/mmcEVIL'
 { [ "$(status)" = 400 ] && [ ! -e /mnt/mmcEVIL ]; } && ok "sibling-prefix /mnt/mmcEVIL rejected" || bad "sibling-prefix ($(status))"
@@ -620,8 +664,22 @@ if [ "$FS" = vfat ]; then
   mp /tmp/mp_a3 ----q2a3 /mnt/mmc/ALBUMS 'a long song name.flac' newer
   run upload POST '' 'multipart/form-data; boundary=----q2a3' /tmp/mp_a3
   [ "$(cat "/mnt/mmc/Albums/A Long Song Name.flac")" = newer ] && ok "upload over an ordinary file in another case replaces it" || bad "upload in another case ($(status))"
+  # A hidden file made while an upload under its short name is under way (the firmware makes
+  # .scrobbler.log.tmp afresh at each rewrite of the log): refused at the second check, not replaced and
+  # not written into. Its short name is learnt from it first, then it is made again mid-upload,
+  # and a case counts only if the kernel gave it that name again (/tmp/midway.same).
+  printf 'LISTENS' > /mnt/mmc/.scrobbler.log.tmp; A_TMP=$(short /mnt/mmc/.scrobbler.log.tmp SCROBB .TMP)
+  rm -f /mnt/mmc/.scrobbler.log.tmp
+  if [ -n "$A_TMP" ]; then
+    rm -f /tmp/midway.same; mp /tmp/mp_a4 ----q2a4 /mnt/mmc/ "$A_TMP" ATTACKER
+    midway /tmp/mp_a4 ----q2a4 'printf LISTENS > /mnt/mmc/.scrobbler.log.tmp; [ "/mnt/mmc/$A_TMP" -ef /mnt/mmc/.scrobbler.log.tmp ] && : > /tmp/midway.same'
+    { [ -e /tmp/midway.ran ] && [ -e /tmp/midway.same ] && refused && [ "$(cat /mnt/mmc/.scrobbler.log.tmp)" = LISTENS ] && ! ls /mnt/mmc/.q2upload/out.* > /dev/null 2>&1; } && ok "a hidden file made during an upload under its short name: refused, the file untouched" || bad "hidden file made during an upload ($(status), now='$(cat /mnt/mmc/.scrobbler.log.tmp 2>/dev/null)')"
+  else
+    bad "no short name found for .scrobbler.log.tmp, so the mid-upload case can't run"
+  fi
+  rm -rf /mnt/mmc/.scrobbler.log.tmp
 else
-  echo "  SKIP: /mnt/mmc is a $FS, which keeps no short names: run with --fat (see the header) for these 16 cases"
+  echo "  SKIP: /mnt/mmc is a $FS, which keeps no short names: run with --fat (see the header) for these 17 cases"
 fi
 
 echo; echo "############ DEVICE APPLET: no dependency on 'stat' (absent on device busybox 1.31.1)"

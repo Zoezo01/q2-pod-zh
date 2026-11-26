@@ -1,4 +1,4 @@
-/* Games (docs/internals.md#games), iPod: the Library's Games, Sudoku, Vortex, Solitaire and Snake.
+/* Games (docs/internals.md#games), iPod: the Library's Games, Sudoku, Bricks, Solitaire and Snake.
  * The logic comes first, host-tested (test/peq.py games_check); the page below draws both on a bare
  * sheet (games_paint) and takes a game's keys in ringnav() before stock does (games_key). The state
  * is on the heap only while the page is open; the scratch holds its pointer. */
@@ -157,7 +157,7 @@ int sud_done(const struct sudoku *s) {
     return 1;
 }
 
-/* Vortex: rings of bricks round the centre, the paddle an arc on the outer ring, the ball bouncing
+/* Bricks: rings of bricks round the centre, the paddle an arc on the outer ring, the ball bouncing
  * between. Angles are 1024 a turn, rising clockwise on screen; positions and velocities 16.16 px
  * from the centre, per 1/60 s step. All integer, so the same inputs give the same game.
  * ponytail: three fixed layouts repeating with the level, bricks reflect radially only. */
@@ -174,7 +174,7 @@ int sud_done(const struct sudoku *s) {
 #define VMAX (9 << 15) /* 270 px/s */
 _Static_assert(VMAX < BRICK_T << 16, "a step never crosses a whole ring");
 enum { AIM, PLAY, OVER };
-struct vortex {
+struct bricks {
     int state, lives, level, score, pa, x, y, vx, vy;
     unsigned short brick[RINGS], pad;
 };
@@ -259,39 +259,39 @@ static int radius(int x, int y) {
     return (int)vsqrt((unsigned long long)(a * a + b * b));
 }
 
-static void place(struct vortex *v) {
+static void place(struct bricks *v) {
     v->x = (R_PAD - 6) * vcos(v->pa);
     v->y = (R_PAD - 6) * vsin(v->pa);
 }
 
-static void head(struct vortex *v, int a) {
+static void head(struct bricks *v, int a) {
     int speed = V0 + VSTEP * v->level;
     if (speed > VMAX) speed = VMAX;
     v->vx = (int)((long long)speed * vcos(a) >> 16);
     v->vy = (int)((long long)speed * vsin(a) >> 16);
 }
 
-static void level(struct vortex *v) {
+static void level(struct bricks *v) {
     memcpy(v->brick, layouts[v->level % 3], sizeof v->brick);
     v->state = AIM;
     place(v);
 }
 
-void vortex_new(struct vortex *v) {
+void bricks_new(struct bricks *v) {
     memset(v, 0, sizeof *v);
     v->lives = 3;
     v->pa = 768; /* the top */
     level(v);
 }
 
-void vortex_launch(struct vortex *v) {
+void bricks_launch(struct bricks *v) {
     if (v->state != AIM) return;
     head(v, v->pa + 512);
     v->state = PLAY;
 }
 
 /* One step, the paddle turned by dpa first. */
-void vortex_step(struct vortex *v, int dpa) {
+void bricks_step(struct bricks *v, int dpa) {
     v->pa = (v->pa + dpa) & 1023;
     if (v->state == AIM) place(v);
     if (v->state != PLAY) return;
@@ -497,41 +497,42 @@ int snake_step(struct snake *s) {
 
 #ifndef PEQ_HOST
 #define GAMES_SUDOKU "/mnt/data/ringnav-sudoku"
-#define GAMES_VORTEX "/mnt/data/ringnav-vortex"
+/* Bricks' file keeps the name the game had before 1.9.3, so a best score from then stays. */
+#define GAMES_BRICKS "/mnt/data/ringnav-vortex"
 #define GAMES_SOLITAIRE "/mnt/data/ringnav-solitaire"
 #define GAMES_SNAKE "/mnt/data/ringnav-snake"
 #define BEST_MAGIC 0x31585456u  /* "VTX1" */
-#define SNAKE_MAGIC 0x314b4e53u /* "SNK1": Snake's best, as Vortex's */
+#define SNAKE_MAGIC 0x314b4e53u /* "SNK1": Snake's best, as Bricks' */
 /* The paddle's turn for the wheel's, in percent: 100 is a whole turn for a whole turn (200 raw
  * units, wheel_sample). The hardware's calibration knob. */
-#define VORTEX_GAIN 100
+#define BRICKS_GAIN 100
 #define FRAME_MS 33
 #define SAVE_MS 2000 /* a move's save waits this long; a power-off loses at most this */
 #define CELL 30
 #define TURN (6.2831853f / 1024)
-#define POP_MS 240 /* Vortex: a broken brick's flash fading out */
-#define TRAIL 4    /* Vortex: the ball's last frames, fading behind it */
-#define HUD_X 24   /* Vortex: the score, best, level and lives, clear of the glass's corners */
+#define POP_MS 240 /* Bricks: a broken brick's flash fading out */
+#define TRAIL 4    /* Bricks: the ball's last frames, fading behind it */
+#define HUD_X 24   /* Bricks: the score, best, level and lives, clear of the glass's corners */
 #define SN_CELL 11 /* Snake: the board, under the HUD and clear of the glass's corners */
 #define SN_X ((375 - SN_N * SN_CELL) / 2)
 #define SN_Y 36
-enum { CHOOSER, SUDOKU, VORTEX, SOLITAIRE, SNAKE };
-/* Vortex, Snake: playing, paused by Play/Pause or the screen, Return's menu */
+enum { CHOOSER, SUDOKU, BRICKS, SOLITAIRE, SNAKE };
+/* Bricks, Snake: playing, paused by Play/Pause or the screen, Return's menu */
 enum { RUN, HELD, MENU };
 struct best {
     unsigned magic, score, sum;
 };
 static struct game {
     widget_t *page, *list, *view, *sheet;
-    unsigned timer, frame, at, acc; /* frame: Vortex's timer, at its last run, acc 1/60000 s due */
+    unsigned timer, frame, at, acc; /* frame: Bricks' timer, at its last run, acc 1/60000 s due */
     int h, screen, target, picking, pick, confirm, paused, choice, carry;
     int dirty; /* unsaved: 1 Sudoku, 2 Solitaire */
     struct sudoku sud;
-    struct vortex vx;
+    struct bricks vx;
     struct best best;
     struct solitaire sol;
     unsigned save;
-    unsigned pop_at; /* Vortex: when the last brick broke, which pop_ring, pop_seg */
+    unsigned pop_at; /* Bricks: when the last brick broke, which pop_ring, pop_seg */
     int pop_ring, pop_seg, trail[TRAIL][2], record; /* record: the last game set Best */
     struct best sn_best;
     struct snake sn;
@@ -583,7 +584,7 @@ static void game_over(void) {
     if (!(g->record = score > (int)b->score)) return;
     b->score = (unsigned)score;
     games_seal(b, sizeof *b, snake ? SNAKE_MAGIC : BEST_MAGIC);
-    if (!(snake ? BLOB_IO(GAMES_SNAKE, g->sn_best, 1) : BLOB_IO(GAMES_VORTEX, g->best, 1)))
+    if (!(snake ? BLOB_IO(GAMES_SNAKE, g->sn_best, 1) : BLOB_IO(GAMES_BRICKS, g->best, 1)))
         toast("无法保存");
 }
 
@@ -618,12 +619,12 @@ static int frame(const void *unused) {
         return 0;
     }
     int travel = __sync_lock_test_and_set(&wheel_travel, 0), n = 0;
-    struct vortex was = g->vx;
+    struct bricks was = g->vx;
     g->acc += (now - g->at) * 60;
     g->at = now;
-    g->carry -= travel * 1024 * VORTEX_GAIN; /* the wheel's x falls clockwise */
+    g->carry -= travel * 1024 * BRICKS_GAIN; /* the wheel's x falls clockwise */
     int dpa = g->carry / (200 * 100);
-    for (; g->acc >= 1000 && n < 4; ++n, g->acc -= 1000) vortex_step(&g->vx, n ? 0 : dpa);
+    for (; g->acc >= 1000 && n < 4; ++n, g->acc -= 1000) bricks_step(&g->vx, n ? 0 : dpa);
     if (n) g->carry -= dpa * 200 * 100;
     if (g->acc >= 1000) g->acc = 0;
     if (travel) reset_poweroptions_timer(1, 1, 1); /* the ball alone lets the screen time out */
@@ -653,12 +654,12 @@ static void run(void) {
     g->acc = 0;
     g->carry = 0;
     __sync_lock_test_and_set(&wheel_travel, 0);
-    wheel_raw = g->screen == VORTEX;
+    wheel_raw = g->screen == BRICKS;
     if (!g->frame) g->frame = timer_add(frame, 0, FRAME_MS);
 }
 
-static const char *const game_names[] = { N_("游戏"), N_("数独"), "旋涡", N_("纸牌"),
-                                          N_("贪吃蛇") };
+static const char *const game_names[] = { "游戏", "数独", "砖块", "纸牌",
+                                          "贪吃蛇" };
 /* The chooser or the game target, from the next loop pass. */
 static int show(const void *unused) {
     g->timer = 0;
@@ -675,8 +676,8 @@ static int show(const void *unused) {
     if (g->screen == CHOOSER) {
         flush(1);
         ringnav_select(g->view, from - 1, g->rows);
-    } else if (g->screen == VORTEX)
-        vortex_new(&g->vx), run();
+    } else if (g->screen == BRICKS)
+        bricks_new(&g->vx), run();
     else if (g->screen == SNAKE)
         snake_new(&g->sn), run();
     widget_invalidate_force(g->page, 0);
@@ -733,7 +734,7 @@ static void sudoku_key(unsigned key) {
         to(CHOOSER);
 }
 
-/* Vortex's and Snake's shared keys: Return's Continue/Quit menu, Play/Pause's pause, Centre again
+/* Bricks' and Snake's shared keys: Return's Continue/Quit menu, Play/Pause's pause, Centre again
  * after game over. 0 for a key left to the game. */
 static int arcade_key(unsigned key, int over) {
     if (g->paused == MENU) {
@@ -747,7 +748,7 @@ static int arcade_key(unsigned key, int over) {
         if (key == KEY_CENTER && g->screen == SNAKE)
             snake_new(&g->sn), run();
         else if (key == KEY_CENTER)
-            vortex_new(&g->vx), run();
+            bricks_new(&g->vx), run();
         else if (key == KEY_RETURN)
             to(CHOOSER);
     } else if (key == KEY_RETURN)
@@ -759,10 +760,6 @@ static int arcade_key(unsigned key, int over) {
     else
         return 0;
     return 1;
-}
-
-static void vortex_key(unsigned key) {
-    if (!arcade_key(key, g->vx.state == OVER) && key == KEY_CENTER) vortex_launch(&g->vx);
 }
 
 /* The side keys steer Snake; the wheel picks Continue/Quit in the menu and is ignored otherwise. */
@@ -831,8 +828,8 @@ int games_key(widget_t *top, unsigned key) {
         solitaire_key(key);
     else if (g->screen == SNAKE)
         snake_key(key);
-    else
-        vortex_key(key);
+    else if (!arcade_key(key, g->vx.state == OVER) && key == KEY_CENTER)
+        bricks_launch(&g->vx);
     /* a moved cursor is kept on leaving; a key the game ignored paints nothing */
     g->dirty |= (g->sud.cur != was.sud.cur) | (g->sol.cur != was.sol.cur) << 1;
     /* NOLINTNEXTLINE(bugprone-suspicious-memory-comparison): was copies *g; worst case a repaint */
@@ -1028,7 +1025,7 @@ void popup_env(char *out, unsigned size) {
                          i < POP_ROW ? stops_row(&S->bar, i, POP_ROW) : pop_band(S, i - POP_ROW));
 }
 
-/* Vortex's and Snake's: Return's menu, the game over, the pause. */
+/* Bricks' and Snake's: Return's menu, the game over, the pause. */
 static void paused_popup(canvas_t *canvas, int over) {
     if (g->paused == MENU)
         popup(canvas, "已暂停", "继续", "退出", g->choice);
@@ -1110,17 +1107,17 @@ static void dot(vgcanvas_t *vg, float x, float y, float r, unsigned color) {
     vgcanvas_fill(vg);
 }
 
-#define STARS 32            /* the theme's own Vortex: its sky's */
-#define VORTEX_SKY 0x0c1735 /* its sky, one navy (the old gradient's mean) */
+#define STARS 32            /* the theme's own Bricks: its sky's */
+#define BRICKS_SKY 0x0c1735 /* its sky, one navy (the old gradient's mean) */
 /* The rings shaded from the tone inwards, a broken brick flashing white as it goes, the paddle
  * round-ended, the ball with a fading trail in the tone, and the lives as balls under Best. The
  * theme's own: a flat night sky, each ring its own colour with a light along its outer edge, the
  * paddle and the ball in a glow. ponytail: the light is a second arc a brick, 96 strokes a frame at
- * most; drop it (VORTEX_SHINE 0) if a Q2 can't hold the frame rate. */
-#define VORTEX_SHINE 1
-static void vortex_paint(canvas_t *canvas, unsigned tone) {
+ * most; drop it (BRICKS_SHINE 0) if a Q2 can't hold the frame rate. */
+#define BRICKS_SHINE 1
+static void bricks_paint(canvas_t *canvas, unsigned tone) {
     static const unsigned ring[RINGS] = { 0xf0a020, 0x36b24a, 0x2f86f0 };
-    const struct vortex *v = &g->vx;
+    const struct bricks *v = &g->vx;
     vgcanvas_t *vg = canvas_get_vgcanvas(canvas);
     float cx = 187.5f, cy = (float)g->h / 2;
     unsigned age = (unsigned)time_now_ms() - g->pop_at;
@@ -1128,7 +1125,7 @@ static void vortex_paint(canvas_t *canvas, unsigned tone) {
     unsigned ink = rgba(0xffffff, 255), dim = own ? rgba(0xa8b4cc, 255) : SPOT_GREY;
     if (own) {
         ui_ink_raw(1);
-        box(canvas, 0, 0, 375, g->h, VORTEX_SKY);
+        box(canvas, 0, 0, 375, g->h, BRICKS_SKY);
         for (unsigned k = 0; k < STARS; ++k)
             scrub_row(canvas, (0x50u + k % 4 * 0x30) << 24 | 0xffffff, (int)(k * 97 % 375),
                       (int)(k * 61 % (unsigned)g->h), 1);
@@ -1143,7 +1140,7 @@ static void vortex_paint(canvas_t *canvas, unsigned tone) {
                     int r = R_B + k * BRICK_T + BRICK_T / 2;
                     unsigned c = own ? ring[k] : mix(tone, 0, k, 4);
                     arc(vg, cx, cy, r, j * 64 + 2, j * 64 + 62, BRICK_T - 2, rgba(c, 255));
-                    if (own && VORTEX_SHINE)
+                    if (own && BRICKS_SHINE)
                         arc(vg, cx, cy, r + 2, j * 64 + 5, j * 64 + 59, 3,
                             rgba(mix(c, 0xffffff, 1, 2), 255));
                 }
@@ -1332,7 +1329,7 @@ void games_paint(widget_t *w, canvas_t *canvas) {
     else if (g->screen == SNAKE)
         snake_paint(canvas, tone);
     else
-        vortex_paint(canvas, tone);
+        bricks_paint(canvas, tone);
     ui_ink_raw(raw);
     stock_canvas_set_fill_color(canvas, fill);
 }
@@ -1346,7 +1343,7 @@ static int closed(void *ctx, event_t *event) {
     return 0;
 }
 
-/* The Library's Games row: the chooser, the Sudoku in progress and Vortex's and Snake's best scores
+/* The Library's Games row: the chooser, the Sudoku in progress and Bricks' and Snake's best scores
  * read. */
 int games_open(void *ctx, event_t *event) {
     if (g || !(g = calloc(1, sizeof *g))) return 0;
@@ -1367,7 +1364,7 @@ int games_open(void *ctx, event_t *event) {
     g->view = page_list(page, g->list, 0, "游戏", g->rows, 48);
     g->title = theme()->page_title_h ? (void *)0 : widget_lookup(g->list, PAGE_TITLE, 1);
     page_row_into(g->view, 0, "数独", pick_game);
-    page_row_into(g->view, 1, "旋涡", pick_game);
+    page_row_into(g->view, 1, "砖块", pick_game);
     page_row_into(g->view, 2, "纸牌", pick_game);
     page_row_into(g->view, 3, "贪吃蛇", pick_game);
     for (int k = 0; k < cards; ++k)
@@ -1375,7 +1372,7 @@ int games_open(void *ctx, event_t *event) {
     if (!BLOB_IO(GAMES_SUDOKU, g->sud, 0) || !games_ok(&g->sud, sizeof g->sud, SUD_MAGIC) ||
         g->sud.cur > 80)
         sud_new(&g->sud);
-    if (!BLOB_IO(GAMES_VORTEX, g->best, 0) || !games_ok(&g->best, sizeof g->best, BEST_MAGIC))
+    if (!BLOB_IO(GAMES_BRICKS, g->best, 0) || !games_ok(&g->best, sizeof g->best, BEST_MAGIC))
         g->best.score = 0;
     if (!BLOB_IO(GAMES_SNAKE, g->sn_best, 0) ||
         !games_ok(&g->sn_best, sizeof g->sn_best, SNAKE_MAGIC))

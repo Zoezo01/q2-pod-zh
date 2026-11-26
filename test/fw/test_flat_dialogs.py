@@ -88,7 +88,7 @@ def test_a_row_action_s_flat_tray_is_the_toast_s_box(fw, st, light):
         return 1
     fw.mock('navigator_to_with_context', open_dialog)
     verb = C.create_string_buffer(b'Delete')
-    assert fw.fn('confirm_over', C.c_int, C.c_void_p, C.c_char_p, C.c_int)(None, verb, 1) == 1
+    assert fw.fn('confirm_over', C.c_int, C.c_char_p, C.c_char_p, C.c_int)(b'', verb, 1) == 1
     text, shown, images, boxes, cells, inks = seen['tray']
     assert text == 'Delete' and not shown and images == []  # the cell says what it's for; no question, no shadow
     ((bx, by, bw, bh), color, radius), = boxes

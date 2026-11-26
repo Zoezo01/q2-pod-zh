@@ -11,7 +11,9 @@
  *            its row is: library, games, network or streaming; without it, Games for a game and
  *            Streaming for any other), wifi (0: it never uses the network, so Smart Wi-Fi keeps
  *            no radio on for it: addon_running, addon_offline; 1: it follows the Wi-Fi link,
- *            addon_wifi.c) and root (1: it runs as root; without it, as APP_UID, app_user.c);
+ *            addon_wifi.c), root (1: it runs as root; without it, as APP_UID, app_user.c) and
+ *            takeover (1: its row ends demo and S90play runs q2-<id> as root in its place, demo
+ *            starting again when it exits: takeover);
  *   run      its launcher, which copies the app to /tmp and runs it there in a restart loop, so
  *            the card is never kept busy, leaving the loop's pid in /tmp/q2-<id>;
  *   q2-<id>  the app;
@@ -101,7 +103,7 @@
 #define ADDON_CAPS                                                                                 \
     "playlist progress pages library goto sleep game audio sections art window urls sort field "   \
     "more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar switch "    \
-    "playkept"
+    "playkept playing takeover"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -130,8 +132,9 @@ typedef struct {
     /* its status file's bar= (bar_read): the word as read last, and file:// of the icon it names
      * (bar.png for 1, bar-<word>.png else) if one fits BAR_ICON_W x BAR_ICON_H; else "" */
     char baricon[56], barword[12];
-    int barw; /* the icon's width, for its slot in the bar */
-    int root; /* q2app's root=1: it runs as root, not as APP_UID (app_user.c) */
+    int barw;     /* the icon's width, for its slot in the bar */
+    int root;     /* q2app's root=1: it runs as root, not as APP_UID (app_user.c) */
+    int takeover; /* q2app's takeover=1: it runs in demo's place (takeover) */
 } app_t;
 enum { ROW_STREAMING, ROW_GAMES, ROW_LIBRARY, ROW_NETWORK }; /* as addon_scan's rows[] names them */
 
@@ -167,9 +170,9 @@ static app_t *slot(const char *id) {
     if (ap.n == APPS_MAX) return 0;
     app_t *a = &ap.a[ap.n++];
     tk_snprintf(a->id, sizeof a->id, "%s", id);
-    /* A .play /tmp kept from before demo started (a crash, a round trip to Rockbox) is taken as
-     * seen, not played again: the slot is made before this demo can start its app, and kept for
-     * demo's life, so a .play the app writes later is a new session (stream_poll).
+    /* A .play /tmp kept from before demo started (a crash, a round trip to an app that took over)
+     * is taken as seen, not played again: the slot is made before this demo can start its app, and
+     * kept for demo's life, so a .play the app writes later is a new session (stream_poll).
      * ponytail: an app that outlived demo and writes a new .play before this first scan has it
      * taken as seen too; telling them apart needs the file's mtime against demo's start. */
     char raw[PLAY_RAW];
@@ -204,6 +207,7 @@ static void slots_read(void) {
         a->view = number(raw, "gameview") == 1;
         a->hidden = number(raw, "hidden") == 1;
         a->root = number(raw, "root") == 1;
+        a->takeover = number(raw, "takeover") == 1;
         /* its row where row says, else as firmware without the key lists it: Games for a game,
          * Streaming for any other */
         static const char *const rows[] = { "streaming", "games", "library", "network" };
@@ -534,7 +538,6 @@ static int scanning(void) {
 }
 
 static int stream_start(const void *unused) {
-    (void)unused;
     sm.timer = 0;
     if (sm.m3u && playback_loads != sm.loads) sm.state = S_DONE; /* the user played a queue since */
     if (sm.state != S_WAIT) return 0;
@@ -571,7 +574,7 @@ static int stream_start(const void *unused) {
  * the URL, which carries the app's token. Kept whether the app runs or not, so it reads the file
  * when it next does. Marked stopped, once, when another queue or player takes over, the player
  * stays stopped NOW_STOP_MS (not between tracks), another URL queue starts (any app's), or the apps
- * are stopped (addon_stop: Rockbox, Stop Streaming Services); then nothing until the queue plays
+ * are stopped (addon_stop: a takeover, Stop Streaming Services); then nothing until the queue plays
  * again. A restarted demo marks its last run's stopped (now_sweep). Nothing is written for a queue
  * before it first plays. */
 #define NOW_STEP_S 5
@@ -658,7 +661,6 @@ static void now_poll(void) {
 /* A URL queue's start, on a timer as stream_start's (a window opens); then the session is done:
  * the queue is stock's, and the app hears back only through its .now (now_start). */
 static int urls_start(const void *unused) {
-    (void)unused;
     sm.timer = 0;
     if (playback_loads != sm.loads) sm.state = S_DONE; /* the user played a queue since */
     if (sm.state != S_WAIT || scanning()) return 0;    /* looked at again after the scan */
@@ -1032,15 +1034,10 @@ int addon_game_front(void) { return gm.pid && !gm.native; }
 int addon_game_keys(void) { return (gm.view && addon_game_front()) || (gm.eat & GAME_CENTER); }
 int addon_game_audio(void) { return gm.pid && gm.audio; }
 
-static void game_kill(const char *how) {
-    char cmd[24];
-    tk_snprintf(cmd, sizeof cmd, "kill %s%d", how, gm.pid); /* demo imports no kill() */
-    system(cmd);
-}
 static void game_end(void) {
     if (gm.term) return; /* game_poll KILLs it GAME_KILL_MS on */
     gm.term = (unsigned)time_now_ms() | 1;
-    game_kill("");
+    chapter_kill(gm.pid, 15);
 }
 
 /* netupdate.c's toast once app id is installed: where its row is, as the screen names it. The
@@ -1247,17 +1244,6 @@ static int game_start(app_t *a, const char *uri, const char *ctx) {
     return 1;
 }
 
-/* Home's Shortcut (theme_engine.c home_shortcut_open): the card game with this id started as its
- * row would start it, wherever the row is (1 running, 0 not, with game_start's toast); -1 when no
- * card game has the id (no q2app with game=1 in its folder, one hidden, or no slot left). */
-int addon_game_open(const char *id) {
-    addon_scan();
-    for (int i = 0; i < ap.n; ++i)
-        if (ap.a[i].present && !ap.a[i].hidden && ap.a[i].game && !strcmp(ap.a[i].id, id))
-            return game_start(&ap.a[i], 0, 0);
-    return -1;
-}
-
 /* ringnav_input, every event: 1 when it is the game's (sent as its datagram) or a key it eats (the
  * hold that ended it, a key held into Now Playing's open); 0 for stock's: a music key of a game
  * without the sound or gameview=1, every event while Now Playing is over the game, and a key
@@ -1399,7 +1385,7 @@ static void game_poll(void) {
         gm.held = 0;
         if (!gm.view || access(quit, 0)) gm.eat = gm.view ? GAME_CHORD : GAME_RETURN, game_end();
     }
-    if (gm.term && (int)(now - gm.term) >= GAME_KILL_MS) gm.term = now | 1, game_kill("-9 ");
+    if (gm.term && (int)(now - gm.term) >= GAME_KILL_MS) gm.term = now | 1, chapter_kill(gm.pid, 9);
     /* decided afresh each pass: lyric_poll may have handed it back */
     if (!gm.native) wheel_raw = 1;
     int travel = gm.native ? 0 : __sync_lock_test_and_set(&wheel_travel, 0);
@@ -1443,7 +1429,7 @@ int addon_bar_width(void) {
 }
 
 /* Smart Wi-Fi (smart_wifi.c smart_needed): an app started, or restarting after Retry, keeps the
- * radio on until it stops (by itself, Stop Streaming Services or Rockbox). One stopped for USB
+ * radio on until it stops (by itself, Stop Streaming Services or a takeover). One stopped for USB
  * storage counts once it starts again: the cable holds the radio meanwhile, and an app deleted from
  * the computer, which never starts again, holds nothing. One whose q2app says wifi=0 never uses the
  * network and never counts, nor does its page (addon_offline); a wifi=1 app follows the link, it
@@ -1462,6 +1448,7 @@ void addon_poll(void) {
     now_poll();
     library_poll();
     addon_wifi_poll();
+    addon_playing_poll();
     /* the status bar picks its icon as it paints (bar_sync): an app starting, stopping or changing
      * its bar= repaints nothing else, so the bar is repainted when the icon changes */
     static char bar_was[sizeof ap.a[0].baricon] __attribute__((section(".scratch")));
@@ -1481,7 +1468,7 @@ static void app_stop(app_t *a, int restart) {
     a->restart = restart, a->restart_at = time_now_ms();
 }
 
-/* Streaming's Stop Streaming Services, and Home's Rockbox row: each asked to end (its downloads
+/* Streaming's Stop Streaming Services, and a takeover app's row: each asked to end (its downloads
  * or queue saved). */
 void addon_stop(void) {
     char cmd[96];
@@ -1491,7 +1478,7 @@ void addon_stop(void) {
         a->launched = a->hold = a->relaunch = a->restart = 0;
         a->wifi_off = a->wifi;
     }
-    /* Rockbox's row kills demo next, /tmp kept; Stop Streaming Services stops a URL queue too */
+    /* a takeover kills demo next, /tmp kept; Stop Streaming Services stops a URL queue too */
     if (nw.live) now_write(1, nw.sec, nw.total);
 }
 
@@ -2427,7 +2414,6 @@ static void later(int next, int arg) {
 }
 
 static int clicked(void *ctx, event_t *event) {
-    (void)event;
     /* Loading… does nothing: dropped here, as by go() its page may have put a row at its index */
     if (pg.paging && (int)(long)ctx == top()->n) return 0;
     later(G_ROW, (int)(long)ctx);
@@ -2443,7 +2429,6 @@ static int clicked(void *ctx, event_t *event) {
  * silently. */
 static int searched(void *ctx, event_t *event) {
     char t[256] = "";
-    (void)ctx, (void)event;
     if (widget_get_text_utf8(pg.edit, t, sizeof t)) t[0] = 0;
     if (strlen(t) >= sizeof pg.term) { /* none of it goes: the box closes, the level stays */
         memset(t, 0, sizeof t);
@@ -2457,7 +2442,6 @@ static int searched(void *ctx, event_t *event) {
 }
 
 static int search_left(void *ctx, event_t *event) {
-    (void)ctx, (void)event;
     if (!pg.go) later(G_SHOW, 0);
     return 0;
 }
@@ -2470,7 +2454,6 @@ static int search_left(void *ctx, event_t *event) {
  * ponytail: touch only. The wheel moves the selection, as on every list, so the sections past the
  * first are reached by a swipe alone; bind a key here if that is ever asked for. */
 static int swipe(void *ctx, event_t *event) {
-    (void)ctx;
     int type = I(event, EVENT_TYPE);
     if (type == EVT_POINTER_ABORT || pg.nsec < 2 || pg.depth != 1 || pg.edit) {
         pg.sdown = pg.sclaim = 0;
@@ -2533,7 +2516,6 @@ static void search_box(int field) {
 /* A title bar icon's tap, ctx its G_ code, on a timer as a row's: what it opens replaces the page
  * the icon is in. */
 static int bar_tapped(void *ctx, event_t *event) {
-    (void)event;
     later((int)(long)ctx, 0);
     return 0;
 }
@@ -2572,7 +2554,6 @@ static void field_sent(lv_t *l) {
 
 /* A row's choice, on a timer: a row's click may not rebuild the list it is in. */
 static int go(const void *unused) {
-    (void)unused;
     lv_t *l = top();
     int i = pg.arg;
     char a[sizeof l->args] = "";
@@ -2637,7 +2618,6 @@ static int go(const void *unused) {
 /* The page's timer: a finished request taken; a starting app, or a live level on top, asked
  * again. */
 static int tick(const void *unused) {
-    (void)unused;
     lv_t *l = top();
     unsigned now = time_now_ms();
     if (req_done())
@@ -2657,7 +2637,6 @@ static int tick(const void *unused) {
 }
 
 static int leave(const void *unused) {
-    (void)unused;
     pg.leave = 0;
     if (pg.edit) /* the search box emptied, so no search; its blur shuts the keyboard, then the box
                   */
@@ -2669,13 +2648,9 @@ static int leave(const void *unused) {
     return 0;
 }
 
-static int keyup(void *ctx, event_t *event) {
-    (void)ctx;
-    return return_key(event, &pg.leave, leave);
-}
+static int keyup(void *ctx, event_t *event) { return return_key(event, &pg.leave, leave); }
 
 static int closed(void *ctx, event_t *event) {
-    (void)event;
     if (ctx != pg.page) return 0; /* a page addon_goto replaced, its state gone already */
     req_cancel();
     stop_timer(&pg.timer);
@@ -2733,18 +2708,32 @@ static int page_at(int k, const char *op, const char *args, const char *title, i
     return 1;
 }
 
-/* A row's press, wherever the row is: a game runs over the whole screen (1 when it runs), any other
- * app opens its page (1 when it opened, or said why not). */
+/* A takeover app's row (docs/boot.md#apps-that-take-over-the-device): demo leaves its id in
+ * S90play's flag and ends (ringnav_hand_over), and S90play runs its q2-<id>. */
+static int takeover(app_t *a) {
+    if (access(a->bin, 0) ||
+        !blob_io(TAKEOVER_FLAG, TAKEOVER_FLAG ".tmp", a->id, strlen(a->id), 1)) {
+        toast("不在卡上");
+        return 0;
+    }
+    ringnav_hand_over();
+    return 1;
+}
+
+/* A row's press, wherever the row is: a takeover app ends demo for itself, a game runs over the
+ * whole screen (1 when it runs), any other app opens its page (1 when it opened, or said why not).
+ */
 static int press(int slot) {
     app_t *a = &ap.a[slot];
-    return a->game ? game_start(a, 0, 0) : page_at(slot, "menu", "", a->name, 1);
+    return a->takeover ? takeover(a)
+           : a->game   ? game_start(a, 0, 0)
+                       : page_at(slot, "menu", "", a->name, 1);
 }
 
 /* An app's Streaming row (home.c ringnav_stream; ctx: its app's slot, addon_slot): a read that
  * sorts the apps again while the row is open (an App Store job's end, Home's pane, the AirPlay row)
  * leaves it on its app, and a removed app's row says it isn't on the card. */
 int addon_open(void *ctx, event_t *event) {
-    (void)event;
     int i = (int)(long)ctx;
     if (smart_hold(addon_open, ctx, 0)) return 0; /* the app starts once Smart Wi-Fi's link is up */
     if (i >= 0 && i < ap.n) press(i);
@@ -2761,7 +2750,6 @@ int addon_game_start(int k) {
  * link; holding the row as Streaming's (smart_hold) would cost every open up to SMART_CONNECT_MS
  * wherever there is no network. A q2app key for the wait, if an app ever needs the link first. */
 int addon_lib_open(void *ctx, event_t *event) {
-    (void)event;
     int k = (int)(long)ctx;
     if (k >= 0 && k < ap.cnt[ROW_LIBRARY]) press(ap.rows[ROW_LIBRARY][k]);
     return 0;
@@ -2806,7 +2794,6 @@ int addon_apps_sync(void *win, event_t *event) {
 }
 /* An app's Network row (ctx: its place by name at the last scan): as a Library row's. */
 int addon_network_open(void *ctx, event_t *event) {
-    (void)event;
     int k = (int)(long)ctx;
     if (k >= 0 && k < ap.cnt[ROW_NETWORK]) press(ap.rows[ROW_NETWORK][k]);
     return 0;
@@ -2823,6 +2810,45 @@ void addon_open_id(const char *id) {
             page_at(i, "menu", "", ap.a[i].name, 1);
             return;
         }
+}
+
+/* Home's Shortcut (theme_engine.c): the present, unhidden app with this id, the card read again,
+ * or -1. addon_open_app presses its row (a Streaming row's waiting for Smart Wi-Fi's link, as
+ * addon_open does): -1 with none. addon_name_of names it as the last read found it (the card read
+ * once when nothing has read it yet: it is asked as Home paints), its id with none. addon_sorted
+ * puts the games' (game 1) or the other apps' slots in slots by name, for the Shortcut picker
+ * (shortcut_pick.c): how many. */
+static int app_of(const char *id) {
+    addon_scan();
+    for (int i = 0; i < ap.n; ++i)
+        if (ap.a[i].present && !ap.a[i].hidden && !strcmp(ap.a[i].id, id)) return i;
+    return -1;
+}
+int addon_open_app(const char *id) {
+    int i = app_of(id);
+    if (i >= 0 && ap.a[i].row == ROW_STREAMING)
+        addon_open((void *)(long)i, 0);
+    else if (i >= 0)
+        press(i);
+    return i < 0 ? -1 : 0;
+}
+const char *addon_name_of(const char *id) {
+    if (!ap.n) slots_read();
+    for (int i = 0; i < ap.n; ++i)
+        if (!strcmp(ap.a[i].id, id) && ap.a[i].name[0]) return ap.a[i].name;
+    return id;
+}
+int addon_sorted(int game, int *slots) {
+    int n = 0;
+    addon_scan();
+    for (int i = 0; i < ap.n; ++i) { /* by name: an insertion, as addon_scan's */
+        if (!ap.a[i].present || ap.a[i].hidden || ap.a[i].game != game) continue;
+        int k = n++;
+        for (; k && strcasecmp(ap.a[slots[k - 1]].name, ap.a[i].name) > 0; --k)
+            slots[k] = slots[k - 1];
+        slots[k] = i;
+    }
+    return n;
 }
 
 /* Whether path is in an app's folder, CARD/.<id>/, and id the app's. */
@@ -3021,25 +3047,19 @@ static void qr_refresh(void) {
 }
 
 static int qr_tick(const void *unused) {
-    (void)unused;
     if (g_backlight_status) qr_refresh();
     return 8; /* RET_REPEAT */
 }
 
 static int qr_leave(const void *unused) {
-    (void)unused;
     qp.leave = 0;
     navigator_back();
     return 0;
 }
 
-static int qr_keyup(void *ctx, event_t *event) {
-    (void)ctx;
-    return return_key(event, &qp.leave, qr_leave);
-}
+static int qr_keyup(void *ctx, event_t *event) { return return_key(event, &qp.leave, qr_leave); }
 
 static int qr_closed(void *ctx, event_t *event) {
-    (void)ctx, (void)event;
     stop_timer(&qp.timer);
     stop_timer(&qp.leave);
     free(qp.hex);

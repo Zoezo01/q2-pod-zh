@@ -358,6 +358,14 @@ const unsigned *widget_get_text(void *w) { return 0; }
 int canvas_set_font(void *c, const char *f, unsigned px) { return 0; }
 float canvas_measure_text(void *c, const unsigned *s, unsigned n) { return 0; }
 const char *theme_face(const unsigned *s, int n, int *px) { return 0; }
+void face_states(void *w, const char *f, int px) {
+    static const char *const names[] = { "style:normal:font_name", "style:focused:font_name", "style:disable:font_name" },
+                             *const sizes[] = { "style:normal:font_size", "style:focused:font_size", "style:disable:font_size" };
+    for (unsigned i = 0; i < 3; ++i) {
+        widget_set_prop_str(w, names[i], f);
+        if (px) widget_set_prop_int(w, sizes[i], px);
+    }
+}
 void font_weight_mark(void *w, int bold) {}
 void home_pane_read(int *services, int *games, int *free_tenths) { *services = 5; *games = 4; *free_tenths = 412; }
 extern volatile unsigned library_gen;
@@ -462,7 +470,8 @@ unsigned flat_page(void) { return light ? scheme()->paper : 0; }
 void hold_card_flat(canvas_t *c, const rect_t *r, int head, int over) {} /* flat.c's: no theme here takes it */
 static int square_art;
 int ipod_square_art(void) { return square_art; }
-int ipod_home_rockbox(void) { return 0; }
+int ipod_home_shown(void) { return 0; }
+int shortcut_is_app(void) { return 1; }
 int card_home; /* card_rules.c's: no card theme here */
 void card_rules_home(void *list) {}
 unsigned card_rules_art(const char **cover, unsigned key) { return key; }
@@ -651,7 +660,7 @@ void rearm(unsigned *t, int (*f)(const void *), unsigned ms) { stop_timer(t); *t
 static void run(void) { while (timer_fn) { int (*f)(const void *) = timer_fn; timer_fn = 0; usleep(1000); f(0); } }
 
 /* libcstl: a deque of record pointers; the query stubs fill the staging deque. */
-typedef struct { unsigned n; void *at[1024]; } deque; /* a playlist of 300 songs fits */
+typedef struct { unsigned n; void *at[1024]; } deque; /* a playlist of 600 songs fits */
 void *shim_dir;
 void *_create_deque(const char *t) { return calloc(1, sizeof(deque)); }
 void deque_init_copy(void *d, const void *s) { *(deque *)d = *(const deque *)s; }
@@ -967,6 +976,7 @@ void coverflow_paint(void *, void *);
    frames as drawn. */
 extern cf_style_t cfs;
 void cf_restyle(void);
+void cf_back_test(int on, int ms, int x, int y), cf_shelf_still(int still), cf_back_stale(int x, int y);
 int fx_base(void);
 static void (*const bgra_render)(unsigned *, int, int, const unsigned *const[7]) = coverflow_render;
 static void texel_render(unsigned *d, int pitch, int frac, const unsigned *const ring[7]) {
@@ -1370,7 +1380,7 @@ static void pinned(void) {
    the back after, narrowed to the axis at 90; the back reads right at the end; the eased time; the side
    covers parting over the same ease. */
 void coverflow_flip_render(unsigned *, int, int, const unsigned *const[3]);
-int coverflow_flip_eased(int);
+int coverflow_flip_eased(int, int);
 /* As texel_render: the side covers (the shelf's frame), the cover and the back go in as the
    screen's, the frame comes out red low. */
 static void (*const bgra_flip)(unsigned *, int, int, const unsigned *const[3]) = coverflow_flip_render;
@@ -1425,14 +1435,12 @@ static void flip_frames(void) {
     assert((f[(top + 5) * 375 + 106] & 0xffffffu) == 106);
     coverflow_flip_render(f, 375, 65536, tex);
     for (int y = 0; y < 285; ++y) for (int x = 0; x < 294; ++x) assert(f[(9 + y) * 375 + 40 + x] == back[y * 294 + x]);
-    /* The eased time: 90 degrees at half of it, and its own mirror, so Return is the same frames. Six frames on a 45 ms clock. */
-    assert(coverflow_flip_eased(0) == 0 && coverflow_flip_eased(135) == 32768 && coverflow_flip_eased(270) == 65536 && coverflow_flip_eased(300) == 65536);
-    int was = 0, count = 0;
-    for (int ms = 45; ms <= 270; ms += 45, ++count) { int e = coverflow_flip_eased(ms); assert(e > was); was = e; }
-    assert(count == 6);
-    for (int ms = 0; ms <= 270; ++ms) { assert(abs(coverflow_flip_eased(ms) + coverflow_flip_eased(270 - ms) - 65536) <= 6); assert(coverflow_flip_eased(ms + 1) >= coverflow_flip_eased(ms)); }
-    /* ... the bezier's own values, a sixteenth at a time and between */
-    assert(abs(coverflow_flip_eased(67) - 8337) <= 100 && abs(coverflow_flip_eased(203) - 57199) <= 100);
+    /* The eased time: an ease-out either way, so the first 16 ms frame is past twice linear's share, to the panel and back. */
+    assert(coverflow_flip_eased(-5, 1) == 0 && coverflow_flip_eased(0, 1) == 0 && coverflow_flip_eased(270, 1) == 65536 && coverflow_flip_eased(300, 1) == 65536);
+    assert(coverflow_flip_eased(0, -1) == 65536 && coverflow_flip_eased(270, -1) == 0);
+    assert(coverflow_flip_eased(16, 1) > 2 * 16 * 65536 / 270 && coverflow_flip_eased(16, -1) < 65536 - 2 * 16 * 65536 / 270);
+    for (int ms = 0; ms <= 270; ++ms) { assert(coverflow_flip_eased(ms + 1, 1) >= coverflow_flip_eased(ms, 1)); }
+    assert(coverflow_flip_eased(135, 1) == 57344 && coverflow_flip_eased(135, -1) == 8192);
     /* The sides part over the same ease: none at the start, 12 at half, 24 at the end, the paper between and under the shelf. */
     const unsigned *none[3] = { sides, 0, 0 };
     for (int half = 0; half < 2; ++half) {
@@ -1691,6 +1699,37 @@ static void classic_light_shelf(void) {
     coverflow_render(f, PITCH, ONE / 2 - 1, ring);
     coverflow_render(g, PITCH, -ONE / 2, next);
     assert(differ(f, g, 6) < 200);
+    /* The way back from Now Playing (back_pose), the art's keystone at 20, 30: at ms 0 the centre cover stands there,
+       its near (left) edge whole from the art's top, the side covers slid out; at its end the still shelf, pixel for
+       pixel, as the motion hands over to it. */
+    cf_style_t *cb = &shim_themes[1].cf;
+    cb->land_back_ms = 600, cb->land_back_at = 250, cb->land_back_step = 100, cb->land_back_out = 143;
+    cf_shelf_still(1); /* as coverflow_paint draws it: nothing else moves */
+    coverflow_render(f, PITCH, 0, ring);
+    cf_back_test(1, 0, 20, 30);
+    memcpy(g, f, sizeof g), coverflow_render(g, PITCH, 0, ring); /* f's guard pixels */
+#define G(x, y) g[(y) * PITCH + (x)]
+    assert(G(21, 31) == colours[3] && G(21, 30 + 176) == colours[3] && G(19, 120) != colours[3]);
+    assert(G(196, 120) == colours[3] && G(196, 30 + 8) != colours[3]); /* the far edge shorter: SLANT_FAR */
+    cf_back_test(1, 550, 20, 30);
+    memcpy(g, f, sizeof g), coverflow_render(g, PITCH, 0, ring); /* f's guard pixels */
+    assert(memcmp(f, g, sizeof f));
+    cf_back_test(1, 900, 20, 30); /* back_len: the third cover out, 300 + 600 */
+    memcpy(g, f, sizeof g), coverflow_render(g, PITCH, 0, ring); /* f's guard pixels */
+    assert(!memcmp(f, g, sizeof f));
+    cf_back_test(0, 0, 0, 0), cf_shelf_still(0);
+    /* The first paint of a way back after another's end (bk.ms left past its length) and a changed frame: its own ms
+       0, the side covers out, never the shelf at rest a frame before the motion (seen on a Q2, 2026-11-25). */
+    static unsigned rest[CF_VIEW_H * CF_VIEW_W];
+    coverflow_paint(s, canvas);
+    memcpy(rest, shown, sizeof rest);
+    cf_back_stale(20, 30);
+    coverflow_paint(s, canvas);
+    assert(memcmp(rest, shown, sizeof rest));
+    cf_back_test(0, 0, 0, 0);
+    coverflow_paint(s, canvas);
+    cb->land_back_ms = cb->land_back_at = cb->land_back_step = cb->land_back_out = 0;
+#undef G
     /* The light half: the shelf is the scheme's paper, and the reflection fades into it. */
     light = 1;
     coverflow_render(f, PITCH, 0, ring);
@@ -4502,16 +4541,17 @@ static void flip_turn(void) {
     assert(!s->visible && !label_in(cv, 0)->visible && !label_in(cv, 1)->visible && cv->numb); /* the shelf's surface goes */
     assert(!strcmp(label_in(panel, 0)->text, names[a]) && !strcmp(label_in(panel, 1)->text, "Artist"));
     assert(!strcmp(label_in(row, 0)->text, "Opening") && !label_in(row, 1)); /* no length */
-    /* The frames: the cover itself at first; half way edge on, the side covers parted (measured against the rest's
-       parting below); at the end the panel as captured. */
+    /* The frames: the cover itself at first; at 56 ms, just past the ease-out's half way (55.7), all but edge on, a
+       sliver of the back at the axis, the side covers parted (measured against the rest's parting below); at the end
+       the panel as captured. */
     static unsigned zero[CF_VIEW_W], half[CF_VIEW_W];
     coverflow_paint(cv, canvas);
     memcpy(zero, shown + y * CF_VIEW_W, sizeof zero);
-    clock_ms = 1000 + 135;
+    clock_ms = 1000 + 56;
     assert(tick(0) == 8);
     coverflow_paint(cv, canvas);
     memcpy(half, shown + y * CF_VIEW_W, sizeof half);
-    assert(zero[CF_CX] != 0xff000000u && half[CF_CX] == 0xff000000u && half[CF_CX - 1] == 0xff000000u);
+    assert(zero[CF_CX] != 0xff000000u && half[CF_CX] == 0xff102030u && half[CF_CX - 2] == 0xff000000u && half[CF_CX + 1] == 0xff000000u);
     clock_ms = 1000 + 270;
     coverflow_paint(cv, canvas);
     assert(shown[120 * CF_VIEW_W + CF_CX] == 0xff102030u && shown[120 * CF_VIEW_W + PANEL_X + 5] == 0xff102030u);
@@ -7226,8 +7266,8 @@ static int pl_staged; /* each getMusicByPlayList */
 int getMusicByPlayList(int cd) { /* a playlist's songs: 40's are records 0 and 1, 41's record 2, 42's 3 to 9 */
     deque *d = shim_dir;
     d->n = 0, ++pl_staged;
-    if (messy) { /* the messy library's cd 3: 300 songs (cd 1's 20,000 would overflow the deque) */
-        for (int i = 0; cd == 3 && i < 300; ++i) d->at[d->n++] = records[i % albums];
+    if (messy) { /* the messy library's cd 3: 600 songs (cd 1's 20,000 would overflow the deque) */
+        for (int i = 0; cd == 3 && i < 600; ++i) d->at[d->n++] = records[i % albums];
         return (int)d->n;
     }
     for (int i = cd == 41 ? 2 : cd == 42 ? 3 : 0; i < (cd == 40 ? 2 : cd == 41 ? 3 : cd == 42 ? 10 : 0); ++i) d->at[d->n++] = records[i];
@@ -7362,7 +7402,7 @@ static void flip_playlist(void) {
         *(const char **)(records[3 + i] + REC_TITLE) = kept[i][0], *(const char **)(records[3 + i] + REC_ARTIST) = kept[i][1];
 }
 /* Classic's turned panel builds every row at once (about 3 KB each): a playlist over PANEL_ROWS
-   (200) opens in stock's list on the Playlists page under the covers instead, as Minimal's Centre
+   (500) opens in stock's list on the Playlists page under the covers instead, as Minimal's Centre
    does: by its count in the table, with no songs loaded, or, the table not read yet (count 0), by the
    songs it loaded. */
 static void flip_big_playlist(void) {

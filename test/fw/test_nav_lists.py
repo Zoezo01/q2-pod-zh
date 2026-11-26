@@ -16,6 +16,7 @@ from conftest import NAVIGATION_SOURCE, O, Deques, claim, pod_value, rgba, ui_na
 from test_coverflow import COVERS, TRACKS, Home, Rec, cf, deque_of  # coverflow.c's home struct, its page and an album
 from test_nav_display_library import Ple  # playlists.c's editor state
 from test_navigation import Config
+from test_nav_playing import wide
 from conftest import Config as AllKeysConfig  # reads every key, an empty default too
 
 W_PARENT, W_EMITTER = O['W_PARENT'], O['W_EMITTER']
@@ -588,18 +589,12 @@ def test_twin_titles_without_a_second_line_take_the_nearer(fw, ui):
     assert again.selected == 27
 
 
-def test_a_list_with_no_row_of_that_name_keeps_the_place(fw, ui):
+@pytest.mark.parametrize('count, selected', [(40, 25), (10, 0)], ids=['no_row_of_that_name', 'shorter_list'])
+def test_a_list_with_no_row_of_that_name_or_shorter_does_not_restore(fw, ui, count, selected):
     chosen(fw, ui, Page(ui, titles(40)), 25)
-    again = Page(ui, titles(40, start=100))
+    again = Page(ui, titles(count, start=100))
     paint(fw, again)
-    assert again.selected == 25
-
-
-def test_a_shorter_list_does_not_restore_past_its_end(fw, ui):
-    chosen(fw, ui, Page(ui, titles(40)), 25)
-    again = Page(ui, titles(10, start=100))
-    paint(fw, again)
-    assert again.selected == 0
+    assert again.selected == selected
 
 
 def test_another_list_of_the_same_page_starts_at_its_top(fw, ui):
@@ -1938,13 +1933,13 @@ def test_row_preview_is_classics_own_choice(fw, keys, on):
 
 
 @pytest.mark.parametrize('shortcut, card, row', [(None, 1, 1), (None, 0, 1), (0, 1, 1), (0, 0, 0), (2, 0, 1), (11, 1, 0), (11, 0, 0), (12, 1, 1)])
-def test_home_shows_its_shortcut_row_unless_it_is_none_or_a_missing_rockbox(fw, shortcut, card, row):
+def test_home_shows_its_shortcut_row_unless_it_is_none_or_a_missing_app(fw, shortcut, card, row):
     theme(fw, 0, **({} if shortcut is None else {'SHORTCUT': shortcut}))
     def stat(version, path, info, *_):
         C.c_uint.from_address(info + 20).value = 0o100755
         return 0 if card else -1
     fw.mock('fw___xstat', stat)
-    assert bool(fw.fn('ipod_home_rockbox', C.c_int)()) == bool(row)
+    assert bool(fw.fn('ipod_home_shown', C.c_int)()) == bool(row)
 
 
 @pytest.mark.parametrize('shortcut, page, context', [
@@ -2306,10 +2301,6 @@ def test_classics_panel_sits_on_its_shadow_in_a_ring_and_puts_the_fill_back(fw, 
     assert all(39 <= x and x + w <= 40 + 120 + 1 and 49 <= y <= 50 + 30 for _, x, y, w, _ in canvas.fills)
     assert {y for _, _, y, _, _ in canvas.fills} == set(range(49, 50 + 30 + 1))  # the ring a pixel out
     assert canvas.fill == LCD_FILL
-
-
-def wide(text):
-    return (C.c_uint * (len(text) + 1))(*map(ord, text), 0)
 
 
 def test_a_text_shadow_is_its_text_in_black_at_its_alpha(fw):

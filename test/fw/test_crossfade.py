@@ -16,7 +16,6 @@ PAGE, BELOW, WM = 0x7000, 0x6000, 0x9000
 CLICK, CHANGING, CHANGED, DESTROY = O['EVT_CLICK'], O['EVT_VALUE_CHANGING'], O['EVT_VALUE_CHANGED'], O['EVT_DESTROY']
 CENTER, NEXT, PREV = O['KEY_CENTER'], O['KEY_NEXT'], O['KEY_PREV']
 HANDLER = C.CFUNCTYPE(C.c_int, C.c_long, C.c_long)  # an AWTK event handler: (ctx, event)
-libc.munmap.argtypes = [C.c_void_p, C.c_size_t]
 pytestmark = pytest.mark.usefixtures('stock_gapless')  # Crossfade has stock's Gapless on, as stock's default
 
 
@@ -527,7 +526,7 @@ GUISES = [(0, {'XFADE': 1, 'XFADESEC': 5}, [('XFADESEC', 15)]),
           (3, {'NIGHTSHIFT': 1, 'NIGHTK': 4000}, [('NIGHTK', 3000)])]
 
 
-def thirty_ticks(page, mode):
+def thirty_ticks(page):
     """Up 10, down 10, up 10, by the wheel: each tick a new value, played or shown at once."""
     live = []
     for key in [NEXT] * 10 + [PREV] * 10 + [NEXT] * 10:
@@ -540,7 +539,7 @@ def thirty_ticks(page, mode):
 @pytest.mark.parametrize('mode, values, saved', GUISES)
 def test_thirty_ticks_write_nothing_until_the_page_closes_then_only_what_changed(fw, mode, values, saved):
     page = opened(fw, mode, values)
-    thirty_ticks(page, mode)
+    thirty_ticks(page)
     assert not page.config.written and not fw.calls('write_int_config')
     page.fire('page', DESTROY)
     assert page.config.written == saved
@@ -560,7 +559,7 @@ def test_a_turn_that_ends_where_it_began_writes_nothing(fw, mode, values, saved)
 def test_a_value_set_with_the_page_open_is_saved_at_an_end_and_before_standby(fw, mode, values, saved, end):
     """Power held with the page open (power-off, Restart, a firmware update: ringnav_clean_end), or Standby."""
     page = opened(fw, mode, values)
-    thirty_ticks(page, mode)
+    thirty_ticks(page)
     if end == 'standby':
         fw.mock('stock_standby_trampoline', lambda *_: page.config.written.append('suspend') and 0)
         fw.fn('ringnav_standby', C.c_int)()

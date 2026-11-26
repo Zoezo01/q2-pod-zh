@@ -138,12 +138,6 @@ void url_escape(const char *s, char *out, unsigned n) {
 }
 
 #ifndef PEQ_HOST
-/* A USB DAC's volume is in software, hciplayer's as Bluetooth's, only when the USB volume is
- * variable (g_usbvol_mode) and the DAC has no volume control of its own: mclUsbAudioSetVol then
- * finds none (USB_MIXER -2) and tells hciplayer {mcl-softvolflag\1}. Otherwise the DAC applies it.
- */
-static int usb_soft(void) { return g_usbvol_mode && I(USB_MIXER, 0) == -2; }
-
 /* The output in use for q2video (radio_start), librespot's sink (spotify.c) and a card game's
  * sound (addon.c): 0 for the headphone DAC, which keeps the volume set. Bluetooth's is hciplayer's
  * soft volume, so the helper gets g_volume in vol (5 bytes) to apply it the same way, on
@@ -152,7 +146,11 @@ static int usb_soft(void) { return g_usbvol_mode && I(USB_MIXER, 0) == -2; }
  * its volume is soft, else "h" and the volume, which the helper leaves to the DAC. */
 const char *output_device(char *vol) {
     int way = mclGetOutputWay();
-    tk_snprintf(vol, 5, way == 2 && !usb_soft() ? "h%u" : "%u",
+    /* A USB DAC's volume is in software, hciplayer's as Bluetooth's, only when the USB volume is
+     * variable (g_usbvol_mode) and the DAC has no volume control of its own: mclUsbAudioSetVol then
+     * finds none (USB_MIXER -2) and tells hciplayer {mcl-softvolflag\1}. Otherwise the DAC applies
+     * it. */
+    tk_snprintf(vol, 5, way == 2 && !(g_usbvol_mode && I(USB_MIXER, 0) == -2) ? "h%u" : "%u",
                 way == 1 ? headset_gain() : g_volume);
     return way == 1 ? "plug:bluealsa" : way == 2 ? "usb" : 0;
 }
@@ -347,22 +345,17 @@ static int m3u_write(const char *path, const list_t *l, int skip, const list_t *
     return ok && !rename(tmp, path);
 }
 
-static void send_key(const char *c, unsigned n) { dgram_send(&rd.sock, RADIO_SOCK, c, n); }
-
 /* q2video quit, and killed if it does not go within RADIO_QUIT_MS. The media keys stay radio's. */
 static void radio_halt(void) {
     rd.wait = 0;
     if (!rd.pid) return;
     int status, done;
     unsigned start = time_now_ms();
-    send_key("q", 1);
+    dgram_send(&rd.sock, RADIO_SOCK, "q", 1);
     while (!(done = waitpid(rd.pid, &status, 1)) && time_now_ms() - start < RADIO_QUIT_MS)
         sleep_ms(20);
     if (!done) {
-        char kill[24]; /* this helper only: librespot's sink is a q2video too (demo imports no kill)
-                        */
-        tk_snprintf(kill, sizeof kill, "kill -9 %d", rd.pid);
-        system(kill);
+        chapter_kill(rd.pid, 9);
         waitpid(rd.pid, &status, 0);
     }
     rd.pid = 0;
@@ -433,7 +426,7 @@ void radio_poll(void) {
     if (rd.volume != headset_gain() + 1u) {
         char v[2] = { 'v', (char)headset_gain() };
         rd.volume = headset_gain() + 1u;
-        send_key(v, 2);
+        dgram_send(&rd.sock, RADIO_SOCK, v, 2);
     }
 }
 

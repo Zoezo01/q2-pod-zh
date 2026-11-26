@@ -359,10 +359,10 @@ def test_a_hidden_art_hides_its_glyph_through_np_theme(fw, page):
     assert p.calls('widget_set_opacity', 'img_playstate')[-1] == 0
 
 
-def test_the_heart_moves_before_its_badge(page):
+def test_the_heart_moves_before_its_fill(page):
     p = page(b'move img_fav 20 100')
-    badge = [w for w in p.ui.kids[p.w['view_album']] if not p.ui.names[w]]
-    assert p.box('img_fav') == (20, 100, 50, 50) and [p.ui.box(b)[:2] for b in badge] == [(20 + 50 - 18, 106)]
+    fill = [w for w in p.ui.kids[p.w['view_album']] if not p.ui.names[w]]
+    assert p.box('img_fav') == (20, 100, 50, 50) and [p.ui.box(f) for f in fill] == [(20, 100, 50, 50)]
 
 
 @pytest.mark.parametrize('t', [MINIMAL, MODERN], ids=['minimal', 'modern'])
@@ -435,10 +435,20 @@ def test_lock_rules_run_after_big_clock(fw, card, t):
     assert ('view_timeinfo', (0, 14, 375, 150)) in moves[:-2]  # Large's place first
 
 
+@pytest.mark.parametrize('t', ['minimal', 'modern'])
+def test_at_a_glance_takes_no_lock_rules(fw, card, t):
+    """At a Glance is every theme's alike: a card theme's lock rules are Default's alone."""
+    win = lock(fw, card, b'move img_slide -9 0', b'move view_playinfo 0 9', b'hide img_screensaver', t=t, LOCKLAYOUT=1)
+    moves = [(name, args[:4]) for name, args in win.calls('widget_move_resize')]
+    assert ('img_slide', (0, 0, 30, 16)) not in moves and moves[-1] != ('view_playinfo', (0, 9, 335, 80))
+    assert ('view_playinfo', (0, 76, 375, 150)) in moves
+    assert ('img_screensaver', 0) not in [(name, args[0]) for name, args in win.calls('widget_set_visible')]
+
+
 # Home
 HOME_ROWS = [name for pg, name, *_ in ROWS if pg[1] == 'home_page']
 SIZES = ('style:normal:font_size', 'style:focused:font_size', 'style:disable:font_size', '_card_px')
-ROCKBOX = b'/mnt/mmc/.rockbox/rockbox'
+ROCKBOX = b'/mnt/mmc/.rockbox/q2-rockbox'  # Shortcut 0's app with no SHORTCUT_APP
 NOT_HOME = theme_file(b'page playing_page', b'hide img_cover', b'font scrlabel_title 30', b'page saverscreen_page',
                       b'hide clock_time')
 

@@ -14,6 +14,7 @@ import pytest
 
 import ipod
 import theme
+from test_build import image
 
 CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT = (theme.sets(theme.builtins()[1])[s] for s in ('classic-light', 'classic-light-text'))  # Classic's sets: its theme.xml
 
@@ -1235,15 +1236,6 @@ def test_lists_beside_settings_rows_take_item_height(monkeypatch):
     assert 'item_height' not in named(ipod.decode(ipod.patch_asset(path, data)))['list_view'][2]
 
 
-def elf(size):
-    """A little MIPS ELF: one LOAD segment, at 0x400000 from file offset 0x1000."""
-    data = bytearray(0x1000 + size)
-    struct.pack_into('<I', data, 28, 52)
-    struct.pack_into('<HH', data, 42, 32, 1)
-    struct.pack_into('<8I', data, 52, 1, 0x1000, 0x400000, 0x400000, size, size, 5, 0x1000)
-    return data
-
-
 SYMBOLS = {'compact_set_row_layout': 0x40a000, 'ipod_list_layout': 0x40b000, 'ringnav_boot': 0x40c000,
            'stock_set_row_layout': 0x40d000, 'stock_row_text': 0x40e000, 'stock_row_style': 0x40f000}
 # SET0's word for each named immediate, as test_immediate_values_set0_are_the_baked_values reads SET0_WORDS.
@@ -1282,7 +1274,7 @@ def code_patches():
 def test_patch_code():
     patches = code_patches()
     assert len({at for at, *_ in patches}) == len(patches)
-    data = elf(0x540000)
+    data = image(0x540000)
     for at, old, _, _ in patches:
         struct.pack_into('<I', data, at - 0x3ff000, old)
     assert ipod.patch_code(data, dict(SYMBOLS)) == [{'address': hex(at), 'original': hex(old), 'patched': hex(new), 'purpose': why}

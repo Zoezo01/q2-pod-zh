@@ -18,6 +18,7 @@ static struct {
     void *qm_queue;
     unsigned qm_queue_hash;
     unsigned char qm_classinfo[912];
+    void *qm_songs; /* an album's songs for Add to Playlist's picker, taken as it opens */
 } qm __attribute__((section(".scratch")));
 
 /* Play/Pause hold queue menu (docs/internals.md). Stock long press fires once per press, so a hold
@@ -68,10 +69,25 @@ static void *page_tracks(widget_t *page) {
                                 : coverflow_tracks(page);
 }
 
-/* The page whose row the menu is for: the one it opened over while it is up (a blink keeps it on
- * top as the row is read), else the top one, before it opens. */
+/* The page whose row the menu is for: the one it opened over while it or its Add to Playlist
+ * picker is up (a blink keeps it on top as the row is read), else the top one, before it opens. */
 static widget_t *qm_under(void) {
-    return st.qm_dialog ? qm.qm_page : window_manager_get_top_window(window_manager());
+    return st.qm_dialog || st.qm_playlist ? qm.qm_page
+                                          : window_manager_get_top_window(window_manager());
+}
+
+/* An album the picker adds as Play Next queues it (qm_collect), not as stock's add would: a
+ * Coverflow cover, which has no showlist row, and an Albums row, whose stock add takes every album
+ * of the name. */
+int qm_own_songs(void) {
+    return qm.qm_kind == QM_COVERALBUM || (qm.qm_kind == QM_ALBUM && qm.qm_cls == CLASS_ALBUMS);
+}
+
+/* Add to Playlist's album songs (qm_own_songs), kept from the menu until the picker goes. */
+void *qm_songs(void) { return qm.qm_songs; }
+void qm_songs_free(void) {
+    if (qm.qm_songs) deque_destroy(qm.qm_songs);
+    qm.qm_songs = 0;
 }
 
 static void *qm_list(void) {
@@ -367,11 +383,14 @@ static int qm_run(const void *unused) {
         if (cls == 0xf00a)
             g_delete_flag = 1;          /* My Fav reloads, as Now Playing's heart (0x53cafc) */
     } else if (r && a == QA_PLAYLIST) { /* the playlist page's add mode adds the selected row */
+        qm_songs_free();
+        /* an album's songs now: the picker covers its page, so its row can't be read at the pick */
+        if (qm_own_songs()) qm.qm_songs = qm_collect(r);
         qm_select();
         navigator_to_with_context(
             "localmusic/playlist_page",
             (void *)(long)((qm.qm_kind == QM_PLAYING ? 0x20000 : 0x10000) | cls));
-        if (qm.qm_kind == QM_PLAYING) {
+        if (qm.qm_kind == QM_PLAYING || qm_own_songs()) {
             widget_t *top = window_manager_get_top_window(window_manager());
             if (!tk_strcmp(widget_get_prop_str(top, "name", ""), "playlist_page")) {
                 st.qm_playlist = top;
@@ -585,7 +604,8 @@ static int qm_open(const void *unused) {
     unsigned aid = song ? 0 : qm_album_id(r);
     int album_hearts = aid ? rate_kept(1, aid) : 0;
     if (aid) acts[n++] = album_hearts == 5 ? QA_UNFAV : QA_FAV, acts[n++] = QA_RATE;
-    if (qm.qm_kind < QM_COVERFLOW || qm.qm_kind == QM_PLAYING) acts[n++] = QA_PLAYLIST;
+    if (qm.qm_kind < QM_COVERFLOW || qm.qm_kind == QM_PLAYING || qm.qm_kind == QM_COVERALBUM)
+        acts[n++] = QA_PLAYLIST;
     /* a card app's song isn't in the Library: Go to only to the app's own page */
     int hidden = song && !addon_goes(P(r, REC_PATH));
     if ((qm.qm_kind == QM_SONG || qm.qm_kind == QM_PLAYING) && album && *album && !hidden &&
@@ -678,9 +698,7 @@ static int qm_list_hold(unsigned at, char *key, void *cover) {
     st.qm_idx = at;
     st.qm_rows = deque_size(lists);
     qm.qm_hash = rec_hash(r);
-    st.qm_press = *(unsigned long long *)(key + INPUT_KEY_TIME);
-    drop_input();
-    return 1;
+    return hold_taken(key);
 }
 
 /* The hold: the same gates and row as a centre press, over the stock showlist or Coverflow's
@@ -692,10 +710,7 @@ int qm_hold(void) {
     const char *name = top ? widget_get_prop_str(top, "name", "") : "";
     int playing = !tk_strcmp(name, "playing_page");
     if (st.rate_on && top == st.rate_on) { /* the picker's: the hold and its release do nothing */
-        char *key = play_key();
-        if (key) st.qm_press = *(unsigned long long *)(key + INPUT_KEY_TIME);
-        drop_input();
-        return 1;
+        return hold_taken(play_key());
     }
     if (st.qm_dialog || qm.qm_timer || st.qm_playlist || !usable() ||
         (!playing && !allowed_top(top)) || window_manager_is_animating(wm) || pointer_down() ||
@@ -715,9 +730,7 @@ int qm_hold(void) {
         st.qm_rows = n;
         qm.qm_hash = rec_hash(r);
         qm.qm_queue_hash = queue_hash(q);
-        st.qm_press = *(unsigned long long *)(key + INPUT_KEY_TIME);
-        drop_input();
-        return 1;
+        return hold_taken(key);
     }
     int kind = contexts[context_id(name)].kind;
     void *album = coverflow_album(top), *cover = coverflow_playlist(top);
@@ -729,9 +742,7 @@ int qm_hold(void) {
         qm.qm_kind = QM_COVERALBUM;
         qm.qm_cls = CLASS_ALBUMS;
         qm.qm_hash = rec_hash(album);
-        st.qm_press = *(unsigned long long *)((char *)key + INPUT_KEY_TIME);
-        drop_input();
-        return 1;
+        return hold_taken(key);
     }
     void *list = page_tracks(top);
     int coverflow = list != 0;
@@ -774,7 +785,5 @@ int qm_hold(void) {
     st.qm_rows = (unsigned)g_menu.rows;
     qm.qm_hash = rec_hash(r);
     qm.qm_browse = browse_hash();
-    st.qm_press = *(unsigned long long *)((char *)key + INPUT_KEY_TIME);
-    drop_input();
-    return 1;
+    return hold_taken(key);
 }

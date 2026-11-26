@@ -230,7 +230,7 @@ SORT_BOX = (0, 0, 16, 12)  # Songs' Sort, white as stock's glyphs: Light Mode fl
 # The volume bar's two ends (volume.c vol_paint), where an iPod classic's are: a speaker, and one with its
 # waves, the iPod bar's height; white as SORT, Light Mode flips them to the ink. The waves end within the cone's
 # height, so the box's rows hold them.
-SPEAKER = 'M0 4.3H3L7.5 0.9V12.1L3 8.7H0Z'
+VOL_SPEAKER = 'M0 4.3H3L7.5 0.9V12.1L3 8.7H0Z'
 SPEAKER_BOX, WAVES_BOX = (0, 0, 8, 13), (0, 0, 18, 13)
 
 
@@ -877,7 +877,7 @@ MSG_INK = {'l': 0x1c1c1e, 'd': 0xffffff}
 CLOCK_PX = 110
 CLOCK_FACE = {'l': (0xe9e9ec, 0x6e6e73), 'd': (0x2c2c2e, 0x98989d)}
 # Now Playing's marks: a glyph on an NP_BOX px square in the half's ink (MSG_INK); More, pressed, in its quiet grey; the
-# heart the rating panel's at NP_HEART of its size, stock's own, so its rating badge sits where it did, filled when on.
+# heart the rating panel's at NP_HEART of its size, stock's own, so its rating fill sits where it did, filled when on.
 NP_BOX, NP_MARKS, NP_HEART = 32, ('more', 'order', 'shuffle', 'repeat', 'repeat1'), .8
 NP_QUIET = {'l': 0x6e6e73, 'd': 0x98989d}
 def flat_glyph(glyph, ink, size=FLAT_BOX, k=1):
@@ -942,8 +942,8 @@ def images(t):
     if t['np_track'] or t['light'].get('np_track'):  # the iPod's bar on Now Playing: its volume's ends
         white = lambda x, y: (0xffffff, 1)
         waves = stroke([p for d in WAVES for p in path(d)], 1.5, closed=False)
-        out[f'{prefix}_vol_lo'] = png(*SPEAKER_BOX[2:], compose(SPEAKER_BOX, [(path(SPEAKER), white)]))
-        out[f'{prefix}_vol_hi'] = png(*WAVES_BOX[2:], compose(WAVES_BOX, [(path(SPEAKER), white), (waves, white)]))
+        out[f'{prefix}_vol_lo'] = png(*SPEAKER_BOX[2:], compose(SPEAKER_BOX, [(path(VOL_SPEAKER), white)]))
+        out[f'{prefix}_vol_hi'] = png(*WAVES_BOX[2:], compose(WAVES_BOX, [(path(VOL_SPEAKER), white), (waves, white)]))
     if t['state_stops']:
         fill, edge = gradient(t['state_stops'], *STATE_Y), gradient(t['state_edge'], *STATE_Y)
         for name, d in STATE.items():

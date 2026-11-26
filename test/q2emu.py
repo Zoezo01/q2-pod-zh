@@ -21,7 +21,7 @@ assert manifest['version'] == (dev_tag(manifest['dev']) if manifest.get('dev') e
 assert manifest.get('compact_code')
 from ipod import INC, O  # patch/offsets.inc and its integer #defines
 from theme import MOTION_WIDGET, MOTION_WINDOW, SCHEME_MODE_OFF, THEME_GEOM_OFF, THEME_MOTION_OFF, builtins as theme_builtins, geometry_sets
-from theme import derive_gloss, turn, GLOSS_TOP  # tools/theme.py: the derived accents' bands
+from theme import turn, GLOSS_TOP  # tools/theme.py: the derived accents' bands
 GEOMS=[g.name for g in geometry_sets(theme_builtins())]; GEOM_CLASSIC_LIGHT,GEOM_CLASSIC_LIGHT_TEXT=GEOMS.index('classic-light'),GEOMS.index('classic-light-text')
 DC=O['DOUBLE_CLICK_MS']  # centre double-press window
 # iPod accent presets: {gradient top, bottom, light tone, red tone, highlight} per Accent setting value.
@@ -210,7 +210,7 @@ class Machine:
         self.clock_minutes=False; self.marquee=False
         self.widget_timers=False  # widget_add_timer schedules (real_hscroll), else it is only recorded
         self.wall=(86400,86400)  # time's result, and the seconds localtime must be given
-        self.rockbox_mode=0o100755; self.groovebox_mode=0  # the launchers' binaries: Rockbox on the card, Groovebox not
+        self.rockbox_mode=0o100755  # Rockbox's binary and its card app's launcher on the card
         self.handlers[syms['__xstat@GLIBC_2.0']]='rockbox_stat'
         self.handlers[syms['strcmp@GLIBC_2.0']]='tk_strcmp'
         self.handlers[syms['memcpy@GLIBC_2.0']]='memcpy'
@@ -435,8 +435,7 @@ class Machine:
             if self.text(b) in self.scope_markers: self.word(c+20,0o100644); ret=0
             elif self.text(b) in ['/mnt/mmc/'+n for n,t in self.card if t==4] or self.text(b) in self.dirs: self.word(c+20,0o40755); ret=0  # a card folder
             elif self.text(b) in self.stats: self.word(c+64,self.stats[self.text(b)]); ret=0  # its mtime: info[16]
-            elif self.text(b)=='/mnt/mmc/.groovebox/q2-groovebox': self.word(c+20,self.groovebox_mode); ret=0 if self.groovebox_mode else -1
-            elif self.text(b)!='/mnt/mmc/.rockbox/rockbox': ret=-1  # Tidal Downloads' rows: no such files here
+            elif self.text(b) not in ('/mnt/mmc/.rockbox/rockbox','/mnt/mmc/.rockbox/q2-rockbox'): ret=-1  # Tidal Downloads' rows: no such files here
             else: self.word(c+20,self.rockbox_mode); ret=0 if self.rockbox_mode else -1
         elif name=='strlen@GLIBC_2.0': ret=len(self.raw(a))  # bytes: stock strips a path's UTF-8 name byte by byte
         elif name=='strrchr@GLIBC_2.0': i=self.text(a).encode().rfind(bytes([b&255])); ret=a+i if i>=0 else 0
@@ -947,7 +946,6 @@ def check_title_bounds(m, button, drill=False):
     margin=m.u.mem_read(layout+O['DEFAULT_LAYOUT_X_MARGIN'],1)[0]
     gap=m.u.mem_read(layout+O['DEFAULT_LAYOUT_SPACING'],1)[0]
     widths={c:m.get(c+O['W_W']) for c in children}
-    title_width=m.get(title+O['W_W'])
     title_yh=(m.get(title+O['W_Y']),m.get(title+O['W_H']))
     attributes={k:v for k,v in m.nodes[title].items() if k=='style' or 'hscroll' in k}
     for artwork in (0,1):
@@ -1159,7 +1157,7 @@ class NavigationMachine(Machine):
                   'widget_remove_child','widget_destroy','window_manager_dispatch_window_event',
                   'widget_foreach','widget_on','playing_timer_start','access@GLIBC_2.0',
                   'remove@GLIBC_2.0','idle_add','netdisk_folder_clear','awake_screen',prefix='nav:')
-        self.rockbox_mode=0o100755; self.groovebox_mode=0  # the launchers' binaries: Rockbox on the card, Groovebox not
+        self.rockbox_mode=0o100755  # Rockbox's binary and its card app's launcher on the card
         self.handlers[syms['__xstat@GLIBC_2.0']]='rockbox_stat'
         self.handlers[syms['strcmp@GLIBC_2.0']]='tk_strcmp'
         for address in (0x53cf08,0x6989cc,0x69bb70,0x699784): self.handlers[address]='nav:'+hex(address)
@@ -2448,8 +2446,6 @@ class ABMachine(QueueMachine):
         if self.handlers.get(address)!='ab:x': return super().hook(u,address,size,unused)
         self.calls.append(('ab_x',u.reg_read(UC_MIPS_REG_A0))); self.returns(self.ab,clobber=True)
 
-from ipod import VALUE_NAMES
-
 CL_BAR_LINE={'1':0x5a595a,'0':0x333333}
 
 class UiLoad:  # the stock loader answers root
@@ -2533,9 +2529,7 @@ def tm_hand(tm_run,deg):
             along.append((px+.5-cx)*ux+(y+.5-cy)*uy); side.append(abs((px+.5-cx)*uy-(y+.5-cy)*ux))
     return min(along),max(along),max(side)
 
-from ipod import corner_inset
 
-from ipod import corner_inset
 
 from fontTools.ttLib import TTFont
 from ipod import CLASSIC_LIGHT_FONT_SRC
@@ -2544,7 +2538,6 @@ def opaque(m,y,h=30): return [b for b in m.bands if b[4]>>24==0xff and y<=b[1]<y
 
 def fill_at(m,x,y): return [b[4] for b in m.bands if b[:4]==(x,y,1,1)]
 
-from ipod import corner_x
 
 def panel_frame(bands,x,y,w,h,light):  # the flip panel's border (coverflow_panel_paint): one flat opaque colour a half, a pixel outside the panel all round,
     c=color_t(0xb4b9c0 if light=='1' else 0x333333); sides=[b[:4] for b in bands if b[4]==c]  # so its left and right columns and its top and bottom rows match
@@ -2594,11 +2587,8 @@ def half_turn(m,hour): m.clock=(hour,0); m.call(address=payload_syms['clock_due'
 def hold_inks(m,d):  # its title's white, final in either half
     m.nodes[m.wm]={'children':[d]}; return m.nodes[named(m,d,'scrlabel_title')]['style:normal:text_color']
 
-from ipod import corner_inset
 
-from fontTools.ttLib import TTFont
 
-from ipod import BC_ART
 
 def diamond(x):
     M,top=O['NP_SCRUB_MARK'],(44-O['NP_BAR_IPOD'])//2
@@ -2955,7 +2945,6 @@ def ratings_albums(m):
     m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=50_000_000); m.advance(0)
     return menu_page
 
-from ipod import corner_inset
 def cf_geometry(m,w): return tuple(signed(m.get(w+O[k])) for k in ('W_X','W_Y','W_W','W_H'))
 
 # Execute stock sibling selection and playback scheduling; mock filesystem enumeration,
@@ -3191,7 +3180,7 @@ def host_render(textures,cases,style=None,paper=None,windows=False,still=False):
     still: nothing moving, as the page's own frame at rest (the shelf's seven); else moving, as a direct render is."""
     import subprocess, tempfile
     from coverflow import CF_SOURCES, SHIM_H
-    from theme import ROLE_MACROS, builtins
+    from theme import builtins
     style=style or {f:v for f,v in builtins()[0].items() if f.startswith('cf.')}  # Minimal's, as the payload has it: a thumb theme, its shelf draws seven covers a side
     if len(textures)==7:  # the seven round the centre, the wide ring's ends left out
         textures=[textures[0]]*4+list(textures)+[textures[0]]*4; cases=[(c[0],c[1]<<4,*c[2:]) for c in cases]
@@ -3252,7 +3241,6 @@ int main(void) {
 
 ps=payload_syms
 
-from theme import builtins as theme_builtins
 
 def columns(px,n=160):
     """An n x n image by rows, red low, as a texture holds it: by columns (texel x, y at x * n + y), the screen's BGRA8888."""
@@ -3541,7 +3529,6 @@ def setting_rows(m,view):  # Accent, Home, Battery, Theme: as ringnav_display's 
     kids=m.nodes[view]['children']
     return [next(r for r in kids if lab(r).startswith(k)) for k in ('Accent','Home','Battery','Theme')]
 
-from build import segments
 from ipod import AUDIT, VALUE_NAMES
 
 SITES={int(a,16):g['value'] for g in AUDIT['immediates'] if isinstance(g['value'],str) for a,_ in g['sites']}
@@ -3591,15 +3578,14 @@ class RockboxMachine(Machine):
         name=self.handlers.get(address,'')
         if not name.startswith('r:'): return super().hook(u,address,size,unused)
         name=name[2:].split('@')[0]; a=u.reg_read(UC_MIPS_REG_A0); self.calls.append((name,a))
-        self.returns(0x2000000 if name=='fopen' and self.text(a)=='/tmp/q2pod-rockbox' else 0)  # any other file is missing
-def rockbox(card):
-    m=RockboxMachine(); m.rockbox_mode=0o100755 if card else 0
+        self.returns(0)  # every file is missing
+def hand_over():
+    m=RockboxMachine()
     for n in ('fopen@GLIBC_2.2','fclose@GLIBC_2.2','system@GLIBC_2.0'): m.handlers[syms[n]]='r:'+n
     m.mock('save_memoryplay_info','player_stop','switch_charge_enable','navigator_to_with_context')
-    assert m.call(address=payload_syms['rockbox_open'],args=(0,m.event,0,0),gap=0)==0
+    m.call(address=payload_syms['ringnav_hand_over'],args=(0,0,0,0),gap=0)
     return m,[c[0] for c in m.calls]
 
-from ipod import corner_inset
 class SettingsMachine(Machine):
     def hook(self,u,address,size,x):
         name=self.handlers.get(address,'')
@@ -3652,7 +3638,6 @@ def stacked_row(m,view):
     item=m.node('list_item',children=[b]); m.word(item+O['W_H'],78); m.nodes[view]['children'].insert(1,item)
     return item,title,detail
 
-from fontTools.ttLib import TTFont
 
 def row_labels(m,k):
     n=m.nodes[k]
@@ -3838,9 +3823,7 @@ def shuffle_note(m,row=0):  # row: Shuffle's (Classic's Library has Search first
     note=m.nodes[m.top]['children'][-1]; assert m.nodes[note]['text']=='Albums and folders take a moment to shuffle' and m.nodes[note]['style:normal:font_size']==16
     return note
 
-from ipod import corner_inset
 
-from fontTools.ttLib import TTFont
 
 def classic_light_home(mode='0'):
     CONFIG['HOME']=mode; m=classic_light_new(ShuffleMachine); del CONFIG['HOME']; classic_light_on(m)
@@ -3965,8 +3948,8 @@ class RateMachine(FileMocks,ShuffleMachine):
     def kept(self):
         data=self.files.get('/mnt/data/ringnav-ratings',b'')
         return sorted(v for v in struct.unpack(f'<{len(data)//4}I',data) if v)
-    def badge(self):
-        w=self.nodes[self.get(self.fav+O['W_PARENT'])]['children'][-1]; return self.nodes[w].get('text') if self.nodes[w]['visible'] else None
+    def badge(self):  # the fill's hearts as a digit, None while hidden: ratings.c's ra.rate_shown (hearts plus 1, after five pointers)
+        w=self.nodes[self.get(self.fav+O['W_PARENT'])]['children'][-1]; return str(self.get(payload_syms['ra']+20)-1) if self.nodes[w]['visible'] else None
     def panel(self):
         p=[w for w in self.nodes[self.np]['children'] if self.nodes[w]['type']=='hscroll_label']
         return p[0] if p and self.nodes[p[0]]['visible'] else None

@@ -3,15 +3,15 @@
 #include "navigation.h"
 
 /* Ratings: the songs' 1-4 and albums' 1-5 heart tables (calloc'd on first use); Now Playing's
- * heart and the heart's stock click context, the 1-4 badge, the hearts picked, the heart's hold
+ * heart and the heart's stock click context, the 1-4 fill, the hearts picked, the heart's hold
  * timer (rate_held once it fired), and the album rated (album_id, 0 for the playing track); the
  * Ratings menu. navigation.h's st has the windows and the list page. */
 static struct {
     unsigned *rates, *album_rates;
     widget_t *rate_fav;
     void *rate_ctx;
-    widget_t *rate_badge;
-    int rate_shown;                     /* the badge's hearts plus 1, 0 for a new badge */
+    widget_t *rate_fill;
+    int rate_shown;                     /* the fill's hearts plus 1, 0 for a new fill */
     int rate_pick, rate_was, rate_held; /* the hearts picked, those the picker opened on */
     int rate_armed;                     /* a press came down on the picker: its release is a tap */
     unsigned rate_at;                   /* when a hold opened the picker (never 0), else 0 */
@@ -31,6 +31,13 @@ static struct {
 /* Now Playing's heart click (playing_page_init binds it to img_fav with the window): stock's My
  * Fav toggled for the playing track (manage_myfav), and the heart's image with it. */
 #define FAV_CLICK ((int (*)(void *, event_t *))0x53c968)
+/* The heart's rows in its image, which the fill's fifths cut: play_fav's 28 px (rows 3-23, its
+ * foot clear, NP_ICON_PAD; test/build.py measures it) and the flat look's 32 px (tools/art.py
+ * np_heart). */
+#define FAV_HEART_TOP 3
+#define FAV_HEART_ROWS 21
+#define FLAT_HEART_TOP 6
+#define FLAT_HEART_ROWS 21
 
 /* The songs' table, or with album the albums', written. */
 static int rate_io(int album) {
@@ -147,24 +154,48 @@ static void np_image(widget_t *w, const char *glyph) {
         widget_invalidate_force(w, (void *)0);
     }
 }
-/* The badge on an empty heart: the playing track's 1-4 hearts, hidden for none and on a full heart
+/* The fill on an empty heart: the playing track's 1-4 hearts, hidden for none and on a full heart
  * (My Fav, whatever was kept before). */
-static void rate_badge(void) {
-    if (!ra.rate_badge) return;
+static void rate_fill_sync(void) {
+    if (!ra.rate_fill) return;
     void *r = rate_track();
     int n = r ? rate_kept(0, listen_key(r)) : 0;
     if (n && !tk_strcmp(widget_get_prop_str(ra.rate_fav, "image", ""), "play_fav")) n = 0;
-    /* each set repaints the badge, and this runs every 500 ms: only a change (AWTK's "text" is
-     * a wide string widget_get_prop_str doesn't read) */
+    /* this runs every 500 ms: only a change repaints the fill */
     if (ra.rate_shown == n + 1) return;
     ra.rate_shown = n + 1;
-    char s[4] = { (char)('0' + n) };
-    widget_set_text_utf8(ra.rate_badge, s);
-    widget_set_visible(ra.rate_badge, n != 0, 0);
+    widget_invalidate_force(ra.rate_fill, (void *)0);
+    widget_set_visible(ra.rate_fill, n != 0, 0);
+}
+
+/* ringnav_paint calls this for every widget after stock painted it, in the widget's own
+ * coordinates. The fill (rate_bind's overlay, the heart's size and place) is the bottom n/5 of the
+ * heart's area, drawn from the image a full heart shows and centred as the heart is: play_fav, or
+ * the flat look's np_heart_on as np_marks.c picks it. */
+void rate_fill_paint(widget_t *w, canvas_t *canvas) {
+    int n = ra.rate_shown - 1;
+    if (!w || w != ra.rate_fill || n < 1 || !P(canvas, CANVAS_LCD)) return;
+    const char *image = "play_fav";
+    char name[40];
+    int top = FAV_HEART_TOP, rows = FAV_HEART_ROWS;
+    if (flat_pages()) {
+        tk_snprintf(name, sizeof name, FLAT_ART "np_heart_on_%s", ipod_light() ? "l" : "d");
+        image = name, top = FLAT_HEART_TOP, rows = FLAT_HEART_ROWS;
+    }
+    unsigned bitmap[64]; /* bitmap_t: width @0, height @4 */
+    if (widget_load_image(w, image, bitmap)) return;
+    int bw = (int)bitmap[0], bh = (int)bitmap[1];
+    /* rows of play_fav's 21 per rating, set by eye on the Q2: 1 a sliver over the outline at the
+     * tip, then even steps, 4 leaving a gap the eye sees at the top */
+    static const unsigned char cut[4] = { 6, 9, 12, 16 };
+    int k = rows * cut[n - 1] / 21, y = top + rows - k;
+    int src[4] = { 0, y, bw, k },
+        dst[4] = { (I(w, W_W) - bw) / 2, (I(w, W_H) - bh) / 2 + y, bw, k };
+    canvas_draw_image(canvas, bitmap, src, dst);
 }
 
 static int rate_tick(const void *unused) {
-    if (g_backlight_status) rate_badge();
+    if (g_backlight_status) rate_fill_sync();
     return 8; /* RET_REPEAT */
 }
 
@@ -286,7 +317,7 @@ static void rate_close(int save) {
     int fav = checkFavExist(r) != 0;
     if (!rate_saved(rate_keep(0, listen_key(r), n))) return;
     if ((n == 5) != fav) FAV_CLICK(ra.rate_ctx, (void *)0), ratings_copy_due(), fav_told(r, n == 5);
-    rate_badge();
+    rate_fill_sync();
 }
 
 /* A tap on the picker is a press that came down on it. The hold that opened it is still down
@@ -390,7 +421,7 @@ static int rate_fav_click(void *ctx, event_t *event) {
     ratings_copy_due();
     void *r = rate_track();
     if (r) rate_keep(0, listen_key(r), 0), fav_told(r, checkFavExist(r) != 0);
-    rate_badge();
+    rate_fill_sync();
     return 0;
 }
 
@@ -398,38 +429,32 @@ static int rate_gone(void *win, event_t *event) {
     if (win != st.rate_win) return 0;
     stop_timer(&ra.rate_hold);
     stop_timer(&ra.rate_tick);
-    st.rate_win = ra.rate_fav = ra.rate_ctx = ra.rate_badge = (void *)0;
+    st.rate_win = ra.rate_fav = ra.rate_ctx = ra.rate_fill = (void *)0;
     ra.rate_held = 0;
     return 0;
 }
 
 /* Now Playing's heart (playing_page_init): stock's click is swapped for one that
- * tells a hold from a tap, and the badge sits on the heart's top right. */
+ * tells a hold from a tap, and the fill goes over the heart (rate_fill_paint). */
 void rate_bind(widget_t *win) {
     widget_t *fav = widget_lookup(win, "img_fav", 1);
-    void *emitter = fav ? P(fav, W_EMITTER) : (void *)0;
     stop_timer(&ra.rate_tick);
     stop_timer(&ra.rate_hold);
-    ra.rate_ctx = (void *)0;
-    for (void *item = emitter ? P(emitter, 0) : 0; item; item = P(item, EMIT_NEXT))
-        if (I(item, EMIT_TYPE) == EVT_CLICK && P(item, 12) == (void *)FAV_CLICK &&
-            !B(item, EMIT_PENDING_REMOVE)) {
-            ra.rate_ctx = P(item, 0);
-            break;
-        }
+    void *item = click_bound(fav, (void *)FAV_CLICK);
+    ra.rate_ctx = item ? P(item, 0) : (void *)0;
     if (!ra.rate_ctx) return;
     st.rate_win = win;
     ra.rate_fav = fav;
     widget_off_by_func(fav, EVT_CLICK, (void *)FAV_CLICK, ra.rate_ctx);
     widget_on(fav, EVT_CLICK, rate_fav_click, ra.rate_ctx);
     widget_on(fav, EVT_POINTER_DOWN, rate_down, (void *)0);
-    ra.rate_badge = label(P(fav, W_PARENT), I(fav, W_X) + I(fav, W_W) - 18, I(fav, W_Y) + 6, 16, 16,
-                          "s_scrlabel_white20c", 12, 0xffffffffu);
-    widget_set_sensitive(ra.rate_badge, 0); /* the heart's corner stays the heart's */
+    ra.rate_fill =
+        image_create(P(fav, W_PARENT), I(fav, W_X), I(fav, W_Y), I(fav, W_W), I(fav, W_H));
+    widget_set_sensitive(ra.rate_fill, 0); /* the heart takes the taps under it */
     ra.rate_shown = 0;
     widget_on(win, EVT_DESTROY, rate_gone, win);
     ra.rate_tick = timer_add(rate_tick, (void *)0, 500);
-    rate_badge();
+    rate_fill_sync();
 }
 
 /* The Library's Ratings row: its menu, then a page of one list's songs, as Most Played's. */

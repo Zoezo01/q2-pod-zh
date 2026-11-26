@@ -1,6 +1,6 @@
 # Q2 setup guide
 
-For a brand new Q2. You need the Q2, its microSD card, a USB-C cable and a computer with internet. The [user guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf) has the full walkthrough, with what you should see at each step.
+For a brand new Q2. You need the Q2, its microSD card, a USB-C cable and a computer with internet. The [user guide](https://github.com/DiamondBond/q2-pod/releases/download/guide/Q2-Pod-User-Guide.pdf) has the full walkthrough, with what you should see at each step.
 
 ## 1. Install Q2 Pod
 
@@ -9,7 +9,7 @@ For a brand new Q2. You need the Q2, its microSD card, a USB-C cable and a compu
 3. Put the card in the Q2 and turn it on.
 4. On the Q2: **System settings → System Update → TF card update**. Leave the card in until the Q2 restarts. Do not unplug it while it updates.
 
-After the restart the Q2 opens on Q2 Pod's Home. Then follow **Start here: play your first song** in the [user guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf): plug in headphones, copy your music, then choose **Library → Update Library**.
+After the restart the Q2 opens on Q2 Pod's Home. Then follow **Start here: play your first song** in the [user guide](https://github.com/DiamondBond/q2-pod/releases/download/guide/Q2-Pod-User-Guide.pdf): plug in headphones, copy your music, then choose **Library → Update Library**.
 
 ## 2. Optional: Spotify
 
@@ -52,4 +52,4 @@ Or, with Q2 Pod on Wi-Fi: **Library → App Store → Rockbox** installs it (pre
   - **Windows:** right-click the card in File Explorer, then **Properties → Tools → Check**. Or, in a Command Prompt run as administrator, `chkdsk X: /f` with the card's drive letter.
   - **macOS:** open **Disk Utility**, select the card and click **First Aid**.
   - **Linux:** with the card unmounted, `sudo fsck.exfat -y /dev/sdX1` for an exFAT card or `sudo fsck.fat -a /dev/sdX1` for FAT32. `lsblk -f` shows the card's name and which of the two it is.
-- **Anything else:** see **Problems with the Q2 and your library**, **Problems with Cover Flow, sound and streaming** and **Help** in Chapter 11 of the [user guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf).
+- **Anything else:** see **Problems with the Q2 and your library**, **Problems with Cover Flow, sound and streaming** and **Help** in Chapter 11 of the [user guide](https://github.com/DiamondBond/q2-pod/releases/download/guide/Q2-Pod-User-Guide.pdf).

@@ -265,6 +265,7 @@ demo	0x4cfda8	0x50	screensaver_page_on_foreground	Page handler for window to for
 demo	0x4cfdf8	0x108	screensaver_row_on_click	Lock screen row click by row name: 0 flips g_screensaver_timeshow, saves SSAVERTIMESHOW and swaps the imgtime_switch image; 1 opens systemset/screensaver_about.
 demo	0x4cff00	0x3f4	screensaver_rows	Rebuilds the Lock screen page's rows and its picture grid.
 demo	0x4d1a7c	0x3cc	systemset_standby_rows	Builds the standby page's rows (scroll_view_standby, list_view_standby) and its deep-standby text.
+demo	0x4d1e48	0x340	standby_row	The standby page's row click, by the button's name: row 0 flips Auto-standby, row 1 Auto-shutdown (turning one on turns the other off), a later row picks Auto-shutdown's time; each saves, reloads the idle counters and rebuilds the rows.
 demo	0x4d3280	0xdc	systemset_sysset_page_on_background	Page handler for window to background: removes the page timer kept in the timer_idex prop.
 demo	0x4d335c	0x58	systemset_sysset_page_on_timer	500 ms page timer: when the force-refresh or auto-change flag is set, clears both and refreshes the navbar play gif.
 demo	0x4d33b4	0x19c	systemset_sysset_item_on_click	Click on a System settings row: indexes the row and jumps through a 13-entry table to that row's action.
@@ -377,6 +378,7 @@ demo	0x53dbf8	0x2b0	playing_page_commit_seek	Applies a seek or an A-B repeat poi
 demo	0x53dea8	0x38	playing_page_on_progress_release	Does nothing unless the seek state is 2, then calls the seek commit function.
 demo	0x53e000	0x1fc	playing_page_on_keydown_seek	Now Playing's key-down handler: keys 222/223 step the slider_play position by 5 s and update label_playtime.
 demo	0x53e1fc	0x138	playing_page_on_progress_drag	On a progress drag updates the time text from the slider value and sets the seek state to 2, clearing the timer.
+demo	0x53ec68	0xec	saver_unlock	The lock window's slide handler (its app_gesture's event 0x2004, the window as ctx): ends the window's timer and closes it.
 demo	0x53ed54	0x3d0	saverscreen_battery_timer	Lock screen refresh: updates the battery label, icon and bar, the track info and the clock on the saver screen.
 demo	0x53f124	0x1c0	saver_cover	Sets the lock screen's img_playcover from the playing track.
 demo	0x53f2e4	0x16c	saverscreen_page_on_timer	Screensaver page timer tick: counts a delay down, redraws the saver page and cover, then returns repeat.

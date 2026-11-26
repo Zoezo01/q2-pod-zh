@@ -61,6 +61,10 @@ FNV_SEED, FNV_PRIME = 2166136261, 16777619
 libc = C.CDLL(None)
 libc.mmap.restype, libc.mmap.argtypes = C.c_void_p, [C.c_void_p, C.c_size_t, C.c_int, C.c_int, C.c_int, C.c_long]
 libc.mprotect.argtypes = [C.c_void_p, C.c_size_t, C.c_int]
+libc.munmap.argtypes = [C.c_void_p, C.c_size_t]
+libc.calloc.restype, libc.calloc.argtypes = C.c_void_p, [C.c_size_t, C.c_size_t]
+libc.free.argtypes = [C.c_void_p]
+libc.qsort.argtypes = [C.c_void_p, C.c_size_t, C.c_size_t, C.c_void_p]
 if libc.mmap(0x400000, 0x800000, 3, 0x100022, -1, 0) != 0x400000:  # read/write, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE
     pytest.exit('test/fw needs a position-independent python: 0x400000-0xc00000, stock\'s addresses, is taken '
                             '(a non-PIE python lives there); use one built with -pie, e.g. actions/setup-python\'s or a venv of a PIE build', returncode=4)
@@ -510,9 +514,9 @@ def scratch(library):
 
 @pytest.fixture
 def st(fw, scratch):
-    """navigation.c's state by field: st('rt_page', C.c_void_p).value."""
+    """navigation.c's state by field: st('rt_page', C.c_void_p).value; st('setting_label', i=3) a pointer array's cell."""
     base = C.addressof(fw.var('st', C.c_char))
-    return lambda name, ctype=C.c_int: ctype.from_address(base + scratch[name])
+    return lambda name, ctype=C.c_int, i=0: ctype.from_address(base + scratch[name] + i * C.sizeof(ctype))
 
 
 @pytest.fixture(scope='module')
@@ -552,10 +556,10 @@ def lists(fw, lists_fields):
     return lambda name, ctype=C.c_int: ctype.from_address(base + lists_fields[name])
 
 
-def opus(tags):
-    """An Ogg Opus file: OpusHead, then tags as packet 1 on pages of its own (no CRC: xiph.c reads none)."""
+def ogg(*packets):
+    """An Ogg file of these packets, each on pages of its own (no CRC: xiph.c reads none)."""
     pages, seq = [], 0
-    for packet in (b'OpusHead' + bytes([1, 2]) + struct.pack('<HIhB', 312, 48000, 0, 0), tags):
+    for packet in packets:
         lacing = [255] * (len(packet) // 255) + [len(packet) % 255]
         for at in range(0, len(lacing), 255):
             part = lacing[at:at + 255]
@@ -563,6 +567,11 @@ def opus(tags):
                          bytes(part) + packet[at * 255:at * 255 + sum(part)])
             seq += 1
     return b''.join(pages)
+
+
+def opus(tags):
+    """An Ogg Opus file: OpusHead, then tags as packet 1."""
+    return ogg(b'OpusHead' + bytes([1, 2]) + struct.pack('<HIhB', 312, 48000, 0, 0), tags)
 
 
 def stock_stub(address, result, log):
@@ -596,3 +605,22 @@ class Config:
 
 class Dirent(C.Structure):  # host.py's struct dirent
     _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
+
+
+def dir_readdir(self, d, *_):
+    """A test card's readdir: the next name of self.dirs[d] as a dirent, 0 once it is spent."""
+    if not self.dirs[d]:
+        return 0
+    ent = C.create_string_buffer(268)  # host.py's struct dirent: d_name at 11
+    name = self.dirs[d].pop(0).encode()
+    C.memmove(C.addressof(ent) + 11, name, len(name))
+    self.ents.append(ent)
+    return C.addressof(ent)
+
+
+def card_fread(owner, buf, size, n, f, *_):
+    """A fake card's fread: the bytes of owner.names[f] from owner.at[f], into buf."""
+    piece = owner.files[owner.names[f]][owner.at[f]:owner.at[f] + size * n]
+    C.memmove(buf, piece, len(piece))
+    owner.at[f] += len(piece)
+    return len(piece) // size

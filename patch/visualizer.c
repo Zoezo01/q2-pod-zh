@@ -93,10 +93,6 @@ static void fft(float *re, float *im, int n) {
     }
 }
 
-static int band_bin(int b, unsigned rate) {
-    return (int)(40 * pow(400, (double)b / VIS_HALO) * VIS_N / rate + 0.5);
-}
-
 /* level[VIS_HALO]: each band's loudest bin of the Hann-windowed mono mix of VIS_N frames at rate, 0
  * at VIS_FLOOR_DB below a full-scale sine to 1 at it. */
 void vis_bands(const float (*pcm)[2], unsigned rate, float *level) {
@@ -109,7 +105,8 @@ void vis_bands(const float (*pcm)[2], unsigned rate, float *level) {
     }
     fft(vz.re, vz.im, VIS_N);
     if (vz.bin_rate != rate) {
-        for (int b = 0; b <= VIS_HALO; ++b) vz.bin[b] = band_bin(b, rate);
+        for (int b = 0; b <= VIS_HALO; ++b)
+            vz.bin[b] = (int)(40 * pow(400, (double)b / VIS_HALO) * VIS_N / rate + 0.5);
         vz.bin_rate = rate;
     }
     for (int b = 0; b < VIS_HALO; ++b) {

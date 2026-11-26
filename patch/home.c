@@ -150,13 +150,6 @@ void library_rows(widget_t *list) {
     widget_off_by_ctx(list, list);
 }
 
-/* Streaming's AirPlay row: stock's own receiver (Shairport 1.1.1, AirPlay 1), whose switch is on
- * System settings' Network service page; that page, one press from Streaming. */
-static int airplay_open(void *ctx, event_t *event) {
-    navigator_to("systemset/netservice_page");
-    return 0;
-}
-
 /* Whether w, or a widget in it, shows the image name. */
 static int shows_image(widget_t *w, const char *name) {
     if (!tk_strcmp(widget_get_prop_str(w, "image", ""), name)) return 1;
@@ -217,8 +210,11 @@ int ringnav_stream(widget_t *win, void *ctx) {
                     i++, hide);
         svc_row(library_row(view, "list_tidal", tidal_downloads, 0, "Tidal 下载", 1), i++,
                 hide);
-        svc_row(library_row(view, "stream_radio", radio_open, 0, "网络电台", 1), i++, hide);
-        svc_row(library_row(view, "stream_airplay", airplay_open, 0, "AirPlay", 1), i, hide);
+        /* Streaming's AirPlay row: stock's own receiver (Shairport 1.1.1, AirPlay 1), whose switch
+         * is on System settings' Network service page; that page, one press from Streaming. */
+        svc_row(library_row(view, "stream_airplay", to_page, (void *)"systemset/netservice_page",
+                            "AirPlay", 1),
+                i, hide);
         library_row(view, "stream_config", stream_config, 0, "流媒体设置", 1);
     }
     return result;

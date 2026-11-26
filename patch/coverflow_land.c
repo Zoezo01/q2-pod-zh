@@ -184,6 +184,19 @@ extern void ringnav_light(widget_t *list, int index), drop_held(void);
 #define LAND_HOLD_TICK_MS 50
 #define LAND_FIRST_PAINT_MS 2000 /* open to Now Playing's first paint; about 700 ms on the Q2 */
 
+/* The way back (Classic, docs/internals.md, the landing): Now Playing, opened by a pick on the
+ * panel, closing onto Cover Flow shuts the panel at once, and over the shelf the centre cover
+ * flies from Now Playing's art to its place from back_at ms, while each side cover slides in from
+ * back_out % of a cover outwards, back_step ms later an album out, each over back_ms on
+ * land_ease. Its state: the window armed, the art's keystone in the shelf's frame (x, y its top
+ * left, 1/256 px), the clock and the frame's ms. A key or a touch ends it, the shelf at rest. */
+static struct {
+    widget_t *win;
+    int on, ms, x, y;
+    unsigned t0, timer;
+} bk __attribute__((section(".scratch")));
+static void back_end(void);
+
 static void land_end(void) {
     stop_timer(&land.timer);
     if (land.frame) bitmap_destroy(land.frame);
@@ -356,6 +369,7 @@ static int land_open(const void *unused) {
  * not over yet plays its song now, as with no landing; a frame drawn over Now Playing goes with it.
  */
 void land_drop(void) {
+    back_end(), bk.win = 0;
     if (land.timer && !land.win) coverflow_play(land.row);
     if (land.win) widget_invalidate_force(land.win, 0);
     land_end();
@@ -367,6 +381,7 @@ void land_drop(void) {
  * Return Now Playing doesn't take yet (its open event comes after the pass's input): dropped, not
  * replayed after the open event. A second one reaches Cover Flow's page, whose keyup drops it. */
 int land_key(unsigned key) {
+    back_end(); /* any key: the shelf at rest, the key its own; Now Playing's Return comes first */
     if (!land.front || land.ms >= land.L.len ||
         (key != KEY_PREV && key != KEY_NEXT && key != KEY_RETURN))
         return 0;
@@ -420,3 +435,121 @@ int land_start(void *t, int row, unsigned t0) {
     drop_held(); /* wheel ticks held before a tap's pick */
     return 1;
 }
+
+static int back_len(void) {
+    const cf_style_t *s = &theme()->cf;
+    int far = s->land_back_step * CF_REACH; /* at rest the shelf draws CF_REACH a side */
+    return (s->land_back_at > far ? s->land_back_at : far) + s->land_back_ms;
+}
+
+/* The motion over, the shelf drawn at rest; a Now Playing armed stays armed. */
+static void back_end(void) {
+    stop_timer(&bk.timer);
+    if (bk.on) fx.drawn = 0, widget_invalidate_force(cf.covers, 0);
+    bk.on = 0;
+}
+
+static int back_tick(const void *unused) {
+    if ((int)((unsigned)time_now_ms() - bk.t0) < back_len() &&
+        window_manager_get_top_window(window_manager()) == cf.page &&
+        !window_manager_get_pointer_pressed(window_manager())) {
+        widget_invalidate_force(cf.covers, 0);
+        return 8; /* RET_REPEAT */
+    }
+    bk.timer = 0;
+    back_end();
+    return 0;
+}
+
+/* A widget's place on the screen. */
+static void back_abs(widget_t *w, int *x, int *y) {
+    for (*x = *y = 0; w && w != window_manager(); w = P(w, W_PARENT))
+        *x += I(w, W_X), *y += I(w, W_Y);
+}
+
+/* Now Playing closing: onto Cover Flow's page (the window under it), with its art leaning at
+ * NP_IPOD_ART inside the shelf's frame, the song still the centre album's, the way back starts. */
+static int back_close(void *ctx, event_t *event) {
+    if (ctx != bk.win) return 0;
+    bk.win = 0;
+    widget_t *wm = window_manager(), *art = widget_lookup(ctx, "img_cover", 1);
+    int i = (int)widget_count_children(wm), ax, ay, fx0, fy0;
+    while (--i >= 0 && widget_get_child(wm, i) != ctx) continue;
+    unsigned pos, n;
+    void *r = queue_now(&pos, &n), *c = deque_at(cf.albums, (unsigned)cf.album);
+    if (i < 1 || widget_get_child(wm, i - 1) != cf.page || !fl.panel || fl.dir || !art ||
+        I(art, W_W) != NP_IPOD_ART || I(art, W_H) <= NP_IPOD_ART || !r || !c ||
+        album_key(r) != album_key(c))
+        return 0;
+    back_abs(art, &ax, &ay);
+    back_abs(cf.slide, &fx0, &fy0);
+    ax -= fx0, ay -= fy0;
+    if (ax < 0 || ay < 0 || ax + NP_IPOD_ART > CF_VIEW_W || ay + NP_IPOD_ART > cfs.view_h) return 0;
+    flip_done(); /* the panel shut, the shelf at its album */
+    bk.x = ax * 256, bk.y = ay * 256, bk.t0 = (unsigned)time_now_ms(), bk.on = 1, bk.ms = 0;
+    if (!(bk.timer = timer_add(back_tick, 0, FLIP_TICK_MS))) back_end();
+    widget_invalidate_force(cf.covers, 0);
+    return 0;
+}
+
+/* coverflow_play's: Now Playing just opened over Classic's panel, its close watched. */
+void back_arm(void) {
+    widget_t *win = window_manager_get_top_window(window_manager());
+    back_end(), bk.win = 0;
+    if (!classic_pages() || !theme()->cf.land_back_ms || !fl.panel || cf.scoped == PLAYLISTS ||
+        np_layout() == NP_CENTRED || !win || win == cf.page ||
+        tk_strcmp(widget_get_prop_str(win, "name", ""), "playing_page"))
+        return;
+    bk.win = win;
+    widget_on(win, EVT_WINDOW_CLOSE, back_close, win);
+}
+
+/* coverflow_paint's: whether the way back runs, its ms for this frame's covers. */
+int back_frame(void) {
+    if (bk.on) bk.ms = (int)((unsigned)time_now_ms() - bk.t0);
+    return bk.on;
+}
+
+/* draw_cover's: under the way back, the centre cover (t 0) drawn on its path, 1, until it lands,
+ * and a side cover's pose p moved outwards by what its slide has left; 0 to draw p. The centre's
+ * path: its edges upright, from the art's keystone (slant_render's, its centre line level) to the
+ * shelf's front cover, its line eased onto the shelf's from the art's middle. */
+int back_pose(shelf_t *f, int t, pose_t *p, const unsigned *tex) {
+    if (!bk.on || !tex) return 0;
+    const cf_style_t *s = &theme()->cf;
+    int k = (ABS(t) + CF_ONE / 2) >> 16, at = k ? s->land_back_step * k : s->land_back_at;
+    float e = land_ease((float)(bk.ms - at) / s->land_back_ms);
+    if (k) {
+        int out = 16 * ART_SIZE * s->land_back_out / 100;
+        p->xc += (int)((float)out * (1 - e));
+        return 0;
+    }
+    if (e >= 1) return 0;
+    int side = NP_IPOD_ART * 256, in = side * (256 - SLANT_FAR) / 512, rest = ART_SIZE * 256;
+    float u = 1 - e;
+    int x0 = bk.x / 16 - 16 * CF_CX, x1 = (bk.x + side) / 16 - 16 * CF_CX;
+    int xl = (int)((float)(-8 * ART_SIZE) * e + (float)x0 * u);
+    int xr = (int)((float)(8 * ART_SIZE) * e + (float)x1 * u);
+    int hl = (int)((float)rest * e + (float)side * u),
+        hr = (int)((float)rest * e + (float)(side - 2 * in) * u);
+    /* the shelf's line: top 256 top + (rest - h) horizon / 100, so at h 0 and its slope */
+    int top = 256 * cfs.top + rest * cfs.horizon / 100, y0 = bk.y + side / 2;
+    float y1 = (float)top, z1 = 256.f * cfs.horizon / 100;
+    cf_lift_y = (int)(y1 * e + (float)y0 * u);
+    cf_lift_hz = (int)(z1 * e + 128 * u);
+    draw_quad(f, xl, xr, hl, hr, tex, 256);
+    cf_lift_hz = 0;
+    return 1;
+}
+#ifdef PEQ_HOST
+/* For test/coverflow.py: the way back running (on) at ms, the art's top left at x, y. */
+void cf_back_test(int on, int ms, int x, int y) {
+    bk.on = on, bk.ms = ms, bk.x = x * 256, bk.y = y * 256;
+}
+/* For test/coverflow.py: a way back started now, its ms left at the last one's end, the frame
+ * changed (fx.drawn 0): the first paint after back_close. */
+void cf_back_stale(int x, int y) {
+    cf_back_test(1, 900, x, y);
+    bk.t0 = (unsigned)time_now_ms(), fx.drawn = 0;
+}
+#endif

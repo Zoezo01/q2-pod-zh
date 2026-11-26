@@ -7,12 +7,11 @@ extern void stock_timezone_row_trampoline(widget_t *, int);
 static const char *const tz_names[] = TIMEZONE_NAMES;
 #define TZ_COUNT (sizeof tz_names / sizeof *tz_names)
 
-static void clock_zone(void);
 int ringnav_timezone(void) {
     unsigned n = g_time_zone;
     int result = n < TZ_COUNT ? toolsSetTimeZone(tz_names[n]) : stock_timezone_trampoline();
-    tzset(); /* localtime_r does not reload TZ itself */
-    clock_zone();
+    tzset();                          /* localtime_r does not reload TZ itself */
+    if (st.clock_timer) clock_show(); /* the bar runs; boot's call comes before it */
     return result;
 }
 
@@ -96,7 +95,6 @@ void ringnav_timezone_row(widget_t *item, int i) {
  * pass after the bar first paints or paints with a new 24-hour setting (ringnav_paint_bg).
  * ponytail: a network time sync while lit shows at the next minute. */
 int clock_due(const void *info) {
-    (void)info;
     st.clock_timer = 0;
     clock_show();
     return 0;
@@ -137,9 +135,6 @@ void clock_show(void) {
                                 i ? (i == 1 ? "style:disable:font_size" : "style:focused:font_size")
                                   : "style:normal:font_size",
                                 16);
-}
-static void clock_zone(void) {
-    if (st.clock_timer) clock_show(); /* the bar runs; boot's call comes before it */
 }
 
 /* Minutes since midnight now, or -1 when the clock can't be read. */
@@ -239,7 +234,6 @@ static void time_title(widget_t *win) {
     widget_set_text_utf8(label, s);
 }
 static int time_changed(void *win, event_t *event) {
-    (void)event;
     int first = -1;
     for (int f = 4; f >= 0; --f) {
         int now = tf.sel[f] ? I(tf.sel[f], SELECTOR_INDEX) : 0;
@@ -280,7 +274,6 @@ void time_wheel(widget_t *top, int f, int dir) {
     field_set(top, f);
 }
 static int time_ampm(void *win, event_t *event) {
-    (void)event;
     time_wheel(win, TIME_AMPM, 1);
     return 0;
 }
@@ -434,28 +427,23 @@ void paint_clock(widget_t *w, canvas_t *canvas, int x, int y, int size, const ch
     }
     stock_canvas_set_fill_color(canvas, fill);
 }
-static const clock_part_t time_clock[] = {
-    { 0x161b22, 0, 5, 1, { { -12, 0 }, { -21, -60 }, { 0, -190 }, { 21, -60 }, { 12, 0 } } },
-    { 0x161b22, 0, 5, 2, { { -10, 0 }, { -18, -70 }, { 0, -280 }, { 18, -70 }, { 10, 0 } } },
-    { 0x161b22, 37, 0, 0, { { 0 } } }, /* r 3, stroked 1.3 */
-    { 0xffffff, 24, 0, 0, { { 0 } } },
-};
-
 /* UTF-8 text in final colours, as Light Mode's text setter flips what it's given. */
 static void time_text(canvas_t *canvas, const char *s, const rect_t *r, unsigned px, unsigned rgb,
                       unsigned alpha) {
     caption(canvas, s, r->x, r->y, r->w, r->h, px,
             alpha << 24 | (RGBA(flip_if(ipod_light(), rgb)) & 0xffffff));
 }
-/* The flat look's Set Time hands in the half's ink, [0] dark and [1] light (flat_ink), and the
- * pivot's dot in its face's grey (flat_rest). */
+/* The clock's parts for an ink and a face: the flat look's Set Time, in the half's ink, [0] dark
+ * and [1] light (flat_ink), and the pivot's dot in its face's grey (flat_rest); Classic's clock
+ * (time_clock). */
 #define TIME_HANDS(ink, face)                                                                      \
     {                                                                                              \
         { ink, 0, 5, 1, { { -12, 0 }, { -21, -60 }, { 0, -190 }, { 21, -60 }, { 12, 0 } } },       \
         { ink, 0, 5, 2, { { -10, 0 }, { -18, -70 }, { 0, -280 }, { 18, -70 }, { 10, 0 } } },       \
-        { ink, 37, 0, 0, { { 0 } } },                                                              \
+        { ink, 37, 0, 0, { { 0 } } }, /* r 3, stroked 1.3 */                                       \
         { face, 24, 0, 0, { { 0 } } },                                                             \
     }
+static const clock_part_t time_clock[] = TIME_HANDS(0x161b22, 0xffffff);
 static const clock_part_t time_clock_flat[2][4] = { TIME_HANDS(0xffffff, 0x2c2c2e),
                                                     TIME_HANDS(0x1c1c1e, 0xe9e9ec) };
 /* A cell's text: AM or PM, the 12-hour hour, or the field's number in b (cap bytes). */

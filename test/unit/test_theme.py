@@ -133,7 +133,7 @@ CLASSIC_THUMB = dict(thumb=1, ticks_turn=36, ticks_album=7, fast_at=23, fast_ful
 CF_TODAY = {'cf.top': 13, 'cf.x1': 128, 'cf.xs': 35, 'cf.z1': 77, 'cf.zs': 0, 'cf.eye': 256, 'cf.bright1': 192,
             'cf.bright2': 128, 'cf.reflect': 46, 'cf.reflect_top': 90, 'cf.stride': 110, 'cf.radius': 12,
             'cf.tilt': 90, 'cf.horizon': 64, 'cf.third': 1, 'cf.swing': 2, 'cf.lift': 0, 'cf.eye_turn': 0, 'cf.view_h': 220, **{f'cf.{a}': v for a, v in CLASSIC_THUMB.items()}, 'cf.name_px': 24, 'cf.artist_px': 20, 'cf.text_y': 212, 'cf.artist_y': 32, 'cf.art_persp': 100,
-            **{f'cf.land_{a}': 0 for a in ('press', 'ms', 'travel', 'out_at', 'out_ms', 'np_at', 'np_ms', 'hold')}}
+            **{f'cf.land_{a}': 0 for a in ('press', 'ms', 'travel', 'out_at', 'out_ms', 'np_at', 'np_ms', 'hold', 'back_ms', 'back_at', 'back_step', 'back_out')}}
 
 
 MOTION_TODAY = {**{f'motion.{k}.{a}': 0 for k in ('page', 'playing', 'coverflow') for a in ('ms', 'easing', 'anim')},
@@ -648,10 +648,11 @@ def test_coverflow_arch_needs_its_numbers():  # th_arch's divisors, and a span o
 
 def test_coverflow_land_is_classics():  # the landing's numbers: Classic's, off (0) in Minimal and Modern
     ts = theme.builtins()
-    assert {a: ts[1][f'cf.land_{a}'] for a in ('press', 'ms', 'travel', 'out_at', 'out_ms', 'np_at', 'np_ms', 'hold')} == dict(
-        press=0, ms=400, travel=55, out_at=0, out_ms=110, np_at=90, np_ms=100, hold=2000)
+    assert {a: ts[1][f'cf.land_{a}'] for a in ('press', 'ms', 'travel', 'out_at', 'out_ms', 'np_at', 'np_ms', 'hold', 'back_ms', 'back_at', 'back_step', 'back_out')} == dict(
+        press=0, ms=400, travel=55, out_at=0, out_ms=110, np_at=90, np_ms=100, hold=2000, back_ms=600, back_at=250, back_step=100,
+        back_out=143)
     for t in (ts[0], ts[2]):
-        assert t['cf.land_ms'] == 0 and t['cf.land_travel'] == 0
+        assert t['cf.land_ms'] == 0 and t['cf.land_travel'] == 0 and t['cf.land_back_ms'] == 0
         theme.validate(t, 't.xml')
 
 

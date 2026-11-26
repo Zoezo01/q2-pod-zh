@@ -18,7 +18,7 @@ ALL_ACCENTS = (1 << len(ACCENT_NAMES)) - 1
 SETTINGS = {'light': ('SETTING_LIGHT', ('off', 'on', 'auto')), 'accent': ('SETTING_ACCENT', ACCENT_NAMES),
             'corners': ('SETTING_ROUNDED', ('square', 'round')), 'home': ('SETTING_HOME', ('split', 'full', 'carousel')),
             'battery': ('SETTING_BATTERY', ('icon', 'percent', 'both', 'inside')),
-            'shortcut': ('SETTING_SHORTCUT', ('rockbox', 'artists', 'albums', 'favorites', 'rated_albums', 'shuffle', 'games', 'playlists', 'podcasts', 'audiobooks', 'groovebox', 'none')),
+            'shortcut': ('SETTING_SHORTCUT', ('app', 'artists', 'albums', 'favorites', 'rated_albums', 'shuffle', 'games', 'playlists', 'podcasts', 'audiobooks', '(unused)', 'none')),
             'time_title': ('SETTING_TIMETITLE', ('off', 'on')),
             'np_layout': ('SETTING_NPCENTRED', ('ipod', 'centred'))}
 ACCENT_KEYS = {'ACCENT': '&st.accent', 'MINIMAL_ACCENT': '&st.minimal_accent'}
@@ -213,10 +213,12 @@ SCHEMA = {k.path: k for k in (
         ('caption', 'text_y', 210, 290), ('caption', 'artist_y', 20, 32))),
     # % of the plane's own spacing of a cover's art, from even (0); 100, the plane's, is Minimal's
     Key('coverflow.shelf.art_persp', 'cf.art_persp', 'int', 0, 100, 100, 'open'),
-    # the landing (a song picked on the flip panel flies its cover to Now Playing); ms 0: none, the panel's click as before
+    # the landing (a song picked on the flip panel flies its cover to Now Playing); ms 0: none, the panel's click as before;
+    # back_ms the way back from Now Playing to the shelf, 0: none
     *(Key(f'coverflow.land.{a}', f'cf.land_{a}', 'int', lo, hi, 0, 'open') for a, lo, hi in (
         ('press', 0, 500), ('ms', 0, 2000), ('travel', 0, 100), ('out_at', 0, 2000), ('out_ms', 0, 2000), ('np_at', 0, 2000),
-        ('np_ms', 0, 2000), ('hold', 0, 5000))),
+        ('np_ms', 0, 2000), ('hold', 0, 5000), ('back_ms', 0, 2000), ('back_at', 0, 2000), ('back_step', 0, 500),
+        ('back_out', 0, 400))),
     Key('page.rows.height', 'page_row', 'int', 20, 64, 48, 'open'),
     Key('page.rows.detail_height', 'page_detail', 'int', 20, 80, 64, 'open'),
     Key('page.title.height', 'page_title_h', 'int', 0, 48, 48, 'open'),

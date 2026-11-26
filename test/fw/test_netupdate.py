@@ -14,7 +14,7 @@ import zipfile
 import pytest
 
 import host
-from conftest import Dirent, O, block
+from conftest import Config, Dirent, O, block, card_fread
 
 # stock.h's Q2POD_TAG: tools/build.py's VERSION (host.py builds as a release, not --dev)
 TAG = host.tools_build.VERSION.encode()
@@ -368,7 +368,7 @@ def test_a_cut_or_hostile_release_is_none_or_the_same_answer(fw):
 SHA_CHUNK = 1 << 14
 
 
-def sha256(fw, card, path=b'/mnt/mmc/x'):
+def sha256(fw, path=b'/mnt/mmc/x'):
     out, size = block(fw, size=65), C.c_uint(7)
     ok = fw.fn('netupdate_sha256', C.c_int, C.c_char_p, C.c_void_p, C.POINTER(C.c_uint))(path, out, C.byref(size))
     return ok, C.string_at(out).decode(), size.value
@@ -378,20 +378,21 @@ def sha256(fw, card, path=b'/mnt/mmc/x'):
                                SHA_CHUNK, SHA_CHUNK + 1, 2 * SHA_CHUNK, 3 * SHA_CHUNK + 55, 100003])
 def test_a_file_s_sha256_at_every_edge_of_its_padding(fw, n):
     data = random.Random(n).randbytes(n)
-    assert sha256(fw, Card(fw, {b'/mnt/mmc/x': data})) == (1, sha(data), n)
+    Card(fw, {b'/mnt/mmc/x': data})
+    assert sha256(fw) == (1, sha(data), n)
 
 
 def test_the_known_answers(fw):
-    card = Card(fw, {b'/mnt/mmc/x': b'abc', b'/mnt/mmc/y': b'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'})
-    assert sha256(fw, card)[1] == 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'  # FIPS 180-4's examples
-    assert sha256(fw, card, b'/mnt/mmc/y')[1] == '248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1'
+    Card(fw, {b'/mnt/mmc/x': b'abc', b'/mnt/mmc/y': b'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'})
+    assert sha256(fw)[1] == 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'  # FIPS 180-4's examples
+    assert sha256(fw, b'/mnt/mmc/y')[1] == '248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1'
 
 
 def test_a_file_that_is_missing_or_fails_to_read_has_no_sha256(fw):
-    card = Card(fw, {b'/mnt/mmc/x': b'abc'})
-    assert sha256(fw, card, b'/mnt/mmc/none')[0] == 0
+    Card(fw, {b'/mnt/mmc/x': b'abc'})
+    assert sha256(fw, b'/mnt/mmc/none')[0] == 0
     fw.mock('fw_ferror', lambda *_: 1)
-    assert sha256(fw, card)[0] == 0
+    assert sha256(fw)[0] == 0
 
 
 def row(size, name):
@@ -587,11 +588,7 @@ class Card:
             if b'w' in how:
                 self.written[name] = b''
             return f
-        def fread(buf, size, n, f, *_):
-            piece = self.files[self.names[f]][self.at[f]:self.at[f] + size * n]
-            C.memmove(buf, piece, len(piece))
-            self.at[f] += len(piece)
-            return len(piece) // size
+        fread = lambda *a: card_fread(self, *a)
         def fseek(f, at, whence, *_):
             self.at[f] = len(self.files[self.names[f]]) if whence == 2 else at
         def fwrite(buf, size, n, f, *_):
@@ -1390,39 +1387,41 @@ def test_a_failed_download_says_why(fw):
     assert install(fw, card, net)[0] == SH_MISSING
 
 
-def state(fw, card, latest=b'', i=0):
+def state(fw, latest=b'', i=0):
     (App * SH_MAX).in_dll(fw.lib, 'shelf_apps')[i].latest = latest
     return fw.fn('netupdate__sh_state', C.c_int, C.c_int)(i)
 
 
 def test_installed_with_a_tag(fw):
     apps(fw, b'me/foo')
-    card = Card(fw, {b'/mnt/mmc/.q2/apps/foo.tag': b'2.0'})
-    assert state(fw, card) == ST_INSTALLED and state(fw, card, b'2.0') == ST_INSTALLED
-    assert state(fw, card, b'2.1') == ST_UPDATE
+    Card(fw, {b'/mnt/mmc/.q2/apps/foo.tag': b'2.0'})
+    assert state(fw) == ST_INSTALLED and state(fw, b'2.0') == ST_INSTALLED
+    assert state(fw, b'2.1') == ST_UPDATE
 
 
 def test_a_binary_without_a_tag_is_a_manual_install(fw):
     apps(fw, b'me/foo')
-    assert state(fw, Card(fw, {b'/mnt/mmc/.foo/q2-foo': b''})) == ST_UPDATE
+    Card(fw, {b'/mnt/mmc/.foo/q2-foo': b''})
+    assert state(fw) == ST_UPDATE
 
 
 def test_a_folder_where_the_binary_should_be_is_not_installed(fw):
     apps(fw, b'me/foo')
-    card = Card(fw, {b'/mnt/mmc/.foo/q2-foo': b''})
+    Card(fw, {b'/mnt/mmc/.foo/q2-foo': b''})
     fw.mock('fw___xstat', lambda v, p, info, *_: C.cast(info, C.POINTER(C.c_uint)).__setitem__(5, 0o040755))
-    assert state(fw, card) == ST_INSTALL
+    assert state(fw) == ST_INSTALL
 
 
 def test_nothing_on_the_card(fw):
     apps(fw, b'me/foo', b'x/q2-rockbox-themes')
-    card = Card(fw)
-    assert state(fw, card) == ST_INSTALL and state(fw, card, i=1) == ST_INSTALL  # the themes have no binary
+    Card(fw)
+    assert state(fw) == ST_INSTALL and state(fw, i=1) == ST_INSTALL  # the themes have no binary
 
 
 def test_a_tag_file_too_long_is_held_to_its_buffer(fw):
     apps(fw, b'me/foo')
-    assert state(fw, Card(fw, {b'/mnt/mmc/.q2/apps/foo.tag': b'x' * 500}), b'x' * 31) == ST_UPDATE
+    Card(fw, {b'/mnt/mmc/.q2/apps/foo.tag': b'x' * 500})
+    assert state(fw, b'x' * 31) == ST_UPDATE
 
 
 def test_file_mode_is_its_type_bits(fw):
@@ -1489,10 +1488,8 @@ def test_a_press_without_wifi_says_so(fw):
     assert p.sh.job == 0 and p.toasts == ['Connect to Wi-Fi first']
 
 
-def test_rockbox_asks_twice_as_it_becomes_the_default(fw):
+def test_rockbox_installs_on_one_press_as_any_app(fw):
     p = Page(fw, b'x/q2-rockbox')
-    p.click()
-    assert p.sh.job == 0 and p.label(1).endswith('Press again to install')
     p.click()
     assert p.sh.job == JOB_INSTALL
 
@@ -2970,17 +2967,15 @@ def test_an_install_that_fails_says_why_and_leaves_the_card_alone(fw, case, said
     assert sorted(card.files) == [SOURCES, MOUNTS]
 
 
-def test_rockbox_installs_on_a_second_press_keeping_its_config(fw):
+def test_rockbox_installs_keeping_its_config_and_says_where_its_row_is(fw):
     card = Disk(fw, {SOURCES: b'x/q2-rockbox Rockbox\n', b'/mnt/mmc/.rockbox/config.cfg': b'mine'})
     store_net(fw, {'.rockbox/rockbox': b'bin', '.rockbox/config.cfg': b'defaults', '.rockbox/fonts/a.fnt': b'font'},
               listed=b'x/q2-rockbox Rockbox\n')
     s = Store(fw, card, wifi=0)
     s.wifi = 1
     s.click()
-    label, = s.labels()
-    assert label.endswith('Press again to install') and not s.workers
-    s.click()
-    assert s.run() == 0 and s.toasts == ['Rockbox is ready. Find it on Home'] and s.labels() == ['已安装']
+    # its q2app (row=library) isn't in this zip: the generic toast's place is Streaming's, as for any app without one
+    assert s.run() == 0 and s.toasts == ['Rockbox is ready in Streaming'] and s.labels() == ['Installed']
     assert card.files[b'/mnt/mmc/.rockbox/config.cfg'] == b'mine' and card.files[b'/mnt/mmc/.rockbox/rockbox'] == b'bin'
     assert card.moves(b'/mnt/mmc/.rockbox/') == [b'/mnt/mmc/.rockbox/fonts/a.fnt', b'/mnt/mmc/.rockbox/rockbox']
 
@@ -3161,8 +3156,8 @@ def test_the_tabs_split_the_list_and_previous_and_next_switch_them(fw):
     store_net(fw)
     fw.mock('widget_factory_create_widget', lambda *_: 88)  # the strip
     s = Store(fw, card, wifi=0)
-    assert s.sh.tab == 0 and s.labels() == ['安装'] and s.details() == ['me'] and s.props[(88, '_tab')] == 0
-    key = fw.fn('shelf_key', C.c_int, C.c_void_p, C.c_uint)
+    assert s.sh.tab == 0 and s.labels() == ['Install'] and s.details() == ['me'] and s.props[(88, '_tab')] == 0
+    key = fw.fn('store_tabs_key', C.c_int, C.c_void_p, C.c_uint)
     assert key(77, O['KEY_FWD_BTN']) == 1 and s.sh.tab == 1 and s.details() == ['you'] and s.props[(88, '_tab')] == 1  # Next: Games
     assert key(77, O['KEY_FWD_BTN']) == 1 and s.sh.tab == 1  # Next again stays
     assert key(66, O['KEY_BACK_BTN']) == 0 and s.sh.tab == 1  # another page's
@@ -3207,7 +3202,7 @@ def test_the_cards_custom_sources_follow_the_list_and_never_reach_its_copy(fw, m
     s = Store(fw, card)
     assert s.run() == 0 and card.files[SOURCES] == LISTED  # the list's copy alone
     assert [s.sh.next[k].repo for k in range(s.sh.n)] == [b'me/q2-foo', b'me/q2-bar'] + [b'you/q2-mine', b'you/q2-play'] * bool(mine)
-    key = fw.fn('shelf_key', C.c_int, C.c_void_p, C.c_uint)
+    key = fw.fn('store_tabs_key', C.c_int, C.c_void_p, C.c_uint)
     assert s.details() == ['me', 'you'][:1 + bool(mine)]
     key(77, O['KEY_FWD_BTN'])
     assert s.details() == ['me', 'you'][:1 + bool(mine)]  # Games: Bar, Play
@@ -3228,14 +3223,15 @@ def test_a_list_of_33_keeps_them_all_and_the_cards_own_lines_after(fw):
 
 @pytest.mark.parametrize('theme', (b'0', b'1', b'2'))  # Minimal, Classic, Modern
 def test_app_store_paints_a_rows_state_as_a_word_and_the_tabs_badges(fw, theme):
-    from test_games import Canvas, config, grey, rgba, tone, words
-    config(fw, THEME=theme)
+    from test_games import Canvas, grey, rgba, tone, words
+    Config(fw, THEME=theme)
     props, strs = {}, {}
     fw.mock('widget_set_prop_int', lambda w, k, v, *_: props.__setitem__((w, C.string_at(k)), C.c_int(v).value) or 0)
     fw.mock('widget_get_prop_int', lambda w, k, d, *_: props.get((w, C.string_at(k)), d))
     fw.mock('widget_set_prop_str', lambda w, k, v, *_: strs.__setitem__(w, C.create_string_buffer(C.string_at(v))) or 0)
     fw.mock('widget_get_prop_str', lambda w, k, d, *_: C.addressof(strs[w]) if w in strs else d)
-    fw.var('app_store__on_page', C.c_char).value = b'\x01'
+    fw.var('app_store__tabs_page', C.c_void_p).value = 1  # the App Store's tabs open
+    fw.var('app_store__tab_names', C.c_void_p).value = C.addressof(fw.var('netupdate__sh_tabs', C.c_void_p * 2))
 
     def widget(h):
         w = block(fw, size=0x200)
@@ -3269,19 +3265,20 @@ def test_app_store_paints_a_rows_state_as_a_word_and_the_tabs_badges(fw, theme):
     if theme != b'0':  # the open half in the selected row's colour: Classic Blue's band's middle stop, Modern's bar's
         band = rgba(0x007dde) if theme == b'1' else tone(fw, 0)
         assert any(o.kind == 'fill' and o.rect[0] == 14 + 173 and o.color == band for o in ops)
-    assert {o.px for o in ops if o.kind == 'text'} == {b'0': {17, 12}, b'1': {19, 15}, b'2': {16, 11}}[theme]  # names, count (Classic's 应用/游戏 fall back)
-    fw.var('app_store__on_page', C.c_char).value = b'\x00'
+    assert {o.px for o in ops if o.kind == 'text'} == {b'0': {17, 12}, b'1': {23, 15}, b'2': {16, 11}}[theme]  # names, count
+    fw.var('app_store__tabs_page', C.c_void_p).value = 0
     assert painted(row)[0] == []  # the page closed: nothing
 
 
 def test_a_selected_rows_state_takes_the_rows_ink_as_stocks_labels_do(fw, st):
     """Minimal's Ivory selects on a light card: the row's labels turn near-black (ringnav_style_color), the state too."""
-    from test_games import Canvas, config, dark, light
-    config(fw, THEME=b'0', MINIMAL_ACCENT=b'7')
+    from test_games import Canvas, dark, light
+    Config(fw, THEME=b'0', MINIMAL_ACCENT=b'7')
     props = {}
     fw.mock('widget_set_prop_int', lambda w, k, v, *_: props.__setitem__((w, C.string_at(k)), C.c_int(v).value) or 0)
     fw.mock('widget_get_prop_int', lambda w, k, d, *_: props.get((w, C.string_at(k)), d))
-    fw.var('app_store__on_page', C.c_char).value = b'\x01'
+    fw.var('app_store__tabs_page', C.c_void_p).value = 1  # the App Store's tabs open
+    fw.var('app_store__tab_names', C.c_void_p).value = C.addressof(fw.var('netupdate__sh_tabs', C.c_void_p * 2))
     h = fw.fn('page_h', C.c_int, C.c_int)(64)
     row, view = block(fw, size=0x200), block(fw, size=0x200)
     C.c_int.from_address(row + O['W_Y']).value, C.c_int.from_address(row + O['W_H']).value = 2 * h, h
@@ -3302,8 +3299,7 @@ def test_a_selected_rows_state_takes_the_rows_ink_as_stocks_labels_do(fw, st):
 @pytest.mark.parametrize('theme, x, tab', ((b'0', 105, 1), (b'0', 95, 0), (b'2', 105, 0), (b'2', 200, 1)))
 def test_a_tap_on_the_tabs_switches_after_its_own_event(fw, theme, x, tab):
     """The new rows replace the strip, so the switch waits for a timer; Minimal's Games name starts at 120."""
-    from test_games import config
-    config(fw, THEME=theme)
+    Config(fw, THEME=theme)
     card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n[Games]\nyou/q2-bar Bar\n'})
     store_net(fw)
     fw.mock('widget_factory_create_widget', lambda *_: 88)
@@ -3333,8 +3329,8 @@ def test_a_checks_age_counts_the_time_slept_in_standby(fw):
     assert s.sh.job == JOB_CHECK  # over SH_STALE_MS old: checked again
 
 
-def test_rockbox_s_armed_line_runs_to_the_rows_end_with_no_state_beside_it(fw):
-    """\"Starts at power-on. Press again to install" (258 px in Classic) needs the room the state's word leaves."""
+def test_an_armed_line_runs_to_the_rows_end_with_no_state_beside_it(fw):
+    """An armed row's line, "Press again to remove", has the room the state's word leaves."""
     moved = {}
     props = {}
     fw.mock('widget_get_child', lambda item, i, *_: 500 + i)
@@ -3370,7 +3366,7 @@ def test_a_press_held_for_wifi_through_a_real_click_follows_its_app(fw):
     s.click(1)  # Foo's Install
     assert sw.hold_fn and s.sh.job == 0 and s.toasts[-1] == 'Connecting to Wi-Fi…'
     fn, ctx = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)(sw.hold_fn), sw.hold_ctx
-    key = fw.fn('shelf_key', C.c_int, C.c_void_p, C.c_uint)
+    key = fw.fn('store_tabs_key', C.c_int, C.c_void_p, C.c_uint)
     key(77, O['KEY_FWD_BTN'])  # Games: Bar is row 1 now
     s.wifi = 3
     fw.mock('networkGetConnectStatus', lambda *_: 1)
@@ -3396,14 +3392,13 @@ def test_next_through_ringnav_opens_games_before_stocks_skip(fw):
 
 def test_classic_moves_the_list_under_the_tabs_strip(fw):
     """Classic has no title row: the list moves down the strip's 44 px, held to the page's height."""
-    from test_games import config
-    config(fw, THEME=b'1')
+    Config(fw, THEME=b'1')
     moved = {}
     fw.mock('widget_move_resize', lambda w, x, y, wd, h, *_: moved.__setitem__(w, (x, y, wd, h)) or 0)
     fw.mock('widget_get_prop_int', lambda w, k, d, *_: 400 if C.string_at(k) == b'h' else d)
     page, view, lst = (block(fw, size=0x200) for _ in range(3))
     C.c_void_p.from_address(view + O['W_PARENT']).value = lst
     C.c_int.from_address(lst + O['W_Y']).value, C.c_int.from_address(lst + O['W_H']).value = 10, 390
-    fw.fn('store_tabs', C.c_void_p, C.c_void_p, C.c_void_p)(page, view)
+    fw.fn('store_tabs', C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p)(page, view, None, None)
     assert moved[lst] == (0, 54, 375, 346) and moved[view] == (0, 0, 375, 346)
-    fw.fn('store_tabs', C.c_void_p, C.c_void_p, C.c_void_p)(0, 0)  # closed
+    fw.fn('store_tabs', C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p)(0, 0, None, None)  # closed

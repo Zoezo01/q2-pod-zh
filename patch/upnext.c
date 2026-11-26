@@ -1,17 +1,11 @@
 /* Up Next (docs/internals.md#queue-menu): View Queue's list while a shuffle is on, the tracks
  * after the playing one in play order. queue_menu.c's qm_run opens it (up_next), and
  * ringnav_keylong hands a Play/Pause hold on a row to un_hold. */
-#include "offsets.inc"
-#include "peq.h"
-#include "playback.h"
-#include "stock.h"
+#include "navigation.h"
 
 /* Up Next's snapshot cap. ponytail: ringnav navigates at most MAX_ENTRIES (512) rows; a
  * table_client page for more */
 #define UP_NEXT_ROWS 500
-#define SEL "_ringnav_index"                               /* navigation.c's */
-unsigned queue_hash(void *q);                              /* navigation.c */
-const char *track_name(char *buf, unsigned size, void *t); /* coverflow.c */
 static struct {
     widget_t *page;             /* Up Next's page, one at a time */
     unsigned idx[UP_NEXT_ROWS]; /* its rows' queue indices */

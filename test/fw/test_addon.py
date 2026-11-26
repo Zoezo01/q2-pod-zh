@@ -10,7 +10,7 @@ import struct
 import pytest
 
 import host
-from conftest import O, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, Config, Deques, Dirent, Game, block, claim, high_halves, libc, text
+from conftest import O, SPOT_FAIL, SPOT_NOSOCK, SPOT_OK, Config, Deques, Dirent, Game, block, card_fread, claim, high_halves, libc, text
 from fuzz import hostile
 from test_coverflow import png  # an icon's header
 from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_CARD, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
@@ -43,7 +43,7 @@ class App(C.Structure):
                 *((n, C.c_int) for n in ('qr', 'game', 'audio', 'view', 'hidden', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop',
                                          'nowifi', 'row', 'wifi', 'wifi_off')),
                 *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play')), ('baricon', C.c_char * 56),
-                ('barword', C.c_char * 12), ('barw', C.c_int), ('root', C.c_int)]
+                ('barword', C.c_char * 12), ('barw', C.c_int), ('root', C.c_int), ('takeover', C.c_int)]
 
 
 class Ap(C.Structure):
@@ -118,7 +118,7 @@ class World:
         fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))
         fw.mock('tk_str_end_with', lambda s, e, *_: C.string_at(s).endswith(C.string_at(e)))
         for stub, fn in (('fw_fopen', self.fopen), ('fw_fread', self.fread), ('fw_fseek', self.fseek), ('fw_fwrite', self.fwrite), ('fw_rename', self.rename),
-                         ('fw_unlink', self.unlink), ('fw_system', self.system), ('fw_access', self.access), ('fw___xstat', self.stat),
+                         ('fw_unlink', self.unlink), ('fw_system', self.system), ('chapter_kill', self.chapter_kill), ('fw_access', self.access), ('fw___xstat', self.stat),
                          ('fw_opendir', self.opendir), ('fw_readdir', self.readdir)):
             fw.mock(stub, fn)
         fw.mock('fw_time', lambda *_: self.now)
@@ -141,11 +141,7 @@ class World:
             self.written.setdefault(name, self.files.get(name, b''))
         return f
 
-    def fread(self, buf, size, n, f, *_):
-        piece = self.files[self.names[f]][self.at[f]:self.at[f] + size * n]
-        C.memmove(buf, piece, len(piece))
-        self.at[f] += len(piece)
-        return len(piece) // size
+    fread = card_fread
 
     def fseek(self, f, off, *_):
         self.at[f] = off
@@ -168,6 +164,9 @@ class World:
 
     def system(self, cmd, *_):
         self.log.append(('system', C.string_at(cmd)))
+
+    def chapter_kill(self, pid, sig, *_):
+        self.log.append(('chapter_kill', pid, sig))
 
     def access(self, p, *_):
         name = C.string_at(p)
@@ -795,7 +794,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar switch playkept\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field more fav now fieldtext wake audio2 dim gameview eq screen volume wifi network bar switch playkept playing takeover\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -1529,16 +1528,11 @@ def test_a_request_this_app_cant_mean_is_dropped(fw, raw):
     assert s.world.of('unlink') == [(b'/tmp/q2-foo.sleep',)]
 
 
-def test_a_time_just_past_pauses_at_once(fw):
+@pytest.mark.parametrize('ago, paused', [(59, 1), (60, 0)], ids=['just_past_pauses_at_once', 'stale_is_let_go'])
+def test_a_time_a_minute_back_pauses_only_just_past(fw, ago, paused):
     s = Sleep(fw)
-    s.read(b'until %d' % (s.world.now - 59))
-    assert s.paused() == 1 and sl(fw).owner == 0
-
-
-def test_a_stale_time_is_let_go(fw):
-    s = Sleep(fw)
-    s.read(b'until %d' % (s.world.now - 60))
-    assert s.paused() == 0 and sl(fw).owner == 0
+    s.read(b'until %d' % (s.world.now - ago))
+    assert s.paused() == paused and sl(fw).owner == 0
 
 
 def test_the_same_file_read_again_changes_nothing(fw):
@@ -1922,11 +1916,6 @@ RETURN, CENTRE = O['KEY_RETURN'], 218
 SNAKE_SOCK = b'/tmp/q2-snake.input.sock'
 
 
-def settings(fw, **values):
-    """config.ini as Q2 Pod reads its settings: these keys' values, every other its default."""
-    Config(fw, **values)
-
-
 class CardGame:
     """Card games as Library's Games runs them: fork, exec and waitpid stubbed, what reaches a game's input
     socket caught, toasts read, and the UI loop's addon_poll."""
@@ -1973,7 +1962,7 @@ class CardGame:
         addon_poll(self.fw, self.world, ms)
 
     def kills(self):
-        return [c[0] for c in self.world.of('system')]
+        return self.world.of('chapter_kill')
 
 
 SWITCH = b'name=Switch\ngame=1\naudio=2\n'
@@ -2115,7 +2104,7 @@ def test_game_force_close_uses_both_buttons_and_can_be_disabled(fw, off):
     if off:
         g.world.files[QUIT] = b'off'  # made in the hold's last pass, it still counts
     g.poll(1)
-    assert g.kills() == ([] if off else [b'kill 4242'])
+    assert g.kills() == ([] if off else [(4242, 15)])
     if not off:
         g.exited = True
         g.poll()
@@ -2614,10 +2603,10 @@ def test_a_game_starts_from_a_library_or_streaming_row_too(fw, row, press):
 
 
 def test_the_shortcut_finds_a_game_whose_row_is_elsewhere(fw):
-    g = CardGame(fw, snake=b'name=Snake\ngame=1\nrow=library\n', tools=b'name=Tools\nrow=games\n')
-    opened = fw.fn('addon_game_open', C.c_int, C.c_char_p)
-    assert opened(b'tools') == -1 and not g.on()  # in Games, but no game
-    assert opened(b'snake') == 1 and g.on() == g.PID
+    g = CardGame(fw, snake=b'name=Snake\ngame=1\nrow=library\n', tools=b'name=Tools\nrow=games\nhidden=1\n')
+    opened = fw.fn('addon_open_app', C.c_int, C.c_char_p)
+    assert opened(b'tools') == -1 and opened(b'nothere') == -1 and not g.on()  # hidden, or no such app
+    assert opened(b'snake') == 0 and g.on() == g.PID
 
 
 @pytest.mark.parametrize('manifest, drops', [(b'name=Snake\ngame=1\n', True), (b'name=Snake\ngame=1\nroot=1\n', False)])
@@ -2741,7 +2730,7 @@ def held(g):
     g.poll(699)
     assert g.kills() == []
     g.poll(1)
-    assert g.kills() == [b'kill 4242']
+    assert g.kills() == [(4242, 15)]
     return g.world.ms
 
 
@@ -2765,9 +2754,9 @@ def test_a_game_still_there_three_seconds_after_its_term_is_killed(fw):
     g = CardGame(fw)
     term = held(g)
     g.poll(2999)
-    assert g.kills() == [b'kill 4242'] and g.world.ms == term + 2999
+    assert g.kills() == [(4242, 15)] and g.world.ms == term + 2999
     g.poll(1)
-    assert g.kills() == [b'kill 4242', b'kill -9 4242']
+    assert g.kills() == [(4242, 15), (4242, 9)]
 
 
 def test_the_wheels_travel_reaches_the_game_once_a_pass(fw):
@@ -2789,11 +2778,11 @@ def test_a_game_left_idle_two_minutes_is_ended(fw):
     g.poll(119999)
     assert g.kills() == []
     g.poll(1)
-    assert g.kills() == [b'kill 4242']
+    assert g.kills() == [(4242, 15)]
 
 
 def test_smart_awake_keeps_an_idle_game(fw):
-    settings(fw, KEEPLIT=b'1')
+    Config(fw, KEEPLIT=b'1')
     g = CardGame(fw)
     g.start()
     g.poll(120000)
@@ -3996,7 +3985,7 @@ def test_a_screen_row_runs_as_a_game_does_its_page_left_as_it_was(fw):
     assert (p.top.state, p.top.n, p.pg.depth, p.req.id) == (K_READY, 2, 1, asked) and len(fw.calls('list_item_create')) == drawn
     assert g.key(KEY_DOWN, RETURN) == 1  # Return's hold ends it, as a game
     g.poll(701)
-    assert g.kills()[1:] == [b'kill %d' % g.PID]  # after its launcher's start
+    assert g.kills() == [(g.PID, 15)]
 
 
 def test_a_screen_row_with_empty_fields_sets_both_empty_and_is_asked_again(fw):
@@ -5104,7 +5093,6 @@ def test_a_progress_row_does_nothing(fw):
 
 def test_a_progress_bar_paints_its_share(fw):
     p = Page(fw)
-    world = p.world
     lcd, canvas, bar = block(fw, size=4096), block(fw, size=4096), block(fw, size=4096)
     C.c_void_p.from_address(canvas + CANVAS_LCD).value = lcd
     C.c_int.from_address(bar + W_W).value, C.c_int.from_address(bar + W_H).value = 300, 8
@@ -5754,7 +5742,7 @@ def settings_read(library):
 
 def boot(fw, settings_read, theme):
     """theme() as a boot under theme has it: config.ini read again at its next use."""
-    settings(fw, THEME=theme)
+    Config(fw, THEME=theme)
     C.c_int.from_address(C.addressof(fw.var('st', C.c_char)) + settings_read).value = 0
 
 
@@ -5831,7 +5819,7 @@ def test_classics_progress_bar_is_its_scrubbers_rows(fw, settings_read):
 
 @pytest.mark.parametrize('theme', [b'0', b'1'])  # Minimal, Classic
 def test_a_canvas_that_cant_round_gets_square_plates(fw, theme):
-    settings(fw, THEME=theme)
+    Config(fw, THEME=theme)
     q = Qr(fw, qr_state())
     plates, code = drawn(fw, paint_of(fw, q.qp.qr))
     # each plate filled square where it would have been rounded, in its colour, under the same code
@@ -6758,43 +6746,71 @@ def test_hostile_rules_files(fw):
 
 
 
-def shortcut(fw, value):
-    """IPOD SHORTCUT in config.ini, every other key its default; Home's shortcut row's click."""
-    Config(fw, SHORTCUT=value)
+def shortcut(fw, app):
+    """IPOD SHORTCUT the card app with id app, every other key its default; Home's shortcut row's click."""
+    Config(fw, SHORTCUT=b'0', SHORTCUT_APP=app)
     return fw.fn('home_shortcut_open', C.c_int, C.c_void_p, C.c_void_p)
 
 
-def test_the_groovebox_shortcut_starts_the_card_game_with_the_sound(fw):
-    card(fw, groovebox=b'name=Groovebox\ngame=1\naudio=1\n')
+def test_a_card_game_shortcut_starts_it_with_the_sound(fw):
+    card(fw, beats=b'name=Beats\ngame=1\naudio=1\n')
     fw.mock('fw_fork', lambda *_: 77)
     fw.mock('fw_socket', lambda *_: 9)
     seen = toasts(fw)
-    assert shortcut(fw, b'10')(None, None) == 0 and seen == []
+    assert shortcut(fw, b'beats')(None, None) == 0 and seen == []
     gm = fw.var('addon__gm', Game)
-    assert (gm.pid, gm.audio, gm.sock, gm.path) == (77, 1, 9, b'/tmp/q2-groovebox.input.sock')
+    assert (gm.pid, gm.audio, gm.sock, gm.path) == (77, 1, 9, b'/tmp/q2-beats.input.sock')
     assert fw.calls('player_stop') and fw.calls('mclSetMute') and fw.calls('device_set_volume')  # the jack readied, dac_take
 
 
-@pytest.mark.parametrize('folder, said', [({}, b'Groovebox is not on the card'),
-                                          ({'groovebox': b'name=Groovebox\n'}, b"Groovebox can't start from the card")])
-def test_the_groovebox_shortcut_says_when_no_card_game_is_it(fw, folder, said):
-    """No .groovebox, or one whose q2app isn't a game's: the binary is there, the row shows, the tap says so."""
+@pytest.mark.parametrize('folder, said', [({}, b'beats is not on the card'),
+                                          ({'beats': b'name=Beats\nhidden=1\n'}, b'Beats is not on the card')])
+def test_a_card_app_shortcut_says_when_the_card_has_no_such_app(fw, folder, said):
+    """No .beats, or a hidden one: named by its id until a scan has read its name."""
     card(fw, other=b'name=Other\ngame=1\n', **folder)
     fw.mock('fw_fork', lambda *_: 77)
     seen = toasts(fw)
-    assert shortcut(fw, b'10')(None, None) == 0
+    assert shortcut(fw, b'beats')(None, None) == 0
     assert seen == [said] and not fw.calls('fw_fork')
-    opened = fw.fn('addon_game_open', C.c_int, C.c_char_p)
-    assert opened(b'groovebox') == -1 and not fw.calls('fw_fork')
-    assert opened(b'other') == 1 and fw.calls('fw_fork') and not fw.calls('player_stop')  # a game without the sound
+
+
+def test_a_card_app_shortcut_opens_its_page(fw):
+    opened = shortcut(fw, b'foo')  # the settings read before the page's theme() reads them
+    fw.fn('accent', C.c_int)()
+    p = Page(fw, b'name=Foo\nrow=library\n', opens=False)
+    assert opened(None, None) == 0
+    assert p.pg.page == p.page and (p.top.op, p.top.title) == (b'menu', b'Foo')
 
 
 def test_a_card_game_that_can_t_fork_says_so(fw):
-    card(fw, groovebox=b'name=Groovebox\ngame=1\naudio=1\n')
+    card(fw, beats=b'name=Beats\ngame=1\naudio=1\n')
     fw.mock('fw_fork', lambda *_: -1)
     seen = toasts(fw)
-    assert shortcut(fw, b'10')(None, None) == 0
+    assert shortcut(fw, b'beats')(None, None) == 0
     assert seen == [b"It couldn't start"] and fw.var('addon__gm', Game).pid == 0 and fw.calls('player_stop')
+
+
+# takeover=1 (docs/boot.md#apps-that-take-over-the-device): the row leaves the app's id for S90play and ends demo.
+TAKEOVER = b'name=Rockbox\nrow=library\ntakeover=1\nwifi=0\nstop=0\n'
+
+
+def test_a_takeover_apps_row_leaves_its_id_and_ends_demo(fw):
+    world = card(fw, rockbox=TAKEOVER)
+    assert fw.fn('addon_libs', C.c_int)() == 1
+    fw.fn('addon_lib_open', C.c_int, C.c_void_p, C.c_void_p)(0, None)
+    assert world.files[host.tools_build.TAKEOVER_FLAG.encode()] == b'rockbox'
+    assert fw.calls('save_memoryplay_info') and not fw.calls('fw_fork')  # the hand-over, not a game's start
+    assert b'kill -9 $PPID' in world.of('system')[-1][0]
+
+
+def test_a_takeover_app_gone_from_the_card_says_so_and_stays(fw):
+    world = card(fw, rockbox=TAKEOVER)
+    assert fw.fn('addon_libs', C.c_int)() == 1
+    del world.files[b'/mnt/mmc/.rockbox/q2-rockbox']
+    seen = toasts(fw)
+    fw.fn('addon_lib_open', C.c_int, C.c_void_p, C.c_void_p)(0, None)
+    assert seen == [b"It isn't on the card"] and host.tools_build.TAKEOVER_FLAG.encode() not in world.files
+    assert not fw.calls('save_memoryplay_info')
 
 
 @pytest.mark.parametrize('status, stops', [(3, 1), (1, 0)])
@@ -7031,14 +7047,14 @@ def test_a_url_queue_started_is_told_under_its_play_seq(fw, play, seq):
     ap(fw).a[0].id, ap(fw).n = b'a', 1
     fw.fn('addon__stream_poll', None, C.POINTER(App))(C.pointer(ap(fw).a[0]))
     assert sm(fw).seq == seq and sm(fw).state == S_WAIT
-    free_stubbed(fw, lambda: fw.fn('addon__urls_start', C.c_int, C.c_void_p)(None))
+    free_stubbed(lambda: fw.fn('addon__urls_start', C.c_int, C.c_void_p)(None))
     nw = fw.var('addon__nw', Nw)
     assert nw.owner == 1 and nw.seq == seq and nw.live == 0 and fw.var('tidal__au', Au).now == 1
     nw.owner = 0
     world.files[b'/tmp/q2-a.urls'] = b'#Q2URLS/1\tnow=1\n'  # no song: nothing plays
     world.files[b'/tmp/q2-a.play'] = b'43 /tmp/q2-a.urls\n'
     fw.fn('addon__stream_poll', None, C.POINTER(App))(C.pointer(ap(fw).a[0]))
-    free_stubbed(fw, lambda: fw.fn('addon__urls_start', C.c_int, C.c_void_p)(None))
+    free_stubbed(lambda: fw.fn('addon__urls_start', C.c_int, C.c_void_p)(None))
     assert nw.owner == 0
 
 

@@ -54,8 +54,9 @@ class Screen:
         self.blocks, self.kids, self.names, self.types, self.texts = [], {}, {}, {}, {}
         self.shown, self.props, self.handlers, self.strings = {}, {}, [], {}
         self.wm = self.new(0, 'window_manager', 0, 0, 375, 320)
-        self.top = 0
+        self.top, self.stack = 0, []  # stack: the windows opened, the top last
         fw.mock('window_manager', lambda *_: self.wm)
+        fw.mock('navigator_back', lambda *_: self.back())
         fw.mock('window_manager_get_top_window', lambda *_: self.top)
         fw.mock('widget_lookup', lambda w, name, *_: self.lookup(w, C.string_at(name).decode()))
         fw.mock('widget_set_name', lambda w, name, *_: self.names.__setitem__(w, C.string_at(name).decode()))
@@ -102,7 +103,14 @@ class Screen:
             self.new(self.lookup(win, under) if under else win, kind, 0, 0, 375, 320, cname)
         if not parent:
             self.top = win
+            self.stack.append(win)
         return win
+
+    def back(self):
+        """navigator_back: the top window closes, the one under it on top."""
+        self.stack.pop()
+        self.top = self.stack[-1] if self.stack else 0
+        return 0
 
     def string(self, text):
         if text not in self.strings:
@@ -603,10 +611,11 @@ def test_the_shortcut_picked_names_homes_row_now_and_after_a_restart(q2):
     before = q2.screen.texts[w['label_rockbox']]
     appearance(q2)
     assert q2.screen.row('Shortcut') == f'Shortcut: {before}'
-    q2.screen.click('Shortcut')
+    q2.screen.click('Shortcut')  # its picker
+    q2.screen.click('Shuffle')
     after = q2.screen.row('Shortcut').split(': ', 1)[1]
-    assert after != before and q2.screen.texts[w['label_rockbox']] == after
-    assert q2.flash.get('IPOD', 'SHORTCUT').isdigit()
+    assert after == 'Shuffle' != before and q2.screen.texts[w['label_rockbox']] == after
+    assert q2.flash.get('IPOD', 'SHORTCUT') == '5'
     q2.power_on()
     w = home(q2)
     assert q2.screen.texts[w['label_rockbox']] == after

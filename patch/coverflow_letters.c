@@ -64,14 +64,6 @@ static float row_near(float t, float b) {
     return (float)project(&p, CF_HALF16) + (t - tz) * cfs.row_out * 16;
 }
 
-/* How far the shelf goes (1/16 px) as the facing point runs run albums on beyond lead: the row's
- * own spacing out past row_flat, as formed at lead, so the covers away from the facing point keep
- * their places in the row */
-static float row_run(float lead, float run) {
-    float b = row_formed(lead), t = cfs.row_flat / 100.f + 1;
-    return run * (row_near(t + 1, b) - row_near(t, b));
-}
-
 /* The shelf with its facing point lead albums on from frac, its cover a albums from frac's centre:
  * its t is its distance from that point, on that side, and the whole shelf slides lead * row_shift
  * px. Past row_from the row forms: shrunk, no receding past row_flat from the focus, only spacing,
@@ -132,7 +124,11 @@ typedef struct {
 static void entry_at(entry_t *n, int frac, float lead, float enter, int lean) {
     int dir = -lean, len = cfs.enter_albums, m;
     float v = coverflow_enter_v(), runs = (float)len * ENTER_RUN / 100; /* the row's, running */
-    float gone = 1 - enter / (float)len, step = row_run(lead, 1);
+    /* step: how far the shelf goes (1/16 px) as the facing point runs one album on beyond lead: the
+     * row's own spacing out past row_flat, as formed at lead, so the covers away from the facing
+     * point keep their places in the row */
+    float gone = 1 - enter / (float)len, b = row_formed(lead), t = cfs.row_flat / 100.f + 1,
+          step = 1 * (row_near(t + 1, b) - row_near(t, b));
     gone = gone < 0 ? 0 : gone > 1 ? 1 : (float)(int)(gone * CF_ONE + .5f) / CF_ONE; /* 16.16 */
     /* The facing point as it stops running, along the spin, and the album it runs to: the first
      * past which the cover turned albums behind it, the last the row turns or narrows (formed, at
@@ -150,7 +146,7 @@ static void entry_at(entry_t *n, int frac, float lead, float enter, int lean) {
     float run = l0 * r + (end - l0) * r * r * r;
     n->frac = frac + dir * (int)(gone * (float)(len * CF_ONE) + .5f), n->lead = lead,
     n->lean = lean;
-    n->run = (float)dir * run, n->xrun = n->run * step; /* row_run, on the guarded spacing */
+    n->run = (float)dir * run, n->xrun = n->run * step; /* step, the guarded spacing */
     n->at = (float)n->frac / CF_ONE + lead + n->run;
     n->focus = cf_round(n->at), n->after = n->at < (float)n->focus;
 }
@@ -207,14 +203,6 @@ static int entry_quads(const entry_t *n, int *centre, cf_quad_t *q, int *album) 
     return k;
 }
 
-/* Going by letters, the row held as the entry left it (th.hold_*), frac (16.16) of an album on as
- * it slides: the entry's row past its end, with frac's centre the album at the screen's middle. */
-static void hold_at(entry_t *n, int frac) {
-    n->frac = frac - th.hold_k, n->lean = th.lean < 0 ? -1 : 1;
-    n->lead = th.hold_lead, n->run = th.hold_run, n->xrun = th.hold_xrun;
-    n->at = (float)n->frac / CF_ONE + n->lead + n->run;
-    n->focus = cf_round(n->at), n->after = n->at < (float)n->focus;
-}
 /* The held row's cover at16 (16.16) albums on from the screen's middle, as draw_quad draws it */
 static int hold_quad(int at16, cf_quad_t *q) {
     return row_quad_run(-at16 - th.hold_k, th.hold_lead, th.hold_run, th.hold_xrun, 0, q);
@@ -228,8 +216,15 @@ static void row_at(entry_t *n, int frac) {
         n->focus = cf_round(n->at), n->after = n->at < (float)n->focus;
     } else if (th.enter > 0)
         entry_at(n, frac, th.lead, th.enter, th.lean < 0 ? -1 : 1);
-    else
-        hold_at(n, frac);
+    else {
+        /* Going by letters, the row held as the entry left it (th.hold_*), frac (16.16) of an album
+         * on as it slides: the entry's row past its end, with frac's centre the album at the
+         * screen's middle. */
+        n->frac = frac - th.hold_k, n->lean = th.lean < 0 ? -1 : 1;
+        n->lead = th.hold_lead, n->run = th.hold_run, n->xrun = th.hold_xrun;
+        n->at = (float)n->frac / CF_ONE + n->lead + n->run;
+        n->focus = cf_round(n->at), n->after = n->at < (float)n->focus;
+    }
 }
 
 /* The window's middle (coverflow_paint's, fx_window's) of the row at frac as it is drawn now: at

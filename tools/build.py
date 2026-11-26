@@ -11,7 +11,7 @@ ZIP_SHA = '4e298cab6c12d86cfc55565645f7e3ae11d3fb44677a93ca13991e7184ecec4e'
 # 钉住（重新打的 ZIP 永远对不上官方那个）。
 TAR_SHA = '7f57884420e324ac3263571d96a35f04bbef79f35dac34162655c5822bdaa684'
 DEMO_SHA = 'e65d638d6e70332b4c3193af8ac2044941ec0157d20e41e40233aac5b0c2c59f'
-VERSION = '1.9.2'  # major.minor.patch, single digits, shown as is (About and release tag)
+VERSION = '1.9.4'  # major.minor.patch, single digits, shown as is (About and release tag)
 BETA = 0  # a pre-release's beta number (1-9), 0 for the release itself
 # 本分支的 Release 由自己发：网络更新读这个仓库的 releases/latest，release_zh.py 也往这里传。
 # 所以 Release 的 tag 必须正好等于 RELEASE_TAG（A 线是裸 VERSION，之后是 VERSION 点位），
@@ -56,7 +56,7 @@ REPO = 'Zoezo01/q2-pod-zh'  # whose releases Network Update fetches (--update-re
 # 1.8.7 这条线字母重新从 A 起：A 并入上游 1.8.5（语言/状态栏/USB/About）、1.8.6（性能）与 1.8.7（文件拆分），
 # 中文版不打 LANGUAGE_EN，语言保持简体中文；经典百分比对齐暂用上游实现，我们 V182C 的版本备份在
 # tag zh/batt-ours-v184b 与 .workbuddy/backup/statusbar-ours-v184b.txt，实机对比后再决定。
-LETTER = 'B'  # 1.9.2 线第二个包：确认框的 Cancel/OK 回到中文（同 1.9.1 语言钩子）
+LETTER = 'A'  # 1.9.4 线首个包：锁屏一览、显示采样率、快捷入口选择页、年代分年份、Rockbox 变应用、百度网盘恢复
 TAG = 'V' + VERSION.replace('.', '') + LETTER
 RELEASE_TAG = VERSION if LETTER == 'A' else f'{VERSION}.{ord(LETTER) - 64}'  # 1.8.3, 1.8.3.2, 1.8.3.3…
 
@@ -200,6 +200,8 @@ HOOKS = {
     'toolsIntoStandby': (0x5d1110, 'ringnav_standby', 'standby'),
     # Standby's card driver reload: no removed and inserted toasts on the wake
     'check_cardmount_status': (0x4f39a4, 'ringnav_cardmount', 'cardmount'),
+    # The Standby page's row click, which has no symbol: turning Auto-standby or Auto-shutdown on asks first (system.c)
+    'standby_row': (0x4d1e48, 'ringnav_standby_row', 'standby_row'),
     # Every settings save: one at a time, on a copy that replaces the file by rename (system.c)
     'toolsWriteConfig': (0x5d0284, 'ringnav_config_write', 'config_write'),
     'playset_playset_page_init': (0x4bd4d0, 'ringnav_audioset', 'audioset'),
@@ -284,30 +286,29 @@ GLYPH_FALLBACK_MACRO = '#define GLYPH_FALLBACK_RANGES {' + ','.join(f'0x{u:x}' f
 # rootfs's own libraries, with display_logo's inode metadata.
 HELPER, HELPER_LIKE = 'usr/bin/q2video', 'usr/bin/display_logo'
 HELPER_LIBS = ['lib/libc-2.28.so', 'lib/libpthread-2.28.so', 'usr/lib/libasound.so.2.0.0']
-# Rockbox dual boot (docs/boot.md#rockbox): S90play starts Rockbox whenever the card has it, as an
-# iPod with Rockbox does. Play/Pause held at power-on (patch/boot.c reads the key) or Rockbox's
-# exit 0x51 (Boot stock OS) starts Q2 Pod for that session only. boot-target selects the next
-# power-on default (missing or invalid retains Rockbox). ponytail: the card's mount is awaited (up to 3 s without a card)
-# unless Q2 Pod was asked for, as the card probe can't tell "no card" from "not yet". Rockbox runs
+# Rockbox dual boot (docs/boot.md#rockbox): S90play starts Rockbox when boot-target says rockbox (Power's Boot to)
+# and the card has it. Play/Pause held at power-on (patch/boot.c reads the key) or Rockbox's
+# exit 0x51 (Boot stock OS) starts Q2 Pod for that session only. ponytail: the card's mount is awaited (up to 3 s
+# without a card) once Rockbox was asked for, as the card probe can't tell "no card" from "not yet". Rockbox runs
 # with the launcher contract in its tools/shanlingq2/README; demo starts when it exits, or when the
-# card has none. demo keeps its argv[0], which checkappprocess.sh pgreps for. iPod's Home Rockbox row
-# (navigation.c rockbox_open) leaves ROCKBOX_FLAG and kills demo: Rockbox runs again, its
-# watchdog stopped in case demo's kill was not reached, then demo once more. Any other end of demo
-# ends the loop, so the watchdog reboots as stock's would. Wi-Fi is off while Rockbox runs (WIFI_OFF).
+# card has none. demo keeps its argv[0], which checkappprocess.sh pgreps for. A takeover card app's row
+# (addon.c takeover, docs/boot.md#apps-that-take-over-the-device) leaves its id in TAKEOVER_FLAG and kills demo:
+# app() runs its .<id>/q2-<id>, the watchdog stopped in case demo's kill was not reached, then demo once more. Any
+# other end of demo ends the loop, so the watchdog reboots as stock's would. Wi-Fi is off while an app runs (WIFI_OFF).
 BOOT = 'usr/bin/q2boot'
 REMOTE = 'usr/bin/q2remote'
 S90PLAY = 'etc/init.d/S90play'
-ROCKBOX_FLAG = '/tmp/q2pod-rockbox'
-# Rockbox can't use Wi-Fi and the radio costs battery, so rockbox() below stops it. Nothing is saved or restored
-# here: demo, which follows every Rockbox exit, restarts Wi-Fi from WIFI in config.ini, which wifi_switch writes on
-# every toggle. That covers a forced reset during Rockbox too, and writing the config here would lose the user's choice.
+TAKEOVER_FLAG = '/tmp/q2pod-takeover'
+# An app in demo's place has no Wi-Fi (Rockbox can't use it) and the radio costs battery, so app() below stops it.
+# Nothing is saved or restored here: demo, which follows every app's exit, restarts Wi-Fi from WIFI in config.ini, which wifi_switch writes on
+# every toggle. That covers a forced reset during the app too, and writing the config here would lose the user's choice.
 # No rmmod 8733bs: that module also holds Bluetooth's power line, and Bluetooth must survive the hand-over.
 # The rest ends as stock's networkStop does. wifi_connect.sh because demo may have just started it. No ifconfig wlan0
 # 0.0.0.0: BusyBox brings a down interface up to set an address, which would wake a cold boot's radio; demo clears it.
-# Home's hand-over pauses first: a shell demo forked for one of these just before it died isn't named yet, and would
-# start Wi-Fi under Rockbox. demo is gone, so nothing new can start and a short wait is enough. Not a wait for Wi-Fi to
+# A takeover pauses first: a shell demo forked for one of these just before it died isn't named yet, and would
+# start Wi-Fi under the app. demo is gone, so nothing new can start and a short wait is enough. Not a wait for Wi-Fi to
 # finish starting: wifi_connect.sh exits before its /tmp/wpasupplicant_initsuccess without a saved network, and demo
-# starts udhcpc later too. A second pass 2 s in, called off if Rockbox has already left and demo is starting Wi-Fi
+# starts udhcpc later too. A second pass 2 s in, called off if the app has already left and demo is starting Wi-Fi
 # again, catches a shell that took longer. ponytail: 300 ms and 2 s are guesses; a shell slower than 2 s still escapes.
 WIFI_OFF = 'killall -9 wifi_connect.sh udhcpc wpa_supplicant 2>/dev/null; ifconfig wlan0 down 2>/dev/null'
 BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
@@ -338,21 +339,23 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             [ -f $l ] && mv -f $l $l.1
             mv -f $l.new $l && sync && rm -f $c
         ) &
-        rb=/mnt/mmc/.rockbox
-        rockbox() {{
-            [ -f $rb/rockbox ] || return
-            /usr/bin/cmd_gpio set_func PE22 output0  # Rockbox never drives the charge pin, so the S12 inhibit would stay on
-            # Rockbox only starts here, so power-on and Home's hand-over both lose Wi-Fi (build.py WIFI_OFF)
+        # card folder .$1's binary $2 in demo's place, its log $2.log beside it
+        app() {{
+            d=/mnt/mmc/.$1
+            [ -f $d/$2 ] || return
+            /usr/bin/cmd_gpio set_func PE22 output0  # nothing drives the charge pin with demo gone, so the S12 inhibit would stay on
+            # an app only starts here, so power-on and a takeover both lose Wi-Fi (build.py WIFI_OFF)
             {WIFI_OFF}
-            (cd $rb && exec ./rockbox) > $rb/rockbox.log 2>&1
-            echo "exit $?" >> $rb/rockbox.log
+            (cd $d && exec ./$2) > $d/$2.log 2>&1
+            echo "exit $?" >> $d/$2.log
             # demo starts Bluetooth afresh: stock closeBluetooth's daemon/ready-file cleanup and PD20 low,
             # without switchBluetooth's settings writes. Keep the radio module loaded: it also supplies Wi-Fi.
             killall -9 bluetoothd bluealsa rtk_hciattach 2>/dev/null
             rm -f /tmp/rtk_init_success /tmp/bt_startup
             /usr/bin/cmd_gpio set_func PD20 output0
         }}
-        if [ "$(cat /mnt/data/boot-target 2>/dev/null)" != q2pod ] && ! /usr/bin/q2boot; then
+        rockbox() {{ app rockbox rockbox; }}
+        if [ "$(cat /mnt/data/boot-target 2>/dev/null)" = rockbox ] && ! /usr/bin/q2boot; then
             for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
                 [ -e /tmp/mmc_add ] && break
                 usleep 200000
@@ -360,9 +363,9 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             rockbox
         fi
         # Every register in the kernel log when a signal ends demo or a helper (show_regs), where a fault otherwise
-        # leaves its address, epc and ra alone; the crash log keeps the log's end (docs/boot.md#rockbox-from-home)
+        # leaves its address, epc and ra alone; the crash log keeps the log's end (docs/boot.md#apps-that-take-over-the-device)
         echo 1 > /proc/sys/kernel/print-fatal-signals
-        # demo's stderr (docs/boot.md#rockbox-from-home): stock starts its Bluetooth and Wi-Fi helpers from demo,
+        # demo's stderr (docs/boot.md#apps-that-take-over-the-device): stock starts its Bluetooth and Wi-Fi helpers from demo,
         # so they inherit it and their reasons for failing land here, in RAM, instead of on the serial console;
         # emptied once a minute past 512 KB (O_APPEND keeps demo writing at its end), its tail goes in the crash
         # log. stdout stays on the console as stock's; --dev takes both (LOG_HOOK)
@@ -370,13 +373,15 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
         while :; do
             /release/bin/demo 2>>/tmp/q2-demo.err
             s=$?
-            [ -e {ROCKBOX_FLAG} ] || break
-            rm -f {ROCKBOX_FLAG}
+            [ -e {TAKEOVER_FLAG} ] || break
+            id=$(cat {TAKEOVER_FLAG})
+            rm -f {TAKEOVER_FLAG}
             killall checkappprocess.sh 2>/dev/null
             # demo is gone: what it just launched gets this long to reach a name WIFI_OFF kills (build.py)
             usleep 300000
             (usleep 2000000; {WIFI_OFF}) &
-            rockbox
+            # an id as valid_id passes it (addon.c), as it goes in a path; else demo again
+            case $id in *[!a-z0-9-]*|'') ;; *) app $id q2-$id ;; esac
             kill $! 2>/dev/null
         done
         # 0 and 143 are a power-off's, but a clean end (ringnav_clean_end) removes $m first: still there, it wasn't one
@@ -419,7 +424,7 @@ LOG_HOOK = (b'        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.er
             b'        while :; do\n            /release/bin/demo >>/tmp/q2-demo.log 2>&1\n')
 # --dev only: the wheel's frame log (playback.c wl_flush) and stale-press notes (navigation.c stale_note) go to the
 # card's q2-wheel.log, appended, when the card is up, up to 256 KB. In BOOT_HOOK's start path.
-WHEEL_LOG_HOOK = (b'        rb=/mnt/mmc/.rockbox\n',
+WHEEL_LOG_HOOK = (b'        # card folder .$1\'s binary $2 in demo\'s place, its log $2.log beside it\n',
                   b'        w=/mnt/data/q2-wheel.log\n'
                   b'        [ -f $w ] && (\n'
                   b'            i=0\n'
@@ -431,7 +436,7 @@ WHEEL_LOG_HOOK = (b'        rb=/mnt/mmc/.rockbox\n',
                   # renamed first: a flush after this makes a new file for the next boot
                   b'            mv -f $w $w.m && cat $w.m >> $c && sync && rm -f $w.m\n'
                   b'        ) &\n'
-                  b'        rb=/mnt/mmc/.rockbox\n')
+                  b'        # card folder .$1\'s binary $2 in demo\'s place, its log $2.log beside it\n')
 # The byte in bluealsa's AAC capability holding the 44.1 kHz bit; see docs/internals.md.
 BLUEALSA = 'usr/bin/bluealsa'
 # Its launcher: keep the A2DP transport open 5 s after hciplayer closes the PCM (a stop, a skip, a cold start), so
@@ -606,6 +611,9 @@ MORE_ARTIST_CLOSE = ((0x5399d4, 0x2624ccf8, 0x26240000 | 0x786994 & 0xffff), (0x
 # mclAutoChange asks hciplayer for its status and waits for the answer: 40 to 125 round trips a second.
 # The call goes through ringnav_mainscheduling (navigation.c), which paces it (docs/internals.md#battery).
 MAINSCHEDULING_CALL = (0x4f42a4, 0x0320f809)
+# screen_action(0)'s bal disable_fb: with the lock screen on and no lock window up, the framebuffer goes black first
+# (lockscreen.c lockscreen_dark, docs/internals.md#lock-screen)
+LOCK_DARK_CALL = (0x501ff0, 0x0411f0c2)
 # mclStartPlayer's wired mute and sleep from the idle player (crossfade.c start_mute, docs/internals.md#wired-start).
 START_MUTE_CALL = (0x5bf8c4, 0x0411fefa)  # bal mclSetMute; its delay slot (a0=1) stays
 START_SLEEP_CALL = (0x5bf8dc, 0x0320f809)  # jalr usleep, a0=100000
@@ -1598,6 +1606,8 @@ FUNCTIONS = {
  'window_close': ('int', 'widget_t *'),
  'dialog_quit': ('int', 'widget_t *, unsigned'),  # quick settings' close, as its swipe up ends (0x4a1fd8)
  'window_manager_close_window_force': ('int', 'widget_t *, widget_t *'),
+ 'disable_fb': ('int', 'void'),  # FBIOBLANK powerdown (lockscreen.c lockscreen_dark)
+ 'saver_unlock': ('int', 'widget_t *, void *'),  # the lock window's slide handler: the window first, the second never read (lock_glance.c unlock)
  'navigator_to': ('int', 'const char *'),
  'navigator_to_with_context': ('int', 'const char *, const void *'),
  'window_manager_get_input_device_status': ('char *', 'widget_t *'),
@@ -1816,6 +1826,7 @@ PRIVATE_FUNCTIONS = {
     "screensaver_rows": HOOKS['screensaver_rows'][0],  # the Lock screen page's rows and picture grid
     "folder_click": HOOKS['folder_click'][0],  # folder_page's row click (folder_enter, then a file's queue)
     "saver_cover": HOOKS['saver_cover'][0],  # the lock window's img_playcover from the playing track
+    "saver_unlock": 0x53ec68,  # the lock window's app_gesture slide (event 0x2004): ends its timer, window_close
     "np_info": 0x53bc78,  # Now Playing's info page labels, from the track (NP_INFO_CALL)
     "ab_x": 0x53b9d8,  # an A-B marker's x, on the boot set's np_bar_x and np_bar_w (AB_X_CALLS)
     "fwupdate_tf": 0x4c7eb4,  # systemset_fwupdate_page's row 0 click (0x4c84cc): stock's TF card update
@@ -1825,21 +1836,24 @@ PRIVATE_FUNCTIONS = {
     "playermore_online": HOOKS['playermore_online'][0],  # More's Download Cover & Lyrics: (window)
     "specfolder_click": HOOKS['specfolder_click'][0],  # Scan Folders' row click
     "specfolder_scan": HOOKS['specfolder_scan'][0],  # ... and its Scan button's (btn_startscan)
+    "standby_row": HOOKS['standby_row'][0],  # the Standby page's row click: the hook's address check reads it here
 }
 GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a Tidal list loaded
            'savestartbt', 'transposition', 'tidalfurlstart',  # a stream to start paused; 1 arms Now Playing's online tick (tidal.c app_start)
            'isFav_playing',  # Now Playing's heart on a 0xf1 track: 1 a favourite (tidal.c app_fav)
            'g_time_zone','g_playspeed_mode', 'g_time24h_flag', 'g_backlight_status', 'g_lockscreen_pageflag', 'g_testmode_flag',
-           'g_keylock_flag', 'g_keylock_mode', 'g_lightness',
+           'g_keylock_flag', 'g_keylock_mode', 'g_screensaver_mode', 'g_lightness',
            'g_bluetoothflag', 'bt_linkstatus', 'g_guideflag', 'g_poweroff_state', 'g_usblink_status', 'bt__recv_pageflag',
            'g_power_longkey', 'g_ingore_bootkey_flag', 'g_equalizer_flag', 'g_navbar_status', 'g_playcover_type',
            'g_keytone_flag', 'g_folder_layer', 'g_otg_status', 'g_delete_flag', 'g_volume', 'g_maxvolume',
            'g_sleepflag',  # the Sleep Timer's switch: 1 while its count (g_sleep_time) runs (sleep_row.c)
+           'g_standbyflag',  # Auto-standby's switch (SYSSET STANDBYMODE): 1 on (system.c ringnav_standby_row)
            'g_po_status', 'g_bal_status',  # 3.5 mm and 4.4 mm jacks: 1 plugged (check_headset_status)
            # one-shot flags Now Playing's update consumes: a track change, a forced refresh, the cover parsed (ringnav_np_tick)
            'g_autochange_flag', 'g_forcerefresh_flag', 'g_playcover_finishflag',
            'g_usbvol_mode',  # USB DAC volume: 0 fixed, else the volume (config_usbvolmode, device_set_volume)
            'g_usbdac_chargeflag',  # USB mode's charge choice, which switch_charge_enable gets there
+           'g_savepower_mode',  # Auto-shutdown's time: 0 off, 1 to 4 (system.c ringnav_standby_row)
            'g_memory_play', 'g_carmode', 'g_carmode_state',  # In-Vehicle Mode (pod_click)
            'g_block_withoutphone_flag',  # Require Output (check_forbid_play_no_headset's switch)
            'g_bigcovermode', 'g_foldercover_flag',  # Enlarged Album Art (1 on) and Folder Album Cover (pod_click)
@@ -1918,7 +1932,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-Wshadow','-Wimplicit-int-conversion','-Wconditional-uninitialized','-Wmissing-variable-declarations',
          '-Wvla','-Wundef']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'flat.c', 'clock.c', 'queue_menu.c', 'np_marks.c', 'rotate.c', 'netservice.c', 'addon_bar.c', 'side_seek.c', 'language.c', 'bidi_text.c', 'card_theme.c', 'card_rules.c', 'sleep_row.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'usb_charge.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'durations.c', 'script.c', 'coverflow_position.c', 'ratings.c', 'scan_folders.c', 'folder_delete.c', 'battery.c', 'np_lyrics.c', 'quick_settings.c', 'flat.c', 'clock.c', 'queue_menu.c', 'np_marks.c', 'rotate.c', 'netservice.c', 'addon_bar.c', 'side_seek.c', 'language.c', 'bidi_text.c', 'card_theme.c', 'card_rules.c', 'sleep_row.c', 'samplerate.c', 'shortcut_pick.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""
@@ -1940,7 +1954,7 @@ def compile_payload(out):  # pragma: no mutate block
     run('clang',*FLAGS,'-c',out/'trampoline.S','-o',out/'trampoline.o')
     run('ld.lld','-m','elf32ltsmip','--gc-sections','-O2','--icf=safe','-T',ROOT/'patch/link.ld','-e','ringnav',
         *[f'--undefined={name}' for _, name, _ in HOOKS.values()], f'--undefined={GRADIENT_LEAF[2]}', '--undefined=ringnav_lrc_open',
-        f'--undefined={WM_PAINT_LEAF[2]}', f'--undefined={QUEUE_LEAF[2]}', f'--undefined={FONT_GLYPH_LEAF[2]}', '--undefined=ringnav_audio_extension', '--undefined=start_mute', '--undefined=start_sleep', '--undefined=ringnav_genre_copy', '--undefined=ringnav_lyric_save', '--undefined=ringnav_lyric_drop', '--undefined=ringnav_cover_copy','--undefined=ringnav_folder_rm','--undefined=ringnav_bootmode', '--undefined=lockscreen_access','--undefined=ringnav_ts_read',
+        f'--undefined={WM_PAINT_LEAF[2]}', f'--undefined={QUEUE_LEAF[2]}', f'--undefined={FONT_GLYPH_LEAF[2]}', '--undefined=ringnav_audio_extension', '--undefined=start_mute', '--undefined=start_sleep', '--undefined=ringnav_genre_copy', '--undefined=ringnav_lyric_save', '--undefined=ringnav_lyric_drop', '--undefined=ringnav_cover_copy','--undefined=ringnav_folder_rm','--undefined=ringnav_bootmode', '--undefined=lockscreen_access','--undefined=lockscreen_dark','--undefined=ringnav_ts_read',
         '--undefined=ringnav_baidu_poll', '--undefined=ringnav_tidal_poll', '--undefined=addon_m3u_dir', f'--undefined={COVERINFO_CALL[2]}',
         '--undefined=coverflow_player_cover', '--undefined=coverflow_grid_cover', '--undefined=coverflow_album_cover', '--undefined=coverflow_folder_cover', '--undefined=headset_bt_init',
         '--undefined=headset_status_register', '--undefined=headset_bt_autolink', '--undefined=headset_bt_service', *[f'--undefined={guard[2]}' for guard in PNG_GUARDS],
@@ -2060,7 +2074,7 @@ def stock_header(context, ranges, themes, dev=0, repo=REPO):
     # iPod's image hook leaves the settings icons' category colours alone (navigation.c settings_icon).
     names = ''.join(n.removesuffix('.png') + '\\0' for n in SETTINGS_ICONS)
     header.append(f'#define SETTINGS_ICON_NAMES "{names}"')
-    header.append(f'#define ROCKBOX_FLAG "{ROCKBOX_FLAG}"')  # Home's Rockbox row, for S90play
+    header.append(f'#define TAKEOVER_FLAG "{TAKEOVER_FLAG}"')  # a takeover app's id, for S90play
     header.append(f'#define APP_UID {APP_UID}')  # card apps' uid (app_user.c), the card's at each mount
     # About: the stock firmware's version on its own row, and this build's on the CFW. Version row.
     header += [f'#define STOCK_VERSION "{STOCK_VERSION}"', f'#define Q2POD_VERSION "{VERSION}{f" dev {dev}" if dev else f" beta {BETA}" if BETA else ""}"',
@@ -2238,6 +2252,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, stock_flac=False):  # pragm
     for site in MORE_ARTIST_CLOSE:
         patch_word(patched, *site, "Artist info closes the artist and album pages it found")
     patch_word(patched, *MAINSCHEDULING_CALL, jal(ps['ringnav_mainscheduling']), 'player scheduling paced')
+    patch_word(patched, *LOCK_DARK_CALL, jal(ps['lockscreen_dark']), 'screen off: black under the next lock screen')
     patch_word(patched, *START_MUTE_CALL, jal(ps['start_mute']), 'natural start: no mute before the end')
     patch_word(patched, *START_SLEEP_CALL, jal(ps['start_sleep']), 'natural start: no sleep before the end')
     for address, old, new, fn in HOLD_KEYS:

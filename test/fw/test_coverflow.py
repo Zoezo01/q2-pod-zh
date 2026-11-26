@@ -13,7 +13,7 @@ import pytest
 
 import host
 import test_playlist_art
-from conftest import O, Card as BaseCard, Config, Deques, Dirent, Externpic, Files, ask_cover, block, claim, fnv1a, high_halves, in_fork
+from conftest import O, Card as BaseCard, Config, Deques, Dirent, Externpic, Files, ask_cover, block, claim, fnv1a, high_halves, in_fork, libc, ogg as ogg_file
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CX, TOP, ART, ONE, MISS = 187, 13, 160, 65536, 99
@@ -91,11 +91,6 @@ def api(fw):
     return SimpleNamespace(**{k.replace('coverflow__', ''): fw.fn(k, v[0], *v[1:]) for k, v in fns.items()})
 
 
-libc = C.CDLL(None)
-libc.calloc.restype, libc.calloc.argtypes = C.c_void_p, [C.c_size_t, C.c_size_t]
-libc.free.argtypes = [C.c_void_p]
-libc.qsort.argtypes = [C.c_void_p, C.c_size_t, C.c_size_t, C.c_void_p]
-libc.mmap.restype, libc.mmap.argtypes = C.c_void_p, [C.c_void_p, C.c_size_t, C.c_int, C.c_int, C.c_int, C.c_long]
 
 
 def exact(ctype, n):
@@ -2109,7 +2104,7 @@ def test_folder_cover_what_it_can_t_list_is_stock_s_song_alone(fw, track):
     assert tried == [track] and not listing.opens
 
 
-def player_rig(fw, track=b'/m/a.mp3', id3_path=b'/m/a.mp3', artist=b'Art', album=b'Alb'):
+def player_rig(fw, id3_path=b'/m/a.mp3', artist=b'Art', album=b'Alb'):
     buf = fw.var('fw_ctx_g_play_id3_info', C.c_char * 2716)
     C.memmove(C.addressof(buf), id3_path + b'\0', len(id3_path) + 1)
     C.memmove(C.addressof(buf) + 0x504, artist + b'\0', len(artist) + 1)
@@ -2325,16 +2320,8 @@ OGG_TAGS_MAX = xiph_h('OGG_TAGS_MAX')
 
 def ogg(size):
     """An Ogg Vorbis file's first two packets, the comment header (packet 1, what OGG_TAGS_MAX measures) size bytes
-    long with its '\\x03vorbis' start (no CRC: xiph.c reads none)."""
-    pages, seq = [], 0
-    for packet in (b'\x01vorbis' + bytes(23), b'\x03vorbis' + bytes(size - 7)):
-        lacing = [255] * (len(packet) // 255) + [len(packet) % 255]
-        for at in range(0, len(lacing), 255):
-            part = lacing[at:at + 255]
-            pages.append(b'OggS\0' + bytes([at > 0]) + bytes(8) + struct.pack('<III', 1, seq, 0) + bytes([len(part)]) +
-                         bytes(part) + packet[at * 255:at * 255 + sum(part)])
-            seq += 1
-    return b''.join(pages)
+    long with its '\\x03vorbis' start."""
+    return ogg_file(b'\x01vorbis' + bytes(23), b'\x03vorbis' + bytes(size - 7))
 
 
 @pytest.mark.parametrize('track, size, stock', ((b'/m/a.ogg', OGG_TAGS_MAX + 1, False), (b'/m/a.OGG', OGG_TAGS_MAX + 1, False),
@@ -2382,12 +2369,7 @@ def test_each_songtable_writer_moves_the_generation_round_stock_s_write(fw, writ
 
 def py_key(artist, album):
     """album_key: FNV-1a of the artist, then of the album, each closed by a multiply (fnv's separator)."""
-    h = FNV
-    for s in (artist, album):
-        for b in s:
-            h = (h ^ b) * 16777619 % 2**32
-        h = h * 16777619 % 2**32
-    return h
+    return fnv1a(album, fnv1a(artist) * 16777619 % 2**32) * 16777619 % 2**32
 
 
 FX_POOL = int(host.tools_build.need(re.search(r'^#define FX_POOL (\d+)', (ROOT/'patch/coverflow.h').read_text(), re.M), 'No FX_POOL')[1])
@@ -3079,10 +3061,11 @@ def test_the_streaming_row_opens_the_page_in_full(fw, stock_bg):
 
 @pytest.mark.parametrize('home', ('0', '1', '2'))
 @pytest.mark.parametrize('theme', (MINIMAL, CLASSIC, MODERN))
-@pytest.mark.parametrize('shortcut, shown, label', (('0', 0, 'Rockbox'), ('6', 1, 'Games'), ('11', 0, 'Favourites'),
+@pytest.mark.parametrize('shortcut, shown, label', (('0', 0, 'rockbox'), ('6', 1, 'Games'), ('11', 0, 'Favourites'),
                                                     ('12', 1, 'Favourites')))
 def test_the_shortcut_row_sits_after_folder_unless_rockbox_is_missing_or_none(fw, theme, home, shortcut, shown, label):
-    # None hides the row in every layout and theme; the carousel's card stays, naming the default as with no choice
+    # None hides the row in every layout and theme; the carousel's card stays, naming the default as with no choice. A
+    # card app not on the card hides it too, named by its id
     themed(fw, theme, SHORTCUT=shortcut, HOME=home)
     ui = Ui(fw)
     h = Homes(ui, carousel=True, rockbox=True)
@@ -3096,7 +3079,7 @@ def test_the_shortcut_row_sits_after_folder_unless_rockbox_is_missing_or_none(fw
     assert ui[ui.named('label_rockbox')].text == label and ui[ui.lookup(h.carousel[0], 'label_rockbox')].text == label
 
 
-# Appearance's Hide Streaming / Hide Folder: the row goes last, as Rockbox's does, and takes no taps; the
+# Appearance → Hide's Hide Streaming / Hide Folder: the row goes last, as Rockbox's does, and takes no taps; the
 # others keep their order, Rockbox after Folder's place.
 @pytest.mark.parametrize('folder, stream', ((0, 0), (1, 0), (0, 1), (1, 1)))
 def test_hidden_folder_and_streaming_rows_go_last_and_take_no_taps(fw, folder, stream):
@@ -3944,9 +3927,6 @@ def test_a_panel_row_keeps_its_reserve_with_no_canvas(fw):
 from test_nav_loop import Clock, Flip, Land  # noqa: E402
 import test_nav_paint  # noqa: E402  its theme(): the settings the C reads
 
-LIBC = C.CDLL(None)
-LIBC.calloc.restype = C.c_void_p
-LIBC.calloc.argtypes = [C.c_size_t, C.c_size_t]
 W_W, W_H, CANVAS_LCD, LCD_FILL_COLOR, REC_PATH = O['W_W'], O['W_H'], O['CANVAS_LCD'], O['LCD_FILL_COLOR'], O['REC_PATH']
 FLIP_H, BACK_W, BACK_H = 294, 294, 285
 RET_REPEAT = 8
@@ -3960,14 +3940,14 @@ def test_the_landing_turns_from_its_click_until_its_motion_ends(fw):
     flip.dir = 1
     assert turning() and not landing()
     flip.dir = 0
-    land.front, land.ms = LIBC.calloc(4, 1), -1  # clicked, no paint yet
+    land.front, land.ms = libc.calloc(4, 1), -1  # clicked, no paint yet
     assert turning() and landing()
     land.ms, land.t0, land.len = 0, 1000, 400
     clock.now = 1399
     assert turning()
     clock.now = 1400
     assert not turning() and landing()  # held
-    land.frame = LIBC.calloc(0x48, 1)
+    land.frame = libc.calloc(0x48, 1)
     end()
     assert not landing() and len(fw.calls('bitmap_destroy')) == 1
     end()
@@ -3991,7 +3971,7 @@ class Run:
         land.to[:] = [16, 22, 178]
         land.len, land.travel, land.out_ms, land.np_at, land.np_ms = 400, 55, 110, 90, 100
         land.win, land.art = C.addressof(self.win), C.addressof(self.art)
-        land.frame, land.back, land.front = LIBC.calloc(0x48, 1), LIBC.calloc(BACK_W * BACK_H, 4), LIBC.calloc(160 * 160, 4)
+        land.frame, land.back, land.front = libc.calloc(0x48, 1), libc.calloc(BACK_W * BACK_H, 4), libc.calloc(160 * 160, 4)
         land.path, land.ms, land.at = fw.fn('coverflow_land__song_key', C.c_uint, C.c_void_p)(self.rec), -1, 1000
         self.top, self.pressed, self.timer = land.win, 0, 7
         fw.mock('window_manager_get_top_window', lambda *_: self.top)

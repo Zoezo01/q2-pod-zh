@@ -14,13 +14,10 @@
  * ponytail: read as Power opens and comes back to the front, it doesn't tick while Power stays
  * open; the page's timer would. */
 static int sleep_text(void *ctx, event_t *event) {
-    (void)event;
     widget_t *view = widget_lookup(ctx, "scroll_view_powermanager", 1),
              *item = view ? widget_lookup(view, "0", 0) : (void *)0,
-             *button = item ? widget_lookup(item, "0", 0) : (void *)0, *title = (void *)0;
-    for (unsigned i = 0, n = button ? widget_count_children(button) : 0; i < n && !title; ++i)
-        if (!tk_strcmp(widget_get_type(widget_get_child(button, i)), "hscroll_label"))
-            title = widget_get_child(button, i);
+             *button = item ? widget_lookup(item, "0", 0) : (void *)0;
+    widget_t *title = button ? widget_lookup_by_type(button, "hscroll_label", 0) : (void *)0;
     if (!title) return 0;
     int s = I(g_sleep_time, 0), left = (s + 59) / 60;
     char t[96];

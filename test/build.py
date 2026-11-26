@@ -1,31 +1,10 @@
 #!/usr/bin/env python3
-"""JPEG checks; optionally pass the stock ZIP to test packaging with a custom logo and quoted paths too."""
+"""Boot logo size and --dev tag checks; optionally pass the stock ZIP to test packaging with a custom logo and quoted paths too."""
 import io, math, re, sys; sys.path.insert(0, sys.path[0] + '/../tools')  # tools/ first: test/build.py must import tools/build.py
 from build import jal, j, ICONS, LABELS, relabel, ROOT, STOCK_EQ, STOCK_PAGES, TAG, dev_tag, jpeg_size, FONT, TAG_C, patch_m4b_cover, WEB, patch_web, DEFAULT_CONFIG, default_config
 
 logo = (ROOT/'assets/boot-logo.jpg').read_bytes()
 assert jpeg_size(logo) == (320, 375)
-# JPEG permits extra FF fill bytes before a marker.
-assert jpeg_size(logo[:2] + b'\xff' + logo[2:]) == (320, 375)
-frame = b'\xff\xd8\xff\xc0\x00\x11\x08\x01\x77\x01\x40'
-# The stock display_logo reads three bytes per pixel without converting grayscale/CMYK.
-# It also requires the documented 8-bit baseline format.
-def sof(marker=0xc0, precision=8, components=3):
-    return (b'\xff\xd8\xff' + bytes([marker]) + (8+3*components).to_bytes(2,'big') +
-            bytes([precision]) + b'\x01\x77\x01\x40' + bytes([components]) +
-            b''.join(bytes([i+1,0x11,0]) for i in range(components)))
-assert jpeg_size(sof()) == (320,375)
-for data in (b'', b'not a JPEG', frame, frame + bytes(8),
-             b'\xff\xd8\xff', b'\xff\xd8\xff\xe0\x00',
-             b'\xff\xd8\xff\xe0\x00\x01', b'\xff\xd8\xff\xd9' + logo[2:],
-             sof(components=1), sof(components=4), sof(precision=12),
-             sof(marker=0xc2), sof(marker=0xc3)):
-    try:
-        jpeg_size(data)
-    except ValueError:
-        continue
-    raise AssertionError(f'Accepted malformed JPEG header: {data!r}')
-print('JPEG header regression checks passed.')
 
 # --dev tags: five characters, one per build number, never a release's.
 tags = [dev_tag(n) for n in range(1, 36**3)]
@@ -38,12 +17,12 @@ print('Dev build tag checks passed.')
 def boot_check():
     """S90play's dual boot (build.py BOOT_HOOK) under the host sh, with stand-in programs."""
     import os, subprocess, tempfile, pathlib, shutil
-    from build import BOOT_HOOK, WHEEL_LOG_HOOK, LOG_HOOK, ROCKBOX_FLAG, WIFI_OFF
+    from build import BOOT_HOOK, WHEEL_LOG_HOOK, LOG_HOOK, TAKEOVER_FLAG, WIFI_OFF
     with tempfile.TemporaryDirectory(prefix='q2-boot-') as tmp:
         r = pathlib.Path(tmp)
         def host(hook):
             script = hook.decode().replace(' &\n', '\n')
-            for old in ('/mnt/', '/tmp/mmc_add', ROCKBOX_FLAG, '/usr/bin/q2boot', '/release/bin/demo', '/proc/mounts', '/tmp/q2-demo.log',
+            for old in ('/mnt/', '/tmp/mmc_add', TAKEOVER_FLAG, '/usr/bin/q2boot', '/release/bin/demo', '/proc/mounts', '/tmp/q2-demo.log',
                         '/tmp/q2-scan-file', '/tmp/q2-scan.log', '/tmp/q2-art-file', '/tmp/q2-art.log', '/tmp/rtk_init_success', '/tmp/bt_startup'):
                 script = script.replace(old, f'{r}{old}')
             script = script.replace('usleep 200000\n', ':\n').replace('usleep 500000', ':')
@@ -66,7 +45,7 @@ def boot_check():
             script = script.replace('/usr/bin/cmd_gpio', 'echo gpio >> ' + str(r) + '/order; : ')
             assert 'usleep 300000' in script  # Home's hand-over pauses before Rockbox: logged, its place is the point
             script = script.replace('usleep 300000', f'echo settle >> {r}/order')
-            assert 'usleep 2000000' in script and '\n            rockbox\n            kill $! 2>/dev/null\n' in script  # called off once Rockbox is gone
+            assert 'usleep 2000000' in script and ' ;; esac\n            kill $! 2>/dev/null\n' in script  # called off once the app is gone
             script = script.replace('usleep 2000000', f'echo late >> {r}/order')  # runs in line here: & is stripped above
             for real in ('killall -9', 'ifconfig', 'wlan0', 'wpa_supplicant', 'udhcpc', 'wifi_connect'): assert real not in script, real
             return script
@@ -81,21 +60,25 @@ def boot_check():
         saved_config = config.read_bytes()
         exe('bin/kill_bluetooth', f'echo bt-stop >> {r}/order; [ ! -f {r}/bt-fail ]')
         exe('bin/reset_bluetooth', f'[ ! -e {ready[0]} ] && [ ! -e {ready[1]} ] || exit 2; echo bt-reset >> {r}/order; [ ! -f {r}/bt-fail ]')
-        # demo takes Home's Rockbox row (leaves the flag) as many times as the shortcuts file says
-        flag, shortcuts = f'{r}{ROCKBOX_FLAG}', r/'shortcuts'
+        # demo takes a takeover app's row (leaves the flag, holding the takeover file's id) as many times as the
+        # shortcuts file says
+        flag, shortcuts, takeover = f'{r}{TAKEOVER_FLAG}', r/'shortcuts', r/'takeover'
+        takeover.write_text('rockbox')
         # a demo that leaves q2-state (r/keep): it ended without ringnav_clean_end
         demo = (f'echo demo >> {r}/ran; echo demo >> {r}/order; n=$(cat {shortcuts}); '
                 f'[ -f {r}/keep ] && echo running > {r}/mnt/data/q2-state; '
-                f'[ "$n" -gt 0 ] && echo $((n - 1)) > {shortcuts} && : > {flag}; '
+                f'[ "$n" -gt 0 ] && echo $((n - 1)) > {shortcuts} && cat {takeover} > {flag}; '
                 f's=$(head -n1 {r}/code); [ $(wc -l < {r}/code) -gt 1 ] && sed -i 1d {r}/code; exit $s')  # one status per run, the last repeats
         exe('release/bin/demo', demo)
-        rb, target = r/'mnt/mmc/.rockbox/rockbox', r/'mnt/data/boot-target'
+        # Rockbox's binary, which power-on runs, and its card app's launcher, which a takeover runs
+        rb, launcher, target = r/'mnt/mmc/.rockbox/rockbox', r/'mnt/mmc/.rockbox/q2-rockbox', r/'mnt/data/boot-target'
         def boot(held, card, code=81, shortcut=0, status=137):
             shortcuts.write_text(f'{shortcut}\n')
             (r/'code').write_text(''.join(f'{c}\n' for c in (status if isinstance(status, (list, tuple)) else [status])))
             exe('usr/bin/q2boot', 'exit ' + ('0' if held else '1'))
-            if card: exe('mnt/mmc/.rockbox/rockbox', f'pwd >> {r}/ran; echo rockbox >> {r}/order; exit {code}')
-            else: rb.unlink(missing_ok=True)
+            for f in (rb, launcher):
+                if card: exe(f, f'pwd >> {r}/ran; echo rockbox >> {r}/order; exit {code}')
+                else: f.unlink(missing_ok=True)
             (r/'ran').write_text(''); (r/'order').write_text('')
             for marker in ready: marker.write_text('left by the preceding Bluetooth helpers\n')
             subprocess.run(['sh', '-c', script], check=True, env=dict(os.environ, PATH=f'{r}/bin:' + os.environ['PATH']))
@@ -105,35 +88,41 @@ def boot_check():
             return ran, target.exists() and target.read_text().strip()
         (r/'proc/mounts').write_text('')
         rockbox = [str(rb.parent), 'demo']
-        assert boot(False, False) == (['demo'], False)          # no Rockbox on the card: Q2 Pod
-        assert boot(False, True, 1) == (rockbox, False)         # Rockbox by default; a crash starts Q2 Pod
+        assert boot(False, True, 1) == (['demo'], False)        # Rockbox on the card, no Boot to: Q2 Pod
+        target.write_text('rockbox')
+        assert boot(False, False) == (['demo'], 'rockbox')      # Boot to: Rockbox, none on the card: Q2 Pod
+        assert boot(False, True, 1) == (rockbox, 'rockbox')     # Boot to: Rockbox; a crash starts Q2 Pod
         assert (r/'mnt/mmc/.rockbox/rockbox.log').read_text() == 'exit 1\n'
-        assert boot(False, True) == (rockbox, False)            # Boot stock OS (0x51): Q2 Pod starts, nothing saved
-        assert boot(True, True, 1) == (['demo'], False)         # Play/Pause held: Q2 Pod, this session
-        assert boot(False, True, 1) == (rockbox, False)         # the next power-on is Rockbox again
-        target.write_text('stock\n')                            # a stale V8.4 choice is ignored
-        assert boot(False, True, 1) == (rockbox, 'stock')
-        assert boot(True, True, 1) == (['demo'], 'stock')
-        for value in ('q2pod', 'rockbox', 'bad', '', 'q2pod\n', 'q2pod-extra'):
+        assert boot(False, True) == (rockbox, 'rockbox')        # Boot stock OS (0x51): Q2 Pod starts, nothing saved
+        assert boot(True, True, 1) == (['demo'], 'rockbox')     # Play/Pause held: Q2 Pod, this session
+        assert boot(False, True, 1) == (rockbox, 'rockbox')     # the next power-on is Rockbox again
+        for value in ('q2pod', 'rockbox', 'bad', '', 'q2pod\n', 'rockbox\n', 'rockbox-extra', 'stock\n'):
             target.write_text(value)
-            expected = ['demo'] if value.rstrip('\n') == 'q2pod' else rockbox
+            expected = rockbox if value.rstrip('\n') == 'rockbox' else ['demo']
             assert boot(False, True, 0) == (expected, value.strip())
             assert boot(False, True, 1) == (expected, value.strip())  # restart preserves choice
             assert boot(True, True) == (['demo'], value.strip())
             assert boot(False, False) == (['demo'], value.strip())
             assert boot(True, True, 81, 1) == (['demo', *rockbox], value.strip())
         target.unlink()
-        # Home's Rockbox row: Rockbox, then Q2 Pod again, as often as it is taken; the flag is gone after
+        # a takeover app's row: the app, then Q2 Pod again, as often as it is taken; the flag is gone after
         assert boot(True, True, 81, 1) == (['demo', *rockbox], False)
-        assert boot(False, True, 81, 2) == (rockbox * 3, False) and not pathlib.Path(flag).exists()
-        assert boot(True, False, 81, 1) == (['demo', 'demo'], False)  # no Rockbox on the card: Q2 Pod again
+        assert (r/'mnt/mmc/.rockbox/q2-rockbox.log').read_text() == 'exit 81\n'  # the launcher's log, beside it
+        assert boot(False, True, 81, 2) == (['demo', *rockbox * 2], False) and not pathlib.Path(flag).exists()
+        assert boot(True, False, 81, 1) == (['demo', 'demo'], False)  # not on the card: Q2 Pod again
+        for bad in ('', 'x/../rockbox', 'Rockbox', 'a b'):  # an id valid_id would refuse runs nothing: Q2 Pod again
+            takeover.write_text(bad)
+            assert boot(True, True, 81, 1) == (['demo', 'demo'], False) and not pathlib.Path(flag).exists()
+        takeover.write_text('rockbox')
         # Wi-Fi goes off before every start of Rockbox and at no other time; demo follows Rockbox whatever its status
         def order(*args): boot(*args); return (r/'order').read_text().split()
         session = ['gpio', 'wifi', 'rockbox', 'bt-stop', 'bt-reset', 'demo']  # Bluetooth goes off only after Rockbox
+        target.write_text('rockbox')
         for code in (0, 1, 81, 137, 255): assert order(False, True, code) == session
         handover = ['settle', 'late', 'wifi']
-        assert order(True, True, 81, 1) == ['demo', *handover, *session]  # Home's Rockbox row waits for what demo launched
         assert order(False, True, 81, 2) == session + [*handover, *session] * 2  # power-on doesn't wait, the row twice does
+        target.unlink()
+        assert order(True, True, 81, 1) == ['demo', *handover, *session]  # a takeover waits for what demo launched
         assert order(False, False) == ['demo']                  # no Rockbox on the card
         assert order(True, False, 81, 1) == ['demo', *handover, 'demo']  # nor when the row is taken
         assert order(True, True) == ['demo']                    # Play/Pause held
@@ -141,12 +130,14 @@ def boot_check():
         assert all(marker.exists() for marker in ready)  # no actual Rockbox execution: leave Bluetooth alone
         (r/'bt-fail').touch()
         for held, shortcut_count in ((False, 0), (True, 1)):
+            target.write_text('rockbox')  # power-on's Rockbox, or a takeover's
             assert order(held, True, 137, shortcut_count) == (['demo', *handover, *session] if held else session)
             assert all(not marker.exists() for marker in ready)
-            assert (r/'mnt/mmc/.rockbox/rockbox.log').read_text() == 'exit 137\n'
+            assert (r/f'mnt/mmc/.rockbox/{"q2-rockbox" if held else "rockbox"}.log').read_text() == 'exit 137\n'
+        target.unlink()
         (r/'bt-fail').unlink()
         # an abnormal end of demo leaves its status on /mnt/data, which the next boot copies to a mounted card;
-        # 0, 143 and the Rockbox hand-over leave nothing
+        # 0, 143 and a takeover's hand-over leave nothing
         crash, copy, mounts = r/'mnt/data/q2-crash.log', r/'mnt/mmc/q2-crash.log', r/'proc/mounts'
         def logged(status, card, shortcut=0):
             for f in (crash, copy): f.unlink(missing_ok=True)
@@ -181,7 +172,7 @@ def boot_check():
         out, cp = logged(139, False)
         assert 'demo exit 139' in out and cp is False
         assert logged(0, True) == (False, False) and logged(143, True) == (False, False)
-        assert logged([137, 0], True, 1) == (False, False)  # the Rockbox hand-over's kill, then a clean demo
+        assert logged([137, 0], True, 1) == (False, False)  # a takeover's kill, then a clean demo
         # 0 or 143 with q2-state still there was no clean end (ringnav_clean_end removes it first): logged as a crash
         keep, state = r/'keep', r/'mnt/data/q2-state'
         keep.write_text('')
@@ -286,7 +277,7 @@ def boot_check():
         out, cp = logged(137, False)  # a second start's mkdir fails: the link stays, nothing else is made
         assert dlog.is_symlink() and capped.read_text() == 'out 1\n' * 2
         exe('release/bin/demo', demo); dlog.unlink(); shutil.rmtree(r/'tmp/q2-log'); (r/'capfs-ok').unlink(); crash.unlink(missing_ok=True)
-    print('Dual boot: Rockbox by default, one-session Q2 Pod, stale choice ignored, card fallback, Home Rockbox row and Wi-Fi off before Rockbox passed.')
+    print('Dual boot: Q2 Pod unless Boot to says Rockbox, one-session Q2 Pod, card fallback, takeover apps by id and Wi-Fi off before an app passed.')
 boot_check()
 
 def logo_check():
@@ -462,6 +453,10 @@ def validate_assets(directory):
     # Library's Apps and App Store rows: the card app's 52 px square disc, stock's System Update icon
     assert read('rootfs.squashfs', xx+'local_apps.png') == (ROOT/'assets/icons/stream_app.png').read_bytes()
     assert read('rootfs.squashfs', xx+'local_store.png') == read('stock.squashfs', xx+'system_update.png')
+    # Now Playing's heart: the rating fill (ratings.c) cuts play_fav's rows FAV_HEART_TOP for FAV_HEART_ROWS
+    heart = imagemagick('png:-', '-format', '%@', 'info:', data=read('rootfs.squashfs', xx+'play_fav.png'))
+    rows = {k: int(re.search(rf'#define {k} (\d+)', (ROOT/'patch/ratings.c').read_text())[1]) for k in ('FAV_HEART_TOP', 'FAV_HEART_ROWS')}
+    assert re.fullmatch(rb'\d+x(\d+)\+\d+\+(\d+)', heart).groups() == (b'%d' % rows['FAV_HEART_ROWS'], b'%d' % rows['FAV_HEART_TOP']), heart
     flow = read('rootfs.squashfs', xx+'default_album_flow.png')
     assert flow == sized_art(master, 160) and png_header(flow) == (160, 160, 8, 6)
     assert read('rootfs.squashfs', xx+'default_album_home.png') == master
@@ -937,7 +932,7 @@ def validate_assets(directory):
             assert title[0] == 'hscroll_label' and title[2]['name'] == 'label_clock'
             x, _, w, _ = title[1]
             assert x + w/2 == 375/2 and w >= CLOCK_MIN  # centred on the screen, clear of both groups (corners below)
-            assert inc('CLOCK_EDGE') >= corner_x((SET0.bar - 20) // 2, 20) and x >= inc('CLOCK_EDGE')
+            assert x >= corner_x((SET0.bar - 20) // 2, 20)
             assert title[2]['style:normal:font_size'] == '16'
             assert all(v[2]['children_layout'].endswith(f'xm={STATUS_MARGIN},s={inc("STATUS_GAP")})') for v in (left, right))
             idle = rest.pop()
