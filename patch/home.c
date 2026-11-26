@@ -192,19 +192,16 @@ static void svc_row(widget_t *row, int i, char *hide) {
     if (svc_find(hide, i)) widget_set_visible(row, 0, 0);
 }
 
-/* stream_page_init: stock's rows but Baidu Netdisk (a Chinese cloud drive, signed in to from
- * Baidu's app: its row, the one with list_baidu's icon, removed), then Spotify (spotify.c), which
- * opens its browser, the card apps on the card (addon.c: Deezer, Soulseek, File Browser… as the
- * App Store or the user put them there), Tidal Downloads, Internet Radio (radio.c), AirPlay
- * and Configuration. Their buttons have no name, so stock's row click never sees them. Smart
- * Wi-Fi's radio comes back first. */
+/* stream_page_init: stock's rows — Baidu Netdisk among them, as stock V1.36 offers it (its row is
+ * stock's own, its click stock's: sign-in is by the device's code in Baidu's app) — then Spotify
+ * (spotify.c), which opens its browser, the card apps on the card (addon.c: Deezer, Soulseek, File
+ * Browser… as the App Store or the user put them there), Tidal Downloads, Internet Radio (radio.c),
+ * AirPlay and Configuration. Their buttons have no name, so stock's row click never sees them.
+ * Smart Wi-Fi's radio comes back first. */
 int ringnav_stream(widget_t *win, void *ctx) {
     smart_wake();
     int result = stock_stream_trampoline(win, ctx);
     widget_t *view = win ? widget_lookup(win, "scroll_view_streamsset", 1) : (void *)0;
-    for (int i = view ? (int)widget_count_children(view) : 0; i-- > 0;)
-        if (shows_image(widget_get_child(view, (unsigned)i), "list_baidu"))
-            widget_destroy(widget_get_child(view, (unsigned)i));
     if (view) {
         char hide[SVC_HIDE];
         int i = 1;
