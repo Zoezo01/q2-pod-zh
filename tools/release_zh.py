@@ -38,7 +38,7 @@ API = 'https://api.github.com'
 UPLOADS = 'https://uploads.github.com'
 MEMBERS = ['firmware_v20.info', 'recovery-update', 'recovery-update/xImage',
            'recovery-update/rootfs.squashfs']
-LAST_RELEASED = '1.9.2.2'  # the newest line with a published Release; notes carry the sections after it
+LAST_RELEASED = '1.9.4'  # the newest line with a published Release; notes carry the sections after it
 
 
 def need(ok, message):
