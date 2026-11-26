@@ -2292,13 +2292,15 @@ def deezer(name=b'Deezer'):
 
 def test_streaming_drops_baidu_and_adds_the_payload_s_services(fw, ui):
     win, view = streaming(fw, ui)
-    assert page_rows(ui, view) == [(c, True) for c in ('TIDAL', 'Qobuz', 'Spotify', 'Tidal Downloads', 'Internet Radio',
-                                                       'AirPlay', 'Configuration')]
+    # 中文版保留 stock 的百度网盘行（上游英文版会删掉它）
+    assert page_rows(ui, view) == [(c, True) for c in ('TIDAL', 'Baidu Netdisk', 'Qobuz', 'Spotify',
+                                                       'Tidal Downloads', 'Internet Radio', 'AirPlay',
+                                                       'Configuration')]
 
 
 def test_streaming_lists_the_card_s_apps_after_spotify(fw, ui):
     win, view = streaming(fw, ui, files=deezer())
-    assert [c for c, _ in page_rows(ui, view)][2:5] == ['Spotify', 'Deezer', 'Tidal Downloads']
+    assert [c for c, _ in page_rows(ui, view)][3:6] == ['Spotify', 'Deezer', 'Tidal Downloads']  # 百度网盘行在前
 
 
 def test_streaming_hides_what_configuration_hid(fw, ui):

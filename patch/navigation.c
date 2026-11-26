@@ -3421,6 +3421,7 @@ static int fill_gone(void *ctx, event_t *event) {
 }
 void pod_rows(widget_t *win, const char *view_name, int first, int n, const char *const *icons) {
     widget_t *view = win ? widget_lookup(win, view_name, 1) : (void *)0;
+    pod_settings();
     for (int i = 0; view && i < n; ++i) {
         st.pod_label[first + i] = list_row(view, icons[i], pod_click, (void *)(long)(first + i));
         pod_text(first + i);

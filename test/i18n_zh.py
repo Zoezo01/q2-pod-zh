@@ -461,6 +461,27 @@ ZH_GENERATED = {
 # codepoint array, theme names) plus its corrections. Run gen_zh_expect.py to
 # refresh the block above; it never touches what follows.
 ZH_OVERRIDES = {
+    # 1.9.3 / 1.9.4: the lock screen, the standby prompts and the new Display rows.
+    'Hide': '隐藏',
+    'Layout: Default': '锁屏布局：默认',
+    'Layout: At a Glance': '锁屏布局：一览',
+    'Sunday': '星期日', 'Monday': '星期一', 'Tuesday': '星期二', 'Wednesday': '星期三',
+    'Thursday': '星期四', 'Friday': '星期五', 'Saturday': '星期六',
+    'Accept': '确定',
+    'Charge Limit is not enforced while the Q2 is off.': 'Q2 关机时充电上限不生效。',
+    'Enable Auto-shutdown?': '启用自动关机？',
+    'Standby may leave the Q2 unresponsive.': '待机可能导致 Q2 无响应。',
+    'Use Auto-shutdown instead. Enable Standby?': '请改用自动关机。启用待机？',
+    'slide to unlock': '滑动解锁',
+    'Decades': '年代', 'Years': '年份',
+    'It isn\'t on the card': '不在卡上',
+    'Show Sample Rate': '显示采样率',
+    'Classic Slider': '经典滑块',
+    'Return Unlocks': '返回键解锁',
+    'Wheel Unlocks': '转轮解锁',
+    'Background: Cover Colour': '锁屏背景：封面主色',
+    'Background: Plain': '锁屏背景：纯色',
+    'Background: Blurred Cover': '锁屏背景：模糊封面',
     # 1.9.2: the EQ band page's rows and values.
     'Band On': '频段 开',
     'Band Off': '频段 关',
@@ -857,7 +878,12 @@ ZH_PATTERNS = [(re.compile(r'^Downloaded (\d+) of (\d+) songs?$'), r'已下载 \
                (re.compile(r'^Frequency (\d+) Hz$'), r'频率 \1 Hz'),
                (re.compile(r'^Gain ([-+]?[\d.]+) dB$'), r'增益 \1 dB'),
                (re.compile(r'^Q ([\d.]+)$'), r'Q \1'),
-               (re.compile(r'^Band (\d+)$'), r'频段 \1')]
+               (re.compile(r'^Band (\d+)$'), r'频段 \1'),
+               (re.compile(r'^(\d+) plays?$'), r'\1 次播放'),
+               (re.compile(r'^Measuring songs… (\d+)/(\d+)$'), r'正在检测时长… \1/\2'),
+               (re.compile(r'^Measuring songs…$'), r'正在检测时长…'),
+               (re.compile(r'^Scrobbles sent: (\d+)$'), r'已上传 \1 条听歌记录'),
+               (re.compile(r'^(.+) is not on the card$'), r'\1 不在卡上')]
 for _k in ZH_SKIP:
     ZH.pop(_k, None)
 # The firmware tests compare ctypes bytes, the tools tests compare str.

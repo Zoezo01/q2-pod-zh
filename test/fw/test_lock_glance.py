@@ -191,7 +191,7 @@ def test_stock_s_clocks_battery_shade_and_hint_hide(fw, mcl, now, theme):
 def test_the_song_s_lines_and_the_clock(fw, mcl, now):
     g = Glance(fw, mcl, queue=3, pos=1, played=(65, 200))
     assert (g.text('album'), g.text('place'), g.text('count')) == ('Blue Train', '1:05 / 3:20', '2 of 3')
-    assert (g.text('time'), g.text('ampm'), g.text('day'), g.text('date')) == ('7:05', 'AM', 'Thursday', 'Jan 1')
+    assert (g.text('time'), g.text('ampm'), g.text('day'), g.text('date')) == ('7:05', '上午', '星期四', '1月 1')
     assert g.text('words') == 'slide to unlock'
 
 
@@ -214,7 +214,7 @@ def test_time_show_off_leaves_the_clock_out(fw, mcl, now):
 
 def test_no_queue_and_no_picture_is_the_large_clock(fw, mcl, now):
     g = Glance(fw, mcl)
-    assert g.boxes()['time'][1] == 50 and g.text('day') == 'Thursday, Jan 1' and g.text('date') == ''
+    assert g.boxes()['time'][1] == 50 and g.text('day') == '星期四, 1月 1' and g.text('date') == ''
     assert ('view_playinfo', 1) not in [(n, a[0]) for n, a in g.win.calls('widget_set_visible')]
 
 
@@ -398,7 +398,7 @@ def test_the_slider_is_flat_in_the_theme_s_ink_and_on_colour(fw, mcl, now, theme
     lcd.paint(fw, g['slider'])
     assert lcd.boxes[:2] == [((0, 0, 303, 48), rgba(ink, 0x30), 24), ((4, 4, 66, 40), rgba(on), 20)]
     assert all(radius == 0 for _, _, radius in lcd.boxes[2:])  # the arrow: a shaft and a head
-    assert lcd.texts[0] == ('slide to unlock', WORDS_X, 12, rgba(ink, 140))
+    assert lcd.texts[0] == ('滑动解锁', WORDS_X, 12, rgba(ink, 140))  # 中文的滑块文字
     assert not fw.fn('ui_ink_raw', C.c_uint, C.c_uint)(0)  # put back after the paint
 
 

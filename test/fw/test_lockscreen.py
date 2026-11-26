@@ -915,7 +915,7 @@ def calls_since(fw, since, name):
     return [args for n, args in fw.calls()[since:] if n == name]
 
 
-ROWS = ('Clock', 'Layout', 'Background', 'Classic Slider', 'Return', 'Wheel')
+ROWS = ('时钟', '锁屏布局', '锁屏背景', '经典滑块', '返回键', '转轮')  # 中文行的开头
 DEFAULT_ROWS = ['Layout: Default', 'Clock: Standard', 'Return Unlocks']
 GLANCE_ROWS = ['Layout: At a Glance', 'Background: Cover Colour', 'Classic Slider', 'Return Unlocks', 'Wheel Unlocks']
 
